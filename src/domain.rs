@@ -1,0 +1,749 @@
+//! Version-one project records and structural validation. Names are display-only;
+//! UUIDs identify physical objects and are unique across all record kinds.
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::export::ExportRecord;
+use crate::money::{Currency, Money};
+use crate::units::{Length, Pose, Unit, UnitError};
+
+pub const SCHEMA_VERSION: u32 = 1;
+pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
+/// Provisional project cutting assumption; confirm against the actual saw before shop use.
+pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
+/// A wider interval than the supported world extent cannot provide a useful grid.
+pub const MAX_GRID_SPACING: Length = Length::from_micrometres(1_000_000_000);
+
+pub fn validate_grid_spacing(spacing: Length) -> Result<(), UnitError> {
+    spacing.positive()?;
+    if spacing > MAX_GRID_SPACING {
+        return Err(UnitError::OutOfBounds);
+    }
+    Ok(())
+}
+
+fn default_grid_spacing() -> Length {
+    DEFAULT_GRID_SPACING
+}
+
+fn default_cutting_kerf() -> Length {
+    DEFAULT_CUTTING_KERF
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoardGrain {
+    Length,
+    Width,
+    Unrestricted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StockGrain {
+    AlongX,
+    AlongY,
+    Nondirectional,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StockSource {
+    Owned,
+    ToPurchase,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Material {
+    pub id: Uuid,
+    pub name: String,
+    pub default_thickness: Length,
+    pub default_grain: BoardGrain,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Board {
+    pub id: Uuid,
+    pub name: String,
+    pub material_id: Uuid,
+    /// Blank dimensions along the board's local X/Y/Z axes.
+    pub length: Length,
+    pub width: Length,
+    /// Snapshot of effective thickness; material defaults do not resize existing boards.
+    pub thickness: Length,
+    /// `None` follows the current material default; an explicit override survives default edits.
+    pub grain_override: Option<BoardGrain>,
+    pub parent_id: Option<Uuid>,
+    pub pose: Pose,
+}
+
+impl Board {
+    pub fn blank_dimensions(&self) -> [Length; 3] {
+        [self.length, self.width, self.thickness]
+    }
+
+    pub fn effective_grain(&self, material: &Material) -> BoardGrain {
+        self.grain_override.unwrap_or(material.default_grain)
+    }
+
+    /// Independent copy: only the parent/material references are shared, never identity or allocation.
+    pub fn duplicate(&self) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            ..self.clone()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Assembly {
+    pub id: Uuid,
+    pub name: String,
+    pub parent_id: Option<Uuid>,
+    pub pose: Pose,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Stock {
+    pub id: Uuid,
+    pub name: String,
+    pub material_id: Uuid,
+    pub length: Length,
+    pub width: Length,
+    /// Measured thickness, independent of the material's current default.
+    pub thickness: Length,
+    pub grain: StockGrain,
+    pub source: StockSource,
+    pub price: Option<Money>,
+    pub priority: u32,
+    /// Total loss on each edge (left, right, bottom, top), in manufacturing units.
+    pub trim: [Length; 4],
+}
+
+impl Stock {
+    pub fn duplicate(&self) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            ..self.clone()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Allocation {
+    pub id: Uuid,
+    pub board_id: Uuid,
+    pub stock_id: Uuid,
+    pub origin: [Length; 2],
+    pub quarter_turn: bool,
+    pub locked: bool,
+}
+
+/// Project-pinned catalog facts. The catalog verification milestone populates
+/// these fields only from reviewed manufacturer sources.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CatalogReference {
+    pub id: Uuid,
+    pub name: String,
+    pub product_id: String,
+    pub plate_id: Option<String>,
+    pub source: String,
+    pub revision: String,
+    pub installation_dimensions: HashMap<String, Length>,
+    /// Absent for legacy/user-authored references, which cannot claim supported guidance.
+    #[serde(default)]
+    pub verified_hinge: Option<VerifiedHinge>,
+}
+
+/// Factual installation references for the single visually reviewed kit/plate pair.
+/// Lengths are integer micrometres; K is measured from door edge to cup edge.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifiedHinge {
+    pub printed_page: u16,
+    pub pdf_page: u16,
+    pub source_sha256: String,
+    pub attribution: String,
+    pub plate_height: Length,
+    pub overlay_by_cup_edge: Vec<OverlaySetting>,
+    pub door_thickness_min: Length,
+    pub door_thickness_max: Length,
+    pub cup_diameter: Length,
+    pub cup_depth: Length,
+    pub plate_hole_pitch: Length,
+    pub plate_front_offset: Length,
+    pub opening_limit_degrees: u16,
+    /// Fastener specifications and pilot dimensions were not verified.
+    pub screw_details: UnavailableDetail,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OverlaySetting {
+    pub cup_edge_setback: Length,
+    pub overlay: Length,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnavailableDetail {
+    Unavailable,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum HardwareKind {
+    /// Local X/Y/Z dimensions of a simple non-wooden placeholder.
+    Placeholder {
+        dimensions: [Length; 3],
+    },
+    Catalog {
+        catalog_id: Uuid,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Hardware {
+    pub id: Uuid,
+    pub name: String,
+    pub parent_id: Option<Uuid>,
+    pub pose: Pose,
+    pub kind: HardwareKind,
+}
+
+/// Board-local installation annotation, independent of assembly/world poses.
+/// X is board length, Y width, Z thickness. Each instance is one physical hinge;
+/// the number of instances is user supplied, never calculated from door load.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HingeInstallation {
+    pub id: Uuid,
+    pub door_board_id: Uuid,
+    pub mounting_board_id: Uuid,
+    pub catalog_id: Uuid,
+    pub side: HingeMountingSide,
+    /// Centreline positions measured from each board's local minimum Y edge.
+    pub door_y: Length,
+    pub mount_y: Length,
+    /// K is the distance from the selected door X edge to the *cup edge*.
+    pub cup_edge_setback: Length,
+    pub overlay: Length,
+}
+
+/// Mechanical relationship, distinct from the assembly tree. The closed pose
+/// and axis are world-space references captured on confirmation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DoorJoint {
+    pub id: Uuid,
+    pub moving_root_id: Uuid,
+    pub mounting_board_id: Uuid,
+    pub hinge_installation_ids: Vec<Uuid>,
+    pub closed_world_pose: Pose,
+    pub closed_local_pose: Pose,
+    pub axis_origin_mm: [f64; 3],
+    pub axis_direction: [f64; 3],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoardEdge {
+    MinX,
+    MaxX,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoardFace {
+    MinZ,
+    MaxZ,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HingeMountingSide {
+    pub door_edge: BoardEdge,
+    pub door_face: BoardFace,
+    /// Cabinet-front datum for the 37 mm plate reference.
+    pub mount_front_edge: BoardEdge,
+    pub mount_face: BoardFace,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Project {
+    pub schema_version: u32,
+    pub id: Uuid,
+    pub name: String,
+    pub revision: u64,
+    pub display_unit: Unit,
+    #[serde(default = "default_grid_spacing")]
+    pub grid_spacing: Length,
+    #[serde(default = "default_cutting_kerf")]
+    pub cutting_kerf: Length,
+    /// Explicit shop assumption, bound to the exact kerf value (never inferred from a default).
+    #[serde(default)]
+    pub confirmed_shop_kerf: Option<Length>,
+    pub currency: Currency,
+    /// Unknown until a shop charge is explicitly entered; zero is a known free cut.
+    #[serde(default)]
+    pub cut_fee: Option<Money>,
+    pub materials: Vec<Material>,
+    pub boards: Vec<Board>,
+    pub assemblies: Vec<Assembly>,
+    pub stock: Vec<Stock>,
+    pub allocations: Vec<Allocation>,
+    pub catalog: Vec<CatalogReference>,
+    pub hardware: Vec<Hardware>,
+    #[serde(default)]
+    pub hinge_installations: Vec<HingeInstallation>,
+    #[serde(default)]
+    pub door_joints: Vec<DoorJoint>,
+    #[serde(default)]
+    pub export_records: Vec<ExportRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DomainError {
+    UnsupportedVersion(u32),
+    DuplicateId(Uuid),
+    DanglingReference { owner: Uuid, target: Uuid },
+    HierarchyCycle(Uuid),
+    InvalidDimension(Uuid),
+    InvalidGridSpacing(UnitError),
+    InvalidCuttingKerf(UnitError),
+    InvalidPose { owner: Uuid, reason: UnitError },
+    InvalidPrice(Uuid),
+    InvalidCutFee,
+    DuplicateAllocation(Uuid),
+    InvalidExportRecord,
+    InvalidCatalog(Uuid),
+    SameHingeBoards(Uuid),
+    InvalidDoorJoint(Uuid),
+}
+
+impl Project {
+    /// Declared physical-piece order. Legacy equal priorities have a stable ID tie-break.
+    pub fn ordered_stock(&self) -> Vec<&Stock> {
+        let mut pieces: Vec<_> = self.stock.iter().collect();
+        pieces.sort_by_key(|piece| (piece.priority, piece.id));
+        pieces
+    }
+
+    pub fn new(name: impl Into<String>, currency: Currency) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            id: Uuid::new_v4(),
+            name: name.into(),
+            revision: 0,
+            display_unit: Unit::Mm,
+            grid_spacing: DEFAULT_GRID_SPACING,
+            cutting_kerf: DEFAULT_CUTTING_KERF,
+            confirmed_shop_kerf: None,
+            currency,
+            cut_fee: None,
+            materials: Vec::new(),
+            boards: Vec::new(),
+            assemblies: Vec::new(),
+            stock: Vec::new(),
+            allocations: Vec::new(),
+            catalog: Vec::new(),
+            hardware: Vec::new(),
+            hinge_installations: Vec::new(),
+            door_joints: Vec::new(),
+            export_records: Vec::new(),
+        }
+    }
+
+    /// Structural validation of an entire candidate document before it replaces a project.
+    /// Placement feasibility and hardware installation checks belong to later planners.
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.schema_version != SCHEMA_VERSION {
+            return Err(DomainError::UnsupportedVersion(self.schema_version));
+        }
+        validate_grid_spacing(self.grid_spacing).map_err(DomainError::InvalidGridSpacing)?;
+        self.cutting_kerf
+            .positive()
+            .map_err(DomainError::InvalidCuttingKerf)?;
+        if self
+            .confirmed_shop_kerf
+            .is_some_and(|kerf| kerf != self.cutting_kerf)
+        {
+            return Err(DomainError::InvalidCuttingKerf(UnitError::InvalidNumber));
+        }
+        if self
+            .cut_fee
+            .is_some_and(|fee| fee.currency() != self.currency || fee.minor_units() < 0)
+        {
+            return Err(DomainError::InvalidCutFee);
+        }
+        let mut ids = HashSet::from([self.id]);
+        for id in self
+            .materials
+            .iter()
+            .map(|v| v.id)
+            .chain(self.boards.iter().map(|v| v.id))
+            .chain(self.assemblies.iter().map(|v| v.id))
+            .chain(self.stock.iter().map(|v| v.id))
+            .chain(self.allocations.iter().map(|v| v.id))
+            .chain(self.catalog.iter().map(|v| v.id))
+            .chain(self.hardware.iter().map(|v| v.id))
+            .chain(self.hinge_installations.iter().map(|v| v.id))
+            .chain(self.door_joints.iter().map(|v| v.id))
+        {
+            if !ids.insert(id) {
+                return Err(DomainError::DuplicateId(id));
+            }
+        }
+        let materials: HashSet<_> = self.materials.iter().map(|v| v.id).collect();
+        let boards: HashSet<_> = self.boards.iter().map(|v| v.id).collect();
+        let stock: HashSet<_> = self.stock.iter().map(|v| v.id).collect();
+        let catalog: HashSet<_> = self.catalog.iter().map(|v| v.id).collect();
+        let parents: HashMap<_, _> = self
+            .assemblies
+            .iter()
+            .map(|v| (v.id, v.parent_id))
+            .collect();
+        let reference = |owner, target, set: &HashSet<Uuid>| {
+            if set.contains(&target) {
+                Ok(())
+            } else {
+                Err(DomainError::DanglingReference { owner, target })
+            }
+        };
+        let check_pose = |owner, pose: Pose| {
+            let normalized = Pose::new(pose.translation_mm, pose.rotation)
+                .map_err(|reason| DomainError::InvalidPose { owner, reason })?;
+            let q = pose.rotation;
+            let norm = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+            if !norm.is_finite()
+                || (norm - 1.0).abs() > 1e-12
+                || [q.w, q.x, q.y, q.z]
+                    .iter()
+                    .zip([
+                        normalized.rotation.w,
+                        normalized.rotation.x,
+                        normalized.rotation.y,
+                        normalized.rotation.z,
+                    ])
+                    .any(|(a, b)| (a - b).abs() > 1e-12)
+            {
+                return Err(DomainError::InvalidPose {
+                    owner,
+                    reason: UnitError::InvalidRotation,
+                });
+            }
+            Ok(())
+        };
+        for material in &self.materials {
+            positive(material.id, &[material.default_thickness])?;
+        }
+        for board in &self.boards {
+            reference(board.id, board.material_id, &materials)?;
+            check_parent(board.id, board.parent_id, &parents)?;
+            positive(board.id, &board.blank_dimensions())?;
+            check_pose(board.id, board.pose)?;
+        }
+        for assembly in &self.assemblies {
+            check_parent(assembly.id, assembly.parent_id, &parents)?;
+            check_pose(assembly.id, assembly.pose)?;
+            let mut seen = HashSet::new();
+            let mut current = Some(assembly.id);
+            while let Some(id) = current {
+                if !seen.insert(id) {
+                    return Err(DomainError::HierarchyCycle(id));
+                }
+                current = parents[&id];
+            }
+        }
+        for piece in &self.stock {
+            reference(piece.id, piece.material_id, &materials)?;
+            positive(piece.id, &[piece.length, piece.width, piece.thickness])?;
+            if piece.trim.iter().any(|v| v.micrometres() < 0) {
+                return Err(DomainError::InvalidDimension(piece.id));
+            }
+            let [left, right, bottom, top] = piece.trim.map(|v| i128::from(v.micrometres()));
+            if left + right >= i128::from(piece.length.micrometres())
+                || bottom + top >= i128::from(piece.width.micrometres())
+            {
+                return Err(DomainError::InvalidDimension(piece.id));
+            }
+            if piece
+                .price
+                .is_some_and(|price| price.currency() != self.currency || price.minor_units() < 0)
+            {
+                return Err(DomainError::InvalidPrice(piece.id));
+            }
+        }
+        for entry in &self.catalog {
+            if entry
+                .installation_dimensions
+                .values()
+                .any(|v| v.micrometres() < 0)
+            {
+                return Err(DomainError::InvalidDimension(entry.id));
+            }
+            if entry.verified_hinge.is_some() && !crate::hardware_catalog::is_verified(entry) {
+                return Err(DomainError::InvalidCatalog(entry.id));
+            }
+        }
+        for item in &self.hardware {
+            check_parent(item.id, item.parent_id, &parents)?;
+            check_pose(item.id, item.pose)?;
+            match &item.kind {
+                HardwareKind::Placeholder { dimensions } => positive(item.id, dimensions)?,
+                HardwareKind::Catalog { catalog_id } => reference(item.id, *catalog_id, &catalog)?,
+            }
+        }
+        for installation in &self.hinge_installations {
+            reference(installation.id, installation.door_board_id, &boards)?;
+            reference(installation.id, installation.mounting_board_id, &boards)?;
+            reference(installation.id, installation.catalog_id, &catalog)?;
+            if installation.door_board_id == installation.mounting_board_id {
+                return Err(DomainError::SameHingeBoards(installation.id));
+            }
+            // Out-of-bounds annotations and unsupported catalog parameters are
+            // draft diagnostics, but negative physical distances are malformed.
+            if [
+                installation.door_y,
+                installation.mount_y,
+                installation.cup_edge_setback,
+                installation.overlay,
+            ]
+            .iter()
+            .any(|v| v.micrometres() < 0)
+            {
+                return Err(DomainError::InvalidDimension(installation.id));
+            }
+        }
+        crate::door_joint::validate_joints(self)?;
+        let mut assigned = HashSet::new();
+        for allocation in &self.allocations {
+            reference(allocation.id, allocation.board_id, &boards)?;
+            reference(allocation.id, allocation.stock_id, &stock)?;
+            if !assigned.insert(allocation.board_id) {
+                return Err(DomainError::DuplicateAllocation(allocation.board_id));
+            }
+            if allocation.origin.iter().any(|v| v.micrometres() < 0) {
+                return Err(DomainError::InvalidDimension(allocation.id));
+            }
+        }
+        for record in &self.export_records {
+            if record.project_id != self.id || !record.is_valid() {
+                return Err(DomainError::InvalidExportRecord);
+            }
+        }
+        Ok(())
+    }
+}
+
+fn positive(owner: Uuid, lengths: &[Length]) -> Result<(), DomainError> {
+    if lengths.iter().any(|v| v.micrometres() <= 0) {
+        Err(DomainError::InvalidDimension(owner))
+    } else {
+        Ok(())
+    }
+}
+
+fn check_parent(
+    owner: Uuid,
+    parent: Option<Uuid>,
+    parents: &HashMap<Uuid, Option<Uuid>>,
+) -> Result<(), DomainError> {
+    if let Some(target) = parent
+        && !parents.contains_key(&target)
+    {
+        return Err(DomainError::DanglingReference { owner, target });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::units::Quaternion;
+
+    fn mm(value: i64) -> Length {
+        Length::from_micrometres(value * 1000)
+    }
+    fn pose() -> Pose {
+        Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap()
+    }
+    fn fixture() -> Project {
+        let mut project = Project::new("Cabinet", Currency::Brl);
+        let material = Material {
+            id: Uuid::new_v4(),
+            name: "Plywood".into(),
+            default_thickness: mm(18),
+            default_grain: BoardGrain::Length,
+        };
+        let board = Board {
+            id: Uuid::new_v4(),
+            name: "Side".into(),
+            material_id: material.id,
+            length: mm(100),
+            width: mm(50),
+            thickness: mm(18),
+            grain_override: None,
+            parent_id: None,
+            pose: pose(),
+        };
+        let stock = Stock {
+            id: Uuid::new_v4(),
+            name: "Sheet".into(),
+            material_id: material.id,
+            length: mm(200),
+            width: mm(100),
+            thickness: mm(18),
+            grain: StockGrain::AlongX,
+            source: StockSource::Owned,
+            price: None,
+            priority: 0,
+            trim: [Length::ZERO; 4],
+        };
+        project.allocations.push(Allocation {
+            id: Uuid::new_v4(),
+            board_id: board.id,
+            stock_id: stock.id,
+            origin: [Length::ZERO; 2],
+            quarter_turn: false,
+            locked: false,
+        });
+        project.materials.push(material);
+        project.boards.push(board);
+        project.stock.push(stock);
+        project
+    }
+
+    #[test]
+    fn same_labels_keep_independent_ids_and_allocations() {
+        let mut p = fixture();
+        let copy = p.boards[0].duplicate();
+        assert_eq!(copy.name, p.boards[0].name);
+        assert_ne!(copy.id, p.boards[0].id);
+        p.boards.push(copy.clone());
+        let other = p.stock[0].duplicate();
+        assert_ne!(other.id, p.stock[0].id);
+        p.stock.push(other.clone());
+        p.allocations.push(Allocation {
+            id: Uuid::new_v4(),
+            board_id: copy.id,
+            stock_id: other.id,
+            origin: [Length::ZERO; 2],
+            quarter_turn: false,
+            locked: false,
+        });
+        assert_eq!(p.validate(), Ok(()));
+        assert_eq!(p.allocations[0].board_id, p.boards[0].id);
+    }
+
+    #[test]
+    fn detects_dangling_references_and_cross_type_id_collisions() {
+        let mut p = fixture();
+        let unknown = Uuid::new_v4();
+        p.boards[0].material_id = unknown;
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::DanglingReference {
+                owner: p.boards[0].id,
+                target: unknown
+            })
+        );
+        p.boards[0].material_id = p.materials[0].id;
+        p.allocations[0].stock_id = unknown;
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::DanglingReference {
+                owner: p.allocations[0].id,
+                target: unknown
+            })
+        );
+        p.allocations[0].stock_id = p.stock[0].id;
+        p.hardware.push(Hardware {
+            id: Uuid::new_v4(),
+            name: "Hinge".into(),
+            parent_id: None,
+            pose: pose(),
+            kind: HardwareKind::Catalog {
+                catalog_id: unknown,
+            },
+        });
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::DanglingReference {
+                owner: p.hardware[0].id,
+                target: unknown
+            })
+        );
+        p.hardware.clear();
+        p.stock[0].id = p.materials[0].id;
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::DuplicateId(p.materials[0].id))
+        );
+    }
+
+    #[test]
+    fn detects_cycles_and_invalid_parents() {
+        let mut p = fixture();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        p.assemblies = vec![
+            Assembly {
+                id: a,
+                name: "A".into(),
+                parent_id: Some(b),
+                pose: pose(),
+            },
+            Assembly {
+                id: b,
+                name: "B".into(),
+                parent_id: Some(a),
+                pose: pose(),
+            },
+        ];
+        assert!(matches!(p.validate(), Err(DomainError::HierarchyCycle(_))));
+        p.assemblies[1].parent_id = None;
+        p.boards[0].parent_id = Some(Uuid::new_v4());
+        assert!(matches!(
+            p.validate(),
+            Err(DomainError::DanglingReference { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_nonfinite_unnormalized_pose_dimensions_and_duplicate_assignments() {
+        let mut p = fixture();
+        p.boards[0].pose.translation_mm[0] = f64::NAN;
+        assert!(matches!(
+            p.validate(),
+            Err(DomainError::InvalidPose {
+                reason: UnitError::NonFinite,
+                ..
+            })
+        ));
+        p.boards[0].pose = pose();
+        p.boards[0].pose.rotation.w = 2.0;
+        assert!(matches!(
+            p.validate(),
+            Err(DomainError::InvalidPose {
+                reason: UnitError::InvalidRotation,
+                ..
+            })
+        ));
+        p.boards[0].pose = pose();
+        p.boards[0].width = Length::ZERO;
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::InvalidDimension(p.boards[0].id))
+        );
+        p.boards[0].width = mm(50);
+        let mut allocation = p.allocations[0].clone();
+        allocation.id = Uuid::new_v4();
+        p.allocations.push(allocation);
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::DuplicateAllocation(p.boards[0].id))
+        );
+    }
+
+    #[test]
+    fn refuses_unsupported_versions() {
+        let mut p = fixture();
+        p.schema_version = SCHEMA_VERSION + 1;
+        assert_eq!(
+            p.validate(),
+            Err(DomainError::UnsupportedVersion(SCHEMA_VERSION + 1))
+        );
+    }
+}
