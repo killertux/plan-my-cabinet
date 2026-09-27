@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::{
     DesktopApp,
     actions::{self, ActionId as A, Request},
+    icons, modal_chrome,
     modal_chrome::{ModalAction, ModalActions, ModalChrome, ModalThreeAction, ModalThreeActions},
     theme_widgets, viewport,
     welcome_host::WelcomeHost,
@@ -685,47 +686,105 @@ impl DesktopApp {
             Prompt::Upgrade(..) => ("project-upgrade-title", "cancel", "project-upgrade-save"),
             Prompt::Recovery(_) => ("project-recovery-title", "project-defer", "project-recover"),
         };
+        let dirty = matches!(prompt, Prompt::Dirty(_));
+        chrome.set_alert(dirty);
+        chrome.set_icon(match &prompt {
+            Prompt::Dirty(_) => icons::Icon::Save,
+            Prompt::Overwrite(..) | Prompt::Upgrade(..) => icons::Icon::Warning,
+            Prompt::Recovery(_) => icons::Icon::Undo,
+        });
+        chrome.set_primary_hint(dirty.then(|| {
+            if cfg!(target_os = "macos") {
+                "⌘S".to_owned()
+            } else {
+                "Ctrl+S".to_owned()
+            }
+        }));
+        chrome.set_context(match &prompt {
+            Prompt::Overwrite(path, _) | Prompt::Upgrade(path, _, _) => path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+            Prompt::Recovery(candidate) => Some(candidate.project_name.clone()),
+            Prompt::Dirty(_) => None,
+        });
+        let title = if dirty {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("name", self.editor.project().name.as_str());
+            self.localizer.format("project-unsaved-question", Some(&args))
+        } else {
+            self.localizer.text(title)
+        };
         let body = |ui: &mut egui::Ui| {
+            let paragraph = |ui: &mut egui::Ui, text: &str| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(text)
+                            .size(13.0)
+                            .color(theme_widgets::SECONDARY),
+                    )
+                    .wrap()
+                    .selectable(false),
+                );
+            };
+            let path_line = |ui: &mut egui::Ui, path: &std::path::Path| {
+                ui.add(
+                    egui::Label::new(
+                        theme_widgets::mono(path.display().to_string(), 11.5)
+                            .color(theme_widgets::MUTED),
+                    )
+                    .wrap(),
+                );
+            };
             let extra = match &prompt {
                 Prompt::Dirty(action) => {
-                    ui.label(format!(
-                        "{}: {}",
-                        self.localizer.text("project-unsaved-detail"),
-                        self.editor.project().name
-                    ));
-                    ui.label(self.localizer.text(match action {
-                        NextAction::New => "project-new",
-                        NextAction::Open => "project-open",
-                        NextAction::Close => "project-close",
-                        NextAction::Welcome => "shell-projects",
-                        NextAction::Template => "template-setup-title",
-                        NextAction::RecoverFromWelcome => "welcome-recovery-heading",
-                    }));
+                    paragraph(ui, &self.localizer.text("project-unsaved-body"));
+                    let mut args = fluent_bundle::FluentArgs::new();
+                    args.set(
+                        "action",
+                        self.localizer.text(match action {
+                            NextAction::New => "project-new",
+                            NextAction::Open => "project-open",
+                            NextAction::Close => "project-close",
+                            NextAction::Welcome => "shell-projects",
+                            NextAction::Template => "template-setup-title",
+                            NextAction::RecoverFromWelcome => "welcome-recovery-heading",
+                        }),
+                    );
+                    modal_chrome::form::hint(
+                        ui,
+                        &self.localizer.format("project-unsaved-next", Some(&args)),
+                    );
                     None
                 }
                 Prompt::Overwrite(path, _) => {
-                    ui.label(path.display().to_string());
+                    path_line(ui, path);
                     None
                 }
                 Prompt::Upgrade(path, _, _) => {
-                    ui.label(self.localizer.text("project-upgrade-detail"));
-                    ui.label(path.display().to_string());
+                    paragraph(ui, &self.localizer.text("project-upgrade-detail"));
+                    path_line(ui, path);
                     None
                 }
                 Prompt::Recovery(candidate) => {
-                    ui.label(format!(
-                        "{} — {}",
-                        candidate.project_name,
-                        candidate.saved_path.display()
-                    ));
-                    ui.label(format!(
-                        "{}: {} · {}: {}",
-                        self.localizer.text("project-saved-revision"),
-                        candidate.saved_revision,
-                        self.localizer.text("project-recovery-revision"),
-                        candidate.recovery_revision
-                    ));
-                    theme_widgets::secondary_button(
+                    path_line(ui, &candidate.saved_path);
+                    ui.add(
+                        egui::Label::new(
+                            theme_widgets::mono(
+                                format!(
+                                    "{}: {} · {}: {}",
+                                    self.localizer.text("project-saved-revision"),
+                                    candidate.saved_revision,
+                                    self.localizer.text("project-recovery-revision"),
+                                    candidate.recovery_revision
+                                ),
+                                12.0,
+                            )
+                            .color(theme_widgets::SECONDARY),
+                        )
+                        .wrap(),
+                    );
+                    ui.add_space(4.0);
+                    modal_chrome::footer_danger(
                         ui,
                         &self.localizer.text("project-recovery-discard"),
                     )
@@ -738,7 +797,7 @@ impl DesktopApp {
         let mut choice = if matches!(prompt, Prompt::Dirty(_)) {
             let result = chrome.show_three(
                 ctx,
-                &self.localizer.text(title),
+                &title,
                 ModalThreeActions {
                     primary: &self.localizer.text("project-save"),
                     secondary: &self.localizer.text("project-discard"),
@@ -755,7 +814,7 @@ impl DesktopApp {
         } else {
             let result = chrome.show(
                 ctx,
-                &self.localizer.text(title),
+                &title,
                 ModalActions {
                     cancel: &self.localizer.text(cancel),
                     confirm: &self.localizer.text(confirm),
