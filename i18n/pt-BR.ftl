@@ -1273,3 +1273,60 @@ hardware-dialog-k = Recuo K
 hardware-dialog-r = Recobrimento R
 hardware-motion-preview = Prévia de movimento
 hardware-motion-note = Só visualização — a posição salva continua fechada.
+
+# Cut plan rework
+sheet-title = Chapa { $alias }
+sheet-owned-chip = disponível
+sheet-card-parts = { $count ->
+    [one] 1 peça
+   *[other] { $count } peças
+}
+sheet-card-unused = sem uso
+sheet-card-conflict = conflito de corte
+sheet-card-unknown = não verificada
+sheet-issue-no-stock = Nenhuma chapa de { $material } { $thickness } comporta esta peça. Adicione uma chapa ou posicione manualmente.
+sheet-issue-unplaced = Ainda fora das chapas. Use o reparo para colocá-la no estoque existente.
+sheet-add-named = Adicionar chapa { $material }
+sheet-reveal = Revelar
+sheet-more-actions = Mais ações
+sheet-edit-stock = Editar chapa ou retalho…
+sheet-footer-add = Chapa ou retalho
+sheet-grain-x = fibras ao longo de X
+sheet-grain-y = fibras ao longo de Y
+sheet-grain-none = sem fibras
+sheet-grain-unknown = fibras desconhecidas
+sheet-no-trims = sem refiles
+sheet-trims-short = refiles { $values }
+sheet-reusable-offcuts = Retalhos reutilizáveis
+sheet-kerf-loss-short = Perda pela serra
+sheet-trim-loss-short = Perda de refile
+sheet-waste-short = Outros descartes
+sheet-sequence-heading = Sequência de cortes
+sheet-verified-full-span = Cortes verificados
+sheet-op-full-sheet = chapa inteira
+sheet-op-rip = Corte longitudinal de { $piece } em Y { $at }
+sheet-op-crosscut = Corte transversal de { $piece } em X { $at }
+sheet-op-trim = Refilar { $piece } em { $axis } { $at }
+sheet-op-far-edge = pela borda oposta
+sheet-offcut-short = retalho
+sheet-mode-view = Ver
+sheet-mode-view-hint = Aceite ou cancele o reparo para voltar à visualização.
+sheet-mode-repair = Reparar
+sheet-fit-short = Ajustar
+sheet-overlay-cuts-hint = Mostrar as faixas de corte e os marcadores numerados
+sheet-overlay-offcuts-hint = Mostrar os retalhos reutilizáveis verificados
+sheet-overlay-grain-hint = Mostrar a direção das fibras em todas as peças
+sheet-overlay-ids-hint = Mostrar o ID em todas as peças
+sheet-legend-part = Peça
+sheet-legend-offcut = Retalho reutilizável
+sheet-legend-kerf = Serra { $kerf }
+sheet-legend-conflict = Conflito
+sheet-repair-pick = Selecione uma peça na chapa para mover, girar ou transferir.
+optimize-all-sheets = Otimizar todas as chapas
+optimize-search = Buscar
+optimize-searching = buscando… { $count } testadas
+optimize-status-best = atual = melhor encontrado
+optimize-status-better = plano melhor encontrado
+optimize-status-stale = desatualizado — busque de novo
+optimize-status-none = nenhum plano completo
+optimize-disclaimer = Respeita fibras, serra, refiles e posições travadas. Melhor encontrado dentro do limite, sem garantia de ótimo.

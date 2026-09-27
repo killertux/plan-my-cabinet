@@ -1,6 +1,6 @@
 //! Cut plan workspace. Sheet coordinates are manufacturing micrometres;
 //! selection is shared with the 3D viewport, never stored in the project.
-use eframe::egui;
+use eframe::egui::{self, Color32, Margin, RichText, Stroke};
 use plan_my_cabinet::allocation_diagnostics::{self, BoardDiagnostic, Reason, Status};
 use plan_my_cabinet::commands::ProjectEditor;
 use plan_my_cabinet::cut_tree::{
@@ -8,7 +8,9 @@ use plan_my_cabinet::cut_tree::{
     WitnessError, reconstruct_witness,
 };
 use plan_my_cabinet::dimension_input::{Locale, format_length, parse_length};
-use plan_my_cabinet::domain::{Allocation, Board, BoardGrain, Project, Stock, StockGrain};
+use plan_my_cabinet::domain::{
+    Allocation, Board, BoardGrain, Project, Stock, StockGrain, StockSource,
+};
 use plan_my_cabinet::i18n::{Language, Localizer};
 use plan_my_cabinet::material_changes::{ConflictReason, allocation_conflicts};
 use plan_my_cabinet::money::MoneyLocale;
@@ -19,9 +21,38 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::actions::{self, ActionId as A, Argument, Request, Target, Unavailable};
+use crate::icons::{self, Icon};
+use crate::theme::Typeface;
+use crate::theme_widgets as tw;
 use crate::viewport::Selection;
 
 const WITNESS_BUDGET: usize = 20_000;
+
+// Sheet canvas palette from the handoff (Cut plan screen).
+const SHEET_FILL: Color32 = Color32::from_rgb(247, 245, 240);
+const SHEET_EDGE: Color32 = Color32::from_rgb(191, 181, 165);
+const PART_FILL: Color32 = Color32::from_rgb(233, 227, 215);
+const PART_EDGE: Color32 = Color32::from_rgb(156, 144, 126);
+const SELECTED_FILL: Color32 = Color32::from_rgb(244, 194, 122);
+const SELECTED_INK: Color32 = Color32::from_rgb(62, 35, 5);
+const MULTI_FILL: Color32 = Color32::from_rgb(248, 222, 184);
+const CONFLICT_FILL: Color32 = Color32::from_rgb(251, 227, 224);
+const OFFCUT_FILL: Color32 = Color32::from_rgb(239, 235, 227);
+const OFFCUT_HATCH: Color32 = Color32::from_rgb(226, 220, 208);
+const CUT_INK: Color32 = Color32::from_rgb(165, 54, 44);
+const CUT_BADGE: Color32 = Color32::from_rgb(251, 233, 230);
+/// A hovered sequence row paints its band and marker in this solid ink.
+const CUT_HIGHLIGHT: Color32 = CUT_INK;
+const PURCHASE_INK: Color32 = Color32::from_rgb(122, 68, 16);
+const THUMB_ACTIVE_EDGE: Color32 = Color32::from_rgb(176, 106, 28);
+const THUMB_ACTIVE_PART: Color32 = Color32::from_rgb(233, 196, 142);
+const THUMB_EDGE: Color32 = Color32::from_rgb(207, 199, 185);
+const THUMB_PART: Color32 = Color32::from_rgb(216, 195, 166);
+const CARD_ACTIVE_INK: Color32 = Color32::from_rgb(138, 84, 24);
+
+fn kerf_band() -> Color32 {
+    tw::KERF.gamma_multiply(0.85)
+}
 
 // Previews can change without advancing the document revision. Comparing their
 // manufacturing inputs is cheap relative to reconstructing ten cut witnesses.
@@ -76,11 +107,13 @@ struct SheetOverlays {
 
 impl Default for SheetOverlays {
     fn default() -> Self {
+        // The selected part always shows its ID and grain; the toggles add
+        // them to every part.
         Self {
             cuts: true,
             offcuts: true,
-            grain: true,
-            ids: true,
+            grain: false,
+            ids: false,
         }
     }
 }
@@ -110,11 +143,11 @@ impl DragStatus {
         }
     }
 
-    fn color(self) -> egui::Color32 {
+    fn color(self) -> Color32 {
         match self {
-            Self::Verified => egui::Color32::GREEN,
-            Self::Violation(_) => egui::Color32::RED,
-            Self::Exhausted => egui::Color32::from_rgb(220, 155, 36),
+            Self::Verified => tw::OK,
+            Self::Violation(_) => tw::KERF,
+            Self::Exhausted => tw::WARN,
         }
     }
 }
@@ -152,13 +185,7 @@ impl RepairUi {
         let mut session = SheetEditSession::resume(editor, affected).ok_or(())?;
         match session.accept() {
             Ok(_) => {
-                let focused_sheet = self.focused_sheet;
-                let overlays = self.overlays;
-                let zoom = self.zoom;
-                *self = Self::default();
-                self.focused_sheet = focused_sheet;
-                self.overlays = overlays;
-                self.zoom = zoom;
+                self.reset_keeping_view();
                 Ok(())
             }
             Err(_) => {
@@ -171,6 +198,11 @@ impl RepairUi {
 
     pub fn cancel_navigation(&mut self, editor: &mut ProjectEditor) {
         editor.cancel_preview();
+        self.reset_keeping_view();
+    }
+
+    /// Ends a repair session but keeps the sheet the user is looking at.
+    fn reset_keeping_view(&mut self) {
         let focused_sheet = self.focused_sheet;
         let overlays = self.overlays;
         let zoom = self.zoom;
@@ -235,13 +267,57 @@ impl RepairUi {
             self.quarter_turn = allocation.quarter_turn;
             self.origin = allocation
                 .origin
-                .map(|v| format_length(v, Unit::Mm, locale, 3));
+                .map(|v| trimmed_length(format_length(v, Unit::Mm, locale, 3)));
         } else {
             self.stock = project.ordered_stock().first().map(|s| s.id);
             self.quarter_turn = false;
             self.origin = ["0 mm".into(), "0 mm".into()];
         }
     }
+
+    /// Rebuilds the read model and diagnostics only when manufacturing inputs change.
+    fn refresh(&mut self, project: &Project, preview: bool) {
+        let key = diagnostics_key(project, preview);
+        if self
+            .stock_model_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != key)
+        {
+            self.hovered_cut = None;
+            self.stock_model_cache = Some((key.clone(), StockReadModel::build(project).ok()));
+        }
+        if self
+            .board_diagnostics_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != key)
+        {
+            let diagnostics = self
+                .stock_model_cache
+                .as_ref()
+                .and_then(|(_, model)| model.as_ref())
+                .map(|model| model.boards.clone())
+                .unwrap_or_else(|| allocation_diagnostics::diagnose(project));
+            self.board_diagnostics_cache = Some((key, diagnostics));
+        }
+    }
+
+    fn model(&self) -> Option<&StockReadModel> {
+        self.stock_model_cache
+            .as_ref()
+            .and_then(|(_, model)| model.as_ref())
+    }
+}
+
+/// "565.000 mm" -> "565 mm", "12.500 mm" -> "12.5 mm" (same value, fewer zeros).
+fn trimmed_length(text: String) -> String {
+    let Some((number, unit)) = text.split_once(' ') else {
+        return text;
+    };
+    if !number.contains(['.', ',']) {
+        return text;
+    }
+    let number = number.trim_end_matches('0').trim_end_matches(['.', ',']);
+    format!("{number} {unit}")
 }
 
 fn locale(localizer: &Localizer) -> Locale {
@@ -438,6 +514,78 @@ fn kerf_geometry(
     }
 }
 
+/// Where a cut's numbered marker sits: near the start of its band, or just
+/// past its end when the band is too short to carry a 22px circle.
+fn marker_position(
+    band: egui::Rect,
+    axis: Axis,
+    sheet: egui::Rect,
+    placed: &[egui::Pos2],
+) -> egui::Pos2 {
+    let center = band.center();
+    let inner = sheet.shrink(11.0);
+    let clamp = |p: egui::Pos2| {
+        if inner.is_positive() {
+            p.clamp(inner.min, inner.max)
+        } else {
+            sheet.center()
+        }
+    };
+    let length = match axis {
+        Axis::X => band.height(),
+        Axis::Y => band.width(),
+    };
+    let at = |offset: f32| match axis {
+        Axis::X => egui::pos2(center.x, band.top() + offset),
+        Axis::Y => egui::pos2(band.left() + offset, center.y),
+    };
+    let first = if length >= 30.0 {
+        at(14.0)
+    } else {
+        at(length + 13.0)
+    };
+    let free = |p: egui::Pos2| placed.iter().all(|q| q.distance(p) >= 23.0);
+    // Slide along the band, then past its end, until the circle is clear.
+    let mut offset = 14.0;
+    while offset + 11.0 <= length {
+        let candidate = clamp(at(offset));
+        if free(candidate) {
+            return candidate;
+        }
+        offset += 24.0;
+    }
+    let candidate = clamp(at(length + 13.0));
+    if free(candidate) {
+        candidate
+    } else {
+        clamp(first)
+    }
+}
+
+fn paint_offcut(painter: &egui::Painter, rect: egui::Rect, label: &str) {
+    painter.rect_filled(rect, 0.0, OFFCUT_FILL);
+    let hatch = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    let stroke = Stroke::new(1.0, OFFCUT_HATCH);
+    let mut x = rect.left() - rect.height();
+    while x < rect.right() {
+        hatch.line_segment(
+            [
+                egui::pos2(x, rect.bottom()),
+                egui::pos2(x + rect.height(), rect.top()),
+            ],
+            stroke,
+        );
+        x += 7.0;
+    }
+    let font = egui::FontId::monospace(11.0);
+    let galley = painter.layout_no_wrap(label.to_owned(), font, tw::FAINT);
+    let pill = egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(12.0, 2.0));
+    if rect.width() >= pill.width() + 6.0 && rect.height() >= pill.height() + 6.0 {
+        painter.rect_filled(pill, 4.0, SHEET_FILL);
+        painter.galley(pill.min + egui::vec2(6.0, 1.0), galley, tw::FAINT);
+    }
+}
+
 fn paint_witness(
     painter: &egui::Painter,
     sheet: egui::Rect,
@@ -446,69 +594,36 @@ fn paint_witness(
     overlays: SheetOverlays,
     hovered_cut: Option<usize>,
 ) {
-    let painter = painter.with_clip_rect(sheet);
+    let painter = painter.with_clip_rect(sheet.intersect(painter.clip_rect()));
     if overlays.offcuts {
         for node in tree.nodes() {
             if node.kind != CutKind::Offcut {
                 continue;
             }
             let rect = tree_rect(sheet.min, scale, node.rectangle).intersect(sheet);
-            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(232, 239, 226));
-            let hatch = painter.with_clip_rect(rect);
-            let mut x = rect.left() - rect.height();
-            while x < rect.right() {
-                hatch.line_segment(
-                    [
-                        egui::pos2(x, rect.bottom()),
-                        egui::pos2(x + rect.height(), rect.top()),
-                    ],
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(145, 167, 134)),
-                );
-                x += 12.0;
-            }
-            painter.rect_stroke(
-                rect,
-                0.0,
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(115, 140, 108)),
-                egui::StrokeKind::Inside,
+            let label = dims_text(
+                node.rectangle.extent[0],
+                node.rectangle.extent[1],
+                Locale::En,
             );
-            let label = format!(
-                "{} × {} mm",
-                node.rectangle.extent[0].micrometres() as f64 / 1000.0,
-                node.rectangle.extent[1].micrometres() as f64 / 1000.0
-            );
-            if rect.width() > label.len() as f32 * 7.0 + 8.0 && rect.height() > 18.0 {
-                painter.text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    label,
-                    egui::FontId::proportional(10.0),
-                    egui::Color32::from_rgb(40, 68, 39),
-                );
-            }
+            paint_offcut(&painter, rect, &label);
         }
     }
     if overlays.cuts {
-        for operation in tree.operations() {
-            let band = kerf_geometry(tree, &operation, sheet.min, scale);
+        let operations = tree.operations();
+        for operation in &operations {
+            let band = kerf_geometry(tree, operation, sheet.min, scale);
             let highlighted = hovered_cut == Some(operation.number);
             let color = if highlighted {
-                egui::Color32::from_rgb(25, 85, 190)
+                CUT_HIGHLIGHT
             } else {
-                egui::Color32::from_rgb(174, 95, 55)
+                kerf_band()
             };
-            painter.rect_filled(
-                band,
-                0.0,
-                color.linear_multiply(if highlighted { 0.9 } else { 0.45 }),
-            );
+            if highlighted {
+                painter.rect_filled(band.expand(2.0), 1.0, tw::KERF.gamma_multiply(0.22));
+            }
+            painter.rect_filled(band, 0.0, color);
             let center = band.center();
-            let stroke = egui::Stroke::new(
-                band.width()
-                    .min(band.height())
-                    .max(if highlighted { 3.0 } else { 1.0 }),
-                color,
-            );
             let endpoints = match operation.axis {
                 Axis::X => [
                     egui::pos2(center.x, band.top()),
@@ -519,84 +634,88 @@ fn paint_witness(
                     egui::pos2(band.right(), center.y),
                 ],
             };
-            // A subpixel band gets a visible stroke, never a fabricated wider physical band.
-            if band.width().min(band.height()) < 1.0 {
-                painter.line_segment(endpoints, stroke);
+            // A thin band gets a visible stroke, never a fabricated wider physical band.
+            if band.width().min(band.height()) < 1.6 {
+                painter.line_segment(
+                    endpoints,
+                    Stroke::new(if highlighted { 3.0 } else { 1.6 }, color),
+                );
             }
-            let marker = match operation.axis {
-                Axis::X => egui::pos2(center.x, band.top() + 9.0),
-                Axis::Y => egui::pos2(band.left() + 9.0, center.y),
-            };
-            painter.circle_filled(
+        }
+        // Markers go on top of every band so crossings never hide a number.
+        let mut placed = Vec::with_capacity(operations.len());
+        for operation in &operations {
+            let band = kerf_geometry(tree, operation, sheet.min, scale);
+            let highlighted = hovered_cut == Some(operation.number);
+            let marker = marker_position(band, operation.axis, sheet, &placed);
+            placed.push(marker);
+            painter.circle(
                 marker,
-                9.0,
+                11.0,
                 if highlighted {
-                    color
+                    CUT_HIGHLIGHT
                 } else {
-                    egui::Color32::from_rgb(109, 58, 31)
+                    tw::PANEL
                 },
+                Stroke::new(1.5, if highlighted { CUT_HIGHLIGHT } else { tw::KERF }),
             );
             painter.text(
                 marker,
                 egui::Align2::CENTER_CENTER,
-                operation.number.to_string(),
-                egui::FontId::proportional(10.0),
-                egui::Color32::WHITE,
-            );
-        }
-    }
-}
-
-fn ruler_step(scale: f32) -> i64 {
-    let mut magnitude = 1_i64;
-    loop {
-        for factor in [1, 2, 5] {
-            let step = magnitude * factor;
-            if step as f32 * scale >= 42.0 {
-                return step;
-            }
-        }
-        magnitude = magnitude.saturating_mul(10);
-        if magnitude > 1_000_000_000_000 {
-            return magnitude;
-        }
-    }
-}
-
-fn paint_rulers(painter: &egui::Painter, sheet: egui::Rect, stock: &Stock, scale: f32) {
-    let step = ruler_step(scale);
-    let color = egui::Color32::from_rgb(91, 82, 72);
-    for axis in 0..2 {
-        let length = if axis == 0 { stock.length } else { stock.width };
-        for mm in (0..=length.micrometres() / 1000).step_by(step as usize) {
-            let coordinate = mm as f32 * scale;
-            let (start, end, text) = if axis == 0 {
-                (
-                    sheet.left_top() + egui::vec2(coordinate, -4.0),
-                    sheet.left_top() + egui::vec2(coordinate, -11.0),
-                    sheet.left_top() + egui::vec2(coordinate + 2.0, -13.0),
-                )
-            } else {
-                (
-                    sheet.left_top() + egui::vec2(-4.0, coordinate),
-                    sheet.left_top() + egui::vec2(-11.0, coordinate),
-                    sheet.left_top() + egui::vec2(-13.0, coordinate + 2.0),
-                )
-            };
-            painter.line_segment([start, end], egui::Stroke::new(1.0, color));
-            painter.text(
-                text,
-                if axis == 0 {
-                    egui::Align2::LEFT_BOTTOM
-                } else {
-                    egui::Align2::RIGHT_TOP
-                },
-                mm.to_string(),
+                format!("C{}", operation.number),
                 egui::FontId::monospace(10.0),
-                color,
+                if highlighted { tw::PANEL } else { CUT_INK },
             );
         }
     }
+}
+
+/// Mono dimension rulers above (length) and left of (width) the sheet.
+fn paint_rulers(painter: &egui::Painter, sheet: egui::Rect, stock: &Stock, locale: Locale) {
+    let stroke = Stroke::new(1.0, SHEET_EDGE);
+    let font = egui::FontId::monospace(11.0);
+    let length = painter.layout_no_wrap(mm_text(stock.length, locale), font.clone(), tw::MUTED);
+    let y = sheet.top() - 14.0;
+    let half = length.size().x / 2.0 + 6.0;
+    let mid = sheet.center().x;
+    if sheet.width() > half * 2.0 + 8.0 {
+        painter.line_segment(
+            [egui::pos2(sheet.left(), y), egui::pos2(mid - half, y)],
+            stroke,
+        );
+        painter.line_segment(
+            [egui::pos2(mid + half, y), egui::pos2(sheet.right(), y)],
+            stroke,
+        );
+    }
+    painter.galley(
+        egui::pos2(mid - length.size().x / 2.0, y - length.size().y / 2.0),
+        length,
+        tw::MUTED,
+    );
+    let width = painter.layout_no_wrap(mm_text(stock.width, locale), font, tw::MUTED);
+    let x = sheet.left() - 16.0;
+    let half = width.size().x / 2.0 + 6.0;
+    let mid = sheet.center().y;
+    if sheet.height() > half * 2.0 + 8.0 {
+        painter.line_segment(
+            [egui::pos2(x, sheet.top()), egui::pos2(x, mid - half)],
+            stroke,
+        );
+        painter.line_segment(
+            [egui::pos2(x, mid + half), egui::pos2(x, sheet.bottom())],
+            stroke,
+        );
+    }
+    let size = width.size();
+    painter.add(
+        egui::epaint::TextShape::new(
+            egui::pos2(x - size.y / 2.0, mid + size.x / 2.0),
+            width,
+            tw::MUTED,
+        )
+        .with_angle(-std::f32::consts::FRAC_PI_2),
+    );
 }
 
 fn drag_origin(origin: [Length; 2], delta: egui::Vec2, scale: f32) -> [Length; 2] {
@@ -668,21 +787,56 @@ impl SheetDrag {
     }
 }
 
-fn short_id(id: Uuid) -> String {
-    id.to_string()[..8].to_owned()
+/// Millimetres without a unit and without needless zeros (`764`, `18.5`).
+fn mm_text(length: Length, locale: Locale) -> String {
+    let um = length.micrometres();
+    let sign = if um < 0 { "-" } else { "" };
+    let um = um.unsigned_abs();
+    let (whole, fraction) = (um / 1000, um % 1000);
+    if fraction == 0 {
+        return format!("{sign}{whole}");
+    }
+    let mut digits = format!("{fraction:03}");
+    while digits.ends_with('0') {
+        digits.pop();
+    }
+    let separator = if locale == Locale::En { '.' } else { ',' };
+    format!("{sign}{whole}{separator}{digits}")
 }
 
-fn board_label(board: &Board) -> String {
-    format!("{} ({})", board.name, short_id(board.id))
+fn dims_text(a: Length, b: Length, locale: Locale) -> String {
+    format!("{} × {}", mm_text(a, locale), mm_text(b, locale))
 }
 
+fn compact_dims(values: &[Length], locale: Locale) -> String {
+    values
+        .iter()
+        .map(|v| mm_text(*v, locale))
+        .collect::<Vec<_>>()
+        .join("×")
+}
+
+fn stock_material(project: &Project, stock: &Stock, locale: Locale) -> String {
+    let material = project
+        .materials
+        .iter()
+        .find(|m| m.id == stock.material_id)
+        .map(|m| m.name.as_str())
+        .unwrap_or("?");
+    format!("{material} {}", mm_text(stock.thickness, locale))
+}
+
+/// Alias and name, as used in the repair target picker. Never a raw UUID.
 fn stock_label(project: &Project, stock: &Stock) -> String {
     format!(
-        "{} · {} ({})",
+        "{} · {}",
         project.stock_alias(stock.id).unwrap_or("?"),
-        stock.name,
-        short_id(stock.id)
+        stock.name
     )
+}
+
+fn board_short_id(board: &Board) -> String {
+    crate::assembly_ui::short_id('b', board.id)
 }
 
 fn issue_text(localizer: &Localizer, issues: &[Issue]) -> String {
@@ -691,6 +845,13 @@ fn issue_text(localizer: &Localizer, issues: &[Issue]) -> String {
         .map(|issue| localizer.text(issue.key()))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn capitalized(text: String) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().collect::<String>() + chars.as_str()
+    })
 }
 
 fn needs_stock(diagnostics: &[BoardDiagnostic]) -> impl Iterator<Item = &BoardDiagnostic> {
@@ -783,38 +944,129 @@ fn area_label(square_micrometres: i128) -> String {
     format!("{:.6} m²", square_micrometres as f64 / 1_000_000_000_000.0)
 }
 
-// Witness node numbers are local to this reconstruction. The root keeps the
-// actual stock UUID; child UUIDs are deterministic sheet-scoped view identities.
-fn witness_piece_uuid(stock_id: Uuid, id: usize) -> Uuid {
-    let n = id as u128;
-    Uuid::from_u128(stock_id.as_u128() ^ (n << 64) ^ n)
+/// Short area for stat cards: `3.1 m²`, `0.05 m²` (exact value in the tooltip).
+fn area_short(square_micrometres: i128, locale: Locale) -> String {
+    let value = square_micrometres as f64 / 1_000_000_000_000.0;
+    let mut text = if value >= 1.0 {
+        format!("{value:.1}")
+    } else if value >= 0.01 || value == 0.0 {
+        format!("{value:.2}")
+    } else {
+        format!("{value:.4}")
+    };
+    if text.contains('.') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    if locale == Locale::PtBr {
+        text = text.replace('.', ",");
+    }
+    format!("{text} m²")
 }
 
-fn piece_identity(stock_id: Uuid, tree: &CutTree, id: usize, localizer: &Localizer) -> String {
+/// Short, shop-facing name of a witness node: part name, `offcut 531×560`,
+/// or an intermediate piece `P4 2025×560`.
+fn node_label(tree: &CutTree, id: usize, project: &Project, localizer: &Localizer) -> String {
+    let Some(node) = tree.node(id) else {
+        return format!("P{id}");
+    };
+    let dims = compact_dims(&node.rectangle.extent, locale(localizer));
+    match node.kind {
+        CutKind::Part(board) => project
+            .boards
+            .iter()
+            .find(|b| b.id == board)
+            .map_or_else(|| localizer.text("sheet-part"), |b| b.name.clone()),
+        CutKind::Offcut => format!("{} {dims}", localizer.text("sheet-offcut-short")),
+        CutKind::Waste => format!("{} {dims}", localizer.text("sheet-waste")),
+        CutKind::Split { .. } => format!("P{id} {dims}"),
+    }
+}
+
+/// "Rip full sheet at Y 560" / "Cross-cut P1 at X 720".
+fn cut_operation_text(
+    tree: &CutTree,
+    cut: &CutOperation,
+    trim: bool,
+    localizer: &Localizer,
+) -> String {
+    let mut args = fluent_bundle::FluentArgs::new();
+    args.set(
+        "piece",
+        if cut.input == tree.root() {
+            localizer.text("sheet-op-full-sheet")
+        } else {
+            format!("P{}", cut.input)
+        },
+    );
+    args.set("at", mm_text(cut.retained_extent, locale(localizer)));
+    args.set(
+        "axis",
+        match cut.axis {
+            Axis::X => "X",
+            Axis::Y => "Y",
+        },
+    );
+    let key = if trim {
+        "sheet-op-trim"
+    } else if cut.axis == Axis::Y {
+        "sheet-op-rip"
+    } else {
+        "sheet-op-crosscut"
+    };
+    let mut text = localizer.format(key, Some(&args));
+    if cut.reference_edge == Edge::High {
+        text.push_str(" · ");
+        text.push_str(&localizer.text("sheet-op-far-edge"));
+    }
+    text
+}
+
+/// "P0 → P1 2750×560 · P2 2750×1265" with part names in place of piece IDs.
+fn cut_detail_text(
+    tree: &CutTree,
+    cut: &CutOperation,
+    project: &Project,
+    localizer: &Localizer,
+) -> String {
+    format!(
+        "P{} → {} · {}",
+        cut.input,
+        node_label(tree, cut.outputs.first, project, localizer),
+        node_label(tree, cut.outputs.second, project, localizer),
+    )
+}
+
+fn piece_identity(tree: &CutTree, id: usize, localizer: &Localizer) -> String {
     let node = tree.node(id).expect("witness operation references a node");
     let kind = match node.kind {
-        CutKind::Part(board) => format!(" · {} {board}", localizer.text("sheet-part")),
+        CutKind::Part(board) => format!(
+            " · {} {}",
+            localizer.text("sheet-part"),
+            crate::assembly_ui::short_id('b', board)
+        ),
         CutKind::Offcut => format!(" · {}", localizer.text("sheet-overlay-offcuts")),
         CutKind::Waste => format!(" · {}", localizer.text("sheet-waste")),
         CutKind::Split { .. } => String::new(),
     };
     format!(
-        "#{id} ({}){kind} · {} × {} · X {} / Y {}",
-        witness_piece_uuid(stock_id, id),
-        format_length(node.rectangle.extent[0], Unit::Mm, locale(localizer), 3),
-        format_length(node.rectangle.extent[1], Unit::Mm, locale(localizer), 3),
-        format_length(node.rectangle.origin[0], Unit::Mm, locale(localizer), 3),
-        format_length(node.rectangle.origin[1], Unit::Mm, locale(localizer), 3),
+        "P{id}{kind} · {} · X {} / Y {}",
+        dims_text(
+            node.rectangle.extent[0],
+            node.rectangle.extent[1],
+            locale(localizer)
+        ),
+        mm_text(node.rectangle.origin[0], locale(localizer)),
+        mm_text(node.rectangle.origin[1], locale(localizer)),
     )
 }
 
-fn cut_row(
-    stock_id: Uuid,
-    tree: &CutTree,
-    cut: &CutOperation,
-    localizer: &Localizer,
-    trim: bool,
-) -> String {
+/// Full shop detail for one cut; shown as the sequence row's tooltip.
+fn cut_row(tree: &CutTree, cut: &CutOperation, localizer: &Localizer, trim: bool) -> String {
     let axis = match cut.axis {
         Axis::X => "X",
         Axis::Y => "Y",
@@ -825,120 +1077,473 @@ fn cut_row(
             Edge::High => "sheet-edge-high",
         })
     };
-    format!(
-        "#{}{} · {}: {} · {}: {} {axis} · {}: {} · {}: {} · {}: {} · {}: {} · {}: {}",
-        cut.number,
-        if trim {
-            format!(" ({})", localizer.text("sheet-trim-pass"))
-        } else {
-            String::new()
+    [
+        format!(
+            "C{}{}",
+            cut.number,
+            if trim {
+                format!(" ({})", localizer.text("sheet-trim-pass"))
+            } else {
+                String::new()
+            }
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-input"),
+            piece_identity(tree, cut.input, localizer)
+        ),
+        format!(
+            "{}: {} {axis}",
+            localizer.text("sheet-reference-edge"),
+            edge(cut.reference_edge)
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-retained-distance"),
+            format_length(cut.retained_extent, Unit::Mm, locale(localizer), 3)
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-kerf-side"),
+            edge(cut.kerf_side)
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-retained-output"),
+            piece_identity(tree, cut.retained_output, localizer)
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-first-output"),
+            piece_identity(tree, cut.outputs.first, localizer)
+        ),
+        format!(
+            "{}: {}",
+            localizer.text("sheet-second-output"),
+            piece_identity(tree, cut.outputs.second, localizer)
+        ),
+    ]
+    .join("\n")
+}
+
+fn source_chip(ui: &mut egui::Ui, source: StockSource, localizer: &Localizer) {
+    match source {
+        StockSource::Owned => tw::chip(ui, &localizer.text("stock-owned"), tw::OK_BG, tw::OK_INK),
+        StockSource::ToPurchase => tw::chip(
+            ui,
+            &localizer.text("stock-purchase"),
+            tw::ACCENT_BG,
+            PURCHASE_INK,
+        ),
+    };
+}
+
+/// "MDF White 18 · grain along X · no trims · BRL 289.90"
+fn sheet_subline(piece: &StockPieceReadModel, localizer: &Localizer) -> String {
+    let locale = locale(localizer);
+    let grain = localizer.text(match piece.grain {
+        StockGrain::AlongX => "sheet-grain-x",
+        StockGrain::AlongY => "sheet-grain-y",
+        StockGrain::Nondirectional => "sheet-grain-none",
+        StockGrain::Unknown => "sheet-grain-unknown",
+    });
+    let trims = if piece.trim.iter().all(|t| *t == Length::ZERO) {
+        localizer.text("sheet-no-trims")
+    } else {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("values", piece.trim.map(|v| mm_text(v, locale)).join(" / "));
+        localizer.format("sheet-trims-short", Some(&args))
+    };
+    let price = piece.price.map_or_else(
+        || localizer.text("stock-price-unknown"),
+        |price| {
+            price.display(if localizer.language() == Language::En {
+                MoneyLocale::English
+            } else {
+                MoneyLocale::PortugueseBrazil
+            })
         },
-        localizer.text("sheet-input"),
-        piece_identity(stock_id, tree, cut.input, localizer),
-        localizer.text("sheet-reference-edge"),
-        edge(cut.reference_edge),
-        localizer.text("sheet-retained-distance"),
-        format_length(cut.retained_extent, Unit::Mm, locale(localizer), 3),
-        localizer.text("sheet-kerf-side"),
-        edge(cut.kerf_side),
-        localizer.text("sheet-retained-output"),
-        piece_identity(stock_id, tree, cut.retained_output, localizer),
-        localizer.text("sheet-first-output"),
-        piece_identity(stock_id, tree, cut.outputs.first, localizer),
-        localizer.text("sheet-second-output"),
-        piece_identity(stock_id, tree, cut.outputs.second, localizer),
+    );
+    format!(
+        "{} {} · {grain} · {trims} · {price}",
+        piece.material_name,
+        mm_text(piece.measured_thickness, locale)
     )
 }
 
-/// Rows and canvas consume the same cached witness; only pointer state is returned.
-fn sheet_inspector(
+fn inspector_header(ui: &mut egui::Ui, piece: &StockPieceReadModel, localizer: &Localizer) {
+    egui::Frame::new()
+        .inner_margin(Margin {
+            left: 14,
+            right: 14,
+            top: 14,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.add(icons::icon(Icon::Sheet, tw::ACCENT, 15.0));
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("alias", piece.alias.as_str());
+                ui.label(
+                    tw::semibold(ui, localizer.format("sheet-title", Some(&args)), 15.0)
+                        .color(tw::TEXT),
+                )
+                .on_hover_text(&piece.name);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    source_chip(ui, piece.source, localizer);
+                });
+            });
+            ui.add(
+                egui::Label::new(
+                    RichText::new(sheet_subline(piece, localizer))
+                        .size(11.0)
+                        .color(tw::MUTED),
+                )
+                .wrap(),
+            )
+            .on_hover_text(localizer.text("sheet-trims"));
+        });
+    tw::divider(ui);
+}
+
+fn stat_card(ui: &mut egui::Ui, width: f32, label: &str, value: &str, tooltip: Option<String>) {
+    let response = egui::Frame::new()
+        .fill(tw::APP)
+        .corner_radius(7)
+        .inner_margin(Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width((width - 20.0).max(10.0));
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add(
+                    egui::Label::new(RichText::new(label).size(11.0).color(tw::MUTED)).truncate(),
+                );
+                ui.add(
+                    egui::Label::new(tw::mono(value, 15.0).color(tw::TEXT))
+                        .wrap_mode(egui::TextWrapMode::Extend),
+                );
+            });
+        })
+        .response;
+    if let Some(tooltip) = tooltip {
+        response.on_hover_text(tooltip);
+    }
+}
+
+fn stat_grid(ui: &mut egui::Ui, cards: [(String, String, Option<String>); 4]) {
+    egui::Frame::new()
+        .inner_margin(Margin::symmetric(14, 12))
+        .show(ui, |ui| {
+            let gap = 6.0;
+            let width = ((ui.available_width() - gap) / 2.0).floor();
+            ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+            let [a, b, c, d] = cards;
+            for row in [[a, b], [c, d]] {
+                ui.horizontal(|ui| {
+                    for (label, value, tooltip) in row {
+                        stat_card(ui, width, &label, &value, tooltip);
+                    }
+                });
+            }
+        });
+}
+
+fn unverified_notice(ui: &mut egui::Ui, message: String, localizer: &Localizer) {
+    egui::Frame::new()
+        .inner_margin(Margin::symmetric(14, 12))
+        .show(ui, |ui| {
+            tw::warn_callout().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    ui.add(icons::icon(Icon::Warning, tw::WARN, 14.0));
+                    ui.add(
+                        egui::Label::new(RichText::new(message).size(12.0).color(tw::WARN_INK))
+                            .wrap(),
+                    );
+                });
+            });
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(localizer.text("sheet-unverified"))
+                    .size(11.5)
+                    .color(tw::FAINT),
+            );
+        });
+}
+
+/// One sequence row: badge, operation and mono detail. Returns whether the
+/// pointer is over it (the canvas highlights that cut).
+fn sequence_row(
     ui: &mut egui::Ui,
-    piece: Option<&StockPieceReadModel>,
+    tree: &CutTree,
+    cut: &CutOperation,
+    trim: bool,
+    project: &Project,
     localizer: &Localizer,
-    compact: bool,
-) -> Option<usize> {
-    let Some(piece) = piece else {
-        ui.label(localizer.text("sheet-unverified"));
-        return None;
-    };
-    ui.strong(localizer.text("sheet-inspector"));
-    if compact {
-        ui.push_id(("sheet-inspector-details", piece.id), |ui| {
-            ui.collapsing(localizer.text("shell-advanced"), |ui| {
-                sheet_piece_details(ui, piece, localizer);
+    highlighted: bool,
+) -> bool {
+    let background = ui.painter().add(egui::Shape::Noop);
+    let inner = egui::Frame::new()
+        .inner_margin(Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                let (badge, _) =
+                    ui.allocate_exact_size(egui::vec2(24.0, 20.0), egui::Sense::hover());
+                ui.painter().rect_filled(badge, 5.0, CUT_BADGE);
+                ui.painter().text(
+                    badge.center(),
+                    egui::Align2::CENTER_CENTER,
+                    format!("C{}", cut.number),
+                    tw::weighted_font(ui, 10.5, Typeface::MonoSemibold),
+                    CUT_INK,
+                );
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(cut_operation_text(tree, cut, trim, localizer))
+                                .size(12.5)
+                                .color(tw::TEXT),
+                        )
+                        .wrap()
+                        .selectable(false),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            tw::mono(cut_detail_text(tree, cut, project, localizer), 10.5)
+                                .color(tw::FAINT),
+                        )
+                        .wrap()
+                        .selectable(false),
+                    );
+                });
             });
         });
-    } else {
-        sheet_piece_details(ui, piece, localizer);
+    let rect = inner.response.rect;
+    let hovered = ui.rect_contains_pointer(rect);
+    ui.interact(
+        rect,
+        ui.id().with(("cut-row", cut.number)),
+        egui::Sense::hover(),
+    )
+    .on_hover_text(cut_row(tree, cut, localizer, trim));
+    if hovered || highlighted {
+        ui.painter().set(
+            background,
+            egui::epaint::RectShape::filled(rect, 6.0, tw::HOVER_ROW),
+        );
     }
-    match &piece.proof {
-        SheetProof::Verified { tree, accounting } => {
-            ui.label(format!(
-                "{}: {:.1}% · {}: {}",
-                localizer.text("sheet-utilization"),
-                accounting.part_area as f64 * 100.0 / accounting.root_area as f64,
-                localizer.text("sheet-physical-cuts"),
-                tree.cut_count()
-            ));
-            for (key, area) in [
-                ("sheet-recoverable-area", accounting.offcut_area),
-                ("sheet-kerf-loss", accounting.kerf_loss),
-                ("sheet-trim-loss", accounting.trim_loss),
-                ("sheet-other-waste", accounting.waste_area),
-            ] {
-                if !compact || area != 0 || key == "sheet-kerf-loss" {
-                    ui.label(format!("{}: {}", localizer.text(key), area_label(area)));
-                }
-            }
-            ui.strong(localizer.text("sheet-cut-sequence"));
-            if !compact {
-                ui.small(localizer.text("sheet-piece-ids-hint"));
-            }
-            let trim_count = piece.trim.iter().filter(|v| **v != Length::ZERO).count();
-            let mut hovered = None;
+    hovered
+}
+
+fn sequence_rows(
+    ui: &mut egui::Ui,
+    tree: &CutTree,
+    piece: &StockPieceReadModel,
+    project: &Project,
+    localizer: &Localizer,
+    highlighted: Option<usize>,
+) -> Option<usize> {
+    let trim_count = piece.trim.iter().filter(|v| **v != Length::ZERO).count();
+    let mut hovered = None;
+    egui::Frame::new()
+        .inner_margin(Margin {
+            left: 6,
+            right: 6,
+            top: 0,
+            bottom: 10,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
             for cut in tree.operations() {
-                let row = cut_row(piece.id, tree, &cut, localizer, cut.number <= trim_count);
-                if compact {
-                    let axis = match cut.axis {
-                        Axis::X => "X",
-                        Axis::Y => "Y",
-                    };
-                    let label = format!(
-                        "#{} · {axis} {}",
-                        cut.number,
-                        format_length(cut.retained_extent, Unit::Mm, locale(localizer), 0)
-                    );
-                    let response = ui
-                        .collapsing(label, |ui| {
-                            ui.small(&row);
-                        })
-                        .header_response;
-                    if response.on_hover_text(&row).hovered() {
-                        hovered = Some(cut.number);
-                    }
-                } else if ui
-                    .add(egui::Label::new(row).sense(egui::Sense::hover()))
-                    .hovered()
-                {
+                if sequence_row(
+                    ui,
+                    tree,
+                    &cut,
+                    cut.number <= trim_count,
+                    project,
+                    localizer,
+                    highlighted == Some(cut.number),
+                ) {
                     hovered = Some(cut.number);
                 }
             }
             if tree.cut_count() == 0 {
-                ui.small(localizer.text("sheet-no-cuts"));
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(localizer.text("sheet-no-cuts"))
+                        .size(12.0)
+                        .color(tw::MUTED),
+                );
             }
+        });
+    hovered
+}
+
+/// Sheet header, stats and the physical cut sequence. Rows and canvas consume
+/// the same cached witness; only pointer state is returned.
+fn sheet_inspector(
+    ui: &mut egui::Ui,
+    piece: Option<&StockPieceReadModel>,
+    project: &Project,
+    localizer: &Localizer,
+    highlighted: Option<usize>,
+    reserve: Option<f32>,
+) -> Option<usize> {
+    let Some(piece) = piece else {
+        egui::Frame::new()
+            .inner_margin(Margin::same(14))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new(localizer.text("sheet-no-pieces"))
+                        .size(12.0)
+                        .color(tw::MUTED),
+                );
+            });
+        return None;
+    };
+    inspector_header(ui, piece, localizer);
+    let locale = locale(localizer);
+    match &piece.proof {
+        SheetProof::Verified { tree, accounting } => {
+            let percent = accounting.part_area as f64 * 100.0 / accounting.root_area as f64;
+            stat_grid(
+                ui,
+                [
+                    (
+                        localizer.text("sheet-utilization"),
+                        format!("{}%", card_utilization(Some(&piece.proof)).unwrap_or(0)),
+                        Some(format!("{percent:.1}%")),
+                    ),
+                    (
+                        localizer.text("sheet-physical-cuts"),
+                        tree.cut_count().to_string(),
+                        None,
+                    ),
+                    (
+                        localizer.text("sheet-reusable-offcuts"),
+                        area_short(accounting.offcut_area, locale),
+                        Some(format!(
+                            "{}: {}",
+                            localizer.text("sheet-recoverable-area"),
+                            area_label(accounting.offcut_area)
+                        )),
+                    ),
+                    (
+                        localizer.text("sheet-kerf-loss-short"),
+                        area_short(accounting.kerf_loss, locale),
+                        Some(format!(
+                            "{}: {}",
+                            localizer.text("sheet-kerf-loss"),
+                            area_label(accounting.kerf_loss)
+                        )),
+                    ),
+                ],
+            );
+            let extra: Vec<_> = [
+                (
+                    "sheet-trim-loss-short",
+                    "sheet-trim-loss",
+                    accounting.trim_loss,
+                ),
+                (
+                    "sheet-waste-short",
+                    "sheet-other-waste",
+                    accounting.waste_area,
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, _, area)| *area != 0)
+            .collect();
+            if !extra.is_empty() {
+                egui::Frame::new()
+                    .inner_margin(Margin {
+                        left: 14,
+                        right: 14,
+                        top: 0,
+                        bottom: 6,
+                    })
+                    .show(ui, |ui| {
+                        let text = extra
+                            .iter()
+                            .map(|(key, _, area)| {
+                                format!("{} {}", localizer.text(key), area_short(*area, locale))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" · ");
+                        let tooltip = extra
+                            .iter()
+                            .map(|(_, long, area)| {
+                                format!("{}: {}", localizer.text(long), area_label(*area))
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        ui.add(
+                            egui::Label::new(RichText::new(text).size(11.5).color(tw::MUTED))
+                                .wrap(),
+                        )
+                        .on_hover_text(tooltip);
+                    });
+            }
+            egui::Frame::new()
+                .inner_margin(Margin::symmetric(14, 0))
+                .show(ui, |ui| {
+                    tw::inspector_heading(ui, &localizer.text("sheet-sequence-heading"), |ui| {
+                        if tree.cut_count() > 0 {
+                            ui.spacing_mut().item_spacing.x = 5.0;
+                            ui.label(
+                                RichText::new(localizer.text("sheet-verified-full-span"))
+                                    .size(11.0)
+                                    .color(tw::OK),
+                            );
+                            ui.add(icons::icon(Icon::Check, tw::OK, 12.0));
+                        }
+                    });
+                });
+            let rows =
+                |ui: &mut egui::Ui| sequence_rows(ui, tree, piece, project, localizer, highlighted);
+            let budget = reserve
+                .map(|reserve| ui.clip_rect().bottom() - ui.cursor().top() - reserve)
+                .filter(|budget| *budget >= 140.0);
+            let hovered = match budget {
+                Some(budget) => {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("sheet-sequence-rows", piece.id))
+                        .max_height(budget)
+                        .auto_shrink([false, true])
+                        .show(ui, rows)
+                        .inner
+                }
+                None => rows(ui),
+            };
             hovered
         }
         SheetProof::Unused => {
-            ui.label(localizer.text("sheet-unused"));
-            ui.label(localizer.text("sheet-unverified"));
+            egui::Frame::new()
+                .inner_margin(Margin::symmetric(14, 12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(localizer.text("sheet-unused"))
+                            .size(12.5)
+                            .color(tw::SECONDARY),
+                    );
+                    ui.label(
+                        RichText::new(localizer.text("sheet-unverified"))
+                            .size(11.5)
+                            .color(tw::FAINT),
+                    );
+                });
             None
         }
         SheetProof::SearchExhausted => {
-            ui.colored_label(
-                egui::Color32::from_rgb(140, 95, 20),
-                localizer.text("sheet-feasibility-unknown"),
+            unverified_notice(
+                ui,
+                capitalized(localizer.text("sheet-feasibility-unknown")),
+                localizer,
             );
-            ui.label(localizer.text("sheet-unverified"));
             None
         }
         SheetProof::Violation(reason) => {
@@ -959,71 +1564,28 @@ fn sheet_inspector(
                 }
                 _ => "sheet-cut-conflict",
             };
-            ui.colored_label(
-                egui::Color32::DARK_RED,
+            unverified_notice(
+                ui,
                 format!(
                     "{}: {}",
                     localizer.text("sheet-violation"),
                     localizer.text(key)
                 ),
+                localizer,
             );
-            ui.label(localizer.text("sheet-unverified"));
             None
         }
     }
 }
 
-fn sheet_piece_details(ui: &mut egui::Ui, piece: &StockPieceReadModel, localizer: &Localizer) {
-    ui.label(format!(
-        "{}: {}",
-        localizer.text("stock-source"),
-        localizer.text(match piece.source {
-            plan_my_cabinet::domain::StockSource::Owned => "stock-owned",
-            plan_my_cabinet::domain::StockSource::ToPurchase => "stock-purchase",
-        })
-    ));
-    ui.label(format!(
-        "{}: {} · {}",
-        localizer.text("sheet-material-thickness"),
-        piece.material_name,
-        format_length(piece.measured_thickness, Unit::Mm, locale(localizer), 3)
-    ));
-    ui.label(format!(
-        "{}: {}",
-        localizer.text("stock-grain"),
-        localizer.text(match piece.grain {
-            StockGrain::AlongX => "stock-grain-x",
-            StockGrain::AlongY => "stock-grain-y",
-            StockGrain::Nondirectional => "stock-grain-none",
-            StockGrain::Unknown => "stock-grain-unknown",
-        })
-    ));
-    ui.label(format!(
-        "{}: {}",
-        localizer.text("sheet-trims"),
-        piece
-            .trim
-            .map(|v| format_length(v, Unit::Mm, locale(localizer), 3))
-            .join(" / ")
-    ));
-    // The order above is left, right, bottom, top, including the blade allowance.
-    ui.label(format!(
-        "{}: {}",
-        localizer.text("stock-price-heading"),
-        piece.price.map_or_else(
-            || localizer.text("stock-price-unknown"),
-            |price| price.display(if localizer.language() == Language::En {
-                MoneyLocale::English
-            } else {
-                MoneyLocale::PortugueseBrazil
-            }),
-        )
-    ));
-}
-
 const SHEET_INSPECTOR_WIDTH: f32 = 308.0;
 const SHEET_PANE_GAP: f32 = 12.0;
 const SHEET_SIDE_BY_SIDE_MIN: f32 = 760.0;
+/// Space under the sheet for the one-line legend.
+const LEGEND_HEIGHT: f32 = 34.0;
+/// Canvas padding around the sheet, plus room for the dimension rulers.
+const SHEET_PADDING: f32 = 24.0;
+const RULER_ROOM: f32 = 22.0;
 
 #[derive(Clone, Copy)]
 struct SheetPaneLayout {
@@ -1068,10 +1630,30 @@ fn sheet_panes(
     }
 }
 
-fn sheet_thumbnail(ui: &mut egui::Ui, project: &Project, stock: &Stock) {
-    let (region, _) = ui.allocate_exact_size(egui::vec2(60.0, 40.0), egui::Sense::hover());
-    let painter = ui.painter().with_clip_rect(region);
-    painter.rect_filled(region, 3.0, egui::Color32::from_rgb(247, 245, 240));
+fn paint_dashed_rect(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    stroke: Stroke,
+    dash: f32,
+    gap: f32,
+) {
+    let corners = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+        rect.left_top(),
+    ];
+    painter.extend(egui::Shape::dashed_line(&corners, stroke, dash, gap));
+}
+
+fn paint_thumbnail(
+    painter: &egui::Painter,
+    region: egui::Rect,
+    project: &Project,
+    stock: &Stock,
+    selected: bool,
+) {
     let parts: Vec<_> = project
         .allocations
         .iter()
@@ -1079,47 +1661,41 @@ fn sheet_thumbnail(ui: &mut egui::Ui, project: &Project, stock: &Stock) {
         .collect();
     if parts.is_empty() {
         // Dashed outline means inventory without a layout, never a proved blank.
-        for edge in 0..2 {
-            let y = if edge == 0 {
-                region.top()
-            } else {
-                region.bottom()
-            };
-            for n in 0..6 {
-                painter.line_segment(
-                    [
-                        egui::pos2(region.left() + n as f32 * 10.0, y),
-                        egui::pos2(region.left() + n as f32 * 10.0 + 6.0, y),
-                    ],
-                    egui::Stroke::new(1.0, egui::Color32::GRAY),
-                );
-            }
-        }
-    } else {
-        painter.rect_stroke(
-            region,
+        let blank = egui::Rect::from_center_size(region.center(), egui::vec2(30.0, 20.0));
+        painter.rect_filled(blank, 0.0, tw::CARD);
+        paint_dashed_rect(
+            painter,
+            blank.shrink(0.5),
+            Stroke::new(1.0, SHEET_EDGE),
             3.0,
-            egui::Stroke::new(1.0, egui::Color32::GRAY),
-            egui::StrokeKind::Inside,
+            2.0,
         );
-        let sx = region.width() / stock.length.micrometres() as f32;
-        let sy = region.height() / stock.width.micrometres() as f32;
-        for allocation in parts {
-            if let Some([x, y, length, width]) = footprint(project, allocation) {
-                let rect = egui::Rect::from_min_max(
-                    region.min + egui::vec2(x as f32 * sx, y as f32 * sy),
-                    region.min + egui::vec2((x + length) as f32 * sx, (y + width) as f32 * sy),
-                );
-                painter.rect_filled(rect, 1.0, egui::Color32::from_rgb(226, 219, 207));
-                painter.rect_stroke(
-                    rect,
-                    1.0,
-                    egui::Stroke::new(0.8, egui::Color32::from_rgb(156, 144, 126)),
-                    egui::StrokeKind::Inside,
-                );
-            }
+        return;
+    }
+    let (edge, fill) = if selected {
+        (THUMB_ACTIVE_EDGE, THUMB_ACTIVE_PART)
+    } else {
+        (THUMB_EDGE, THUMB_PART)
+    };
+    painter.rect_filled(region, 0.0, tw::CARD);
+    let clipped = painter.with_clip_rect(region.intersect(painter.clip_rect()));
+    let sx = region.width() / stock.length.micrometres().max(1) as f32;
+    let sy = region.height() / stock.width.micrometres().max(1) as f32;
+    for allocation in parts {
+        if let Some([x, y, length, width]) = footprint(project, allocation) {
+            let rect = egui::Rect::from_min_max(
+                region.min + egui::vec2(x as f32 * sx, y as f32 * sy),
+                region.min + egui::vec2((x + length) as f32 * sx, (y + width) as f32 * sy),
+            );
+            clipped.rect_filled(rect.shrink(0.5), 0.0, fill);
         }
     }
+    painter.rect_stroke(
+        region,
+        0.0,
+        Stroke::new(1.0, edge),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn choose_sheet_board(project: &Project, selection: &mut Selection, id: Uuid, additive: bool) {
@@ -1138,103 +1714,164 @@ struct PartEmphasis {
     conflict: bool,
 }
 
+/// Paints one allocated part with its label. `grain` is the drawn grain
+/// direction (if restricted); `ui` supplies fonts and icon painting and its
+/// painter must already be clipped to the sheet.
 fn paint_allocation(
-    painter: &egui::Painter,
+    ui: &egui::Ui,
     region: egui::Rect,
     board: &Board,
     localizer: &Localizer,
     overlays: SheetOverlays,
-    callout: usize,
+    grain: Option<egui::Vec2>,
     emphasis: PartEmphasis,
 ) {
+    let painter = ui.painter();
     let PartEmphasis {
         selected,
         in_selection,
         conflict,
     } = emphasis;
     let fill = if conflict {
-        egui::Color32::from_rgb(235, 134, 126)
+        CONFLICT_FILL
     } else if selected {
-        egui::Color32::from_rgb(255, 199, 82)
+        SELECTED_FILL
     } else if in_selection {
-        egui::Color32::from_rgb(109, 205, 235)
+        MULTI_FILL
     } else {
-        egui::Color32::from_rgb(160, 192, 148)
+        PART_FILL
     };
     painter.rect_filled(region, 0.0, fill);
-    painter.rect_stroke(
-        region,
-        0.0,
-        egui::Stroke::new(
-            if selected { 3.0 } else { 1.5 },
-            if selected {
-                egui::Color32::YELLOW
-            } else if conflict {
-                egui::Color32::RED
-            } else {
-                egui::Color32::BLACK
-            },
-        ),
-        egui::StrokeKind::Inside,
-    );
-    if conflict {
-        // Crossed diagonals remain visible on small parts and under active selection.
-        painter.line_segment(
-            [region.left_top(), region.right_bottom()],
-            egui::Stroke::new(2.0, egui::Color32::DARK_RED),
+    if selected {
+        painter.rect_stroke(
+            region,
+            0.0,
+            Stroke::new(2.0, tw::ACCENT_DARK),
+            egui::StrokeKind::Inside,
         );
-        painter.line_segment(
-            [region.right_top(), region.left_bottom()],
-            egui::Stroke::new(2.0, egui::Color32::DARK_RED),
+    } else if !conflict {
+        painter.rect_stroke(
+            region,
+            0.0,
+            Stroke::new(
+                1.0,
+                if in_selection {
+                    tw::ACCENT_DARK
+                } else {
+                    PART_EDGE
+                },
+            ),
+            egui::StrokeKind::Inside,
         );
     }
-    let dimensions = format!(
-        "{} × {}",
-        format_length(board.length, Unit::Mm, locale(localizer), 0),
-        format_length(board.width, Unit::Mm, locale(localizer), 0)
-    );
-    let name = if overlays.ids {
-        board_label(board)
+    if conflict {
+        // Dashed kerf outline keeps the recorded position readable.
+        let inset = if selected { 2.5 } else { 0.5 };
+        paint_dashed_rect(
+            painter,
+            region.shrink(inset),
+            Stroke::new(1.0, tw::KERF),
+            4.0,
+            3.0,
+        );
+    }
+    let locale = locale(localizer);
+    let dimensions = dims_text(board.length, board.width, locale);
+    let (name_color, dims_color) = if selected {
+        (SELECTED_INK, tw::ACCENT_INK)
     } else {
-        board.name.clone()
+        (tw::TEXT, tw::MUTED)
     };
-    let font = egui::FontId::proportional(11.0);
-    let name_width = painter
-        .layout_no_wrap(name.clone(), font.clone(), egui::Color32::BLACK)
-        .size()
-        .x;
-    let dimensions_width = painter
-        .layout_no_wrap(dimensions.clone(), font.clone(), egui::Color32::BLACK)
-        .size()
-        .x;
-    if full_part_label_fits(region.size(), name_width, dimensions_width) {
-        painter.text(
-            region.center() - egui::vec2(0.0, 8.0),
-            egui::Align2::CENTER_CENTER,
+    let name_font = tw::weighted_font(
+        ui,
+        if selected { 13.5 } else { 12.5 },
+        if selected {
+            Typeface::SansSemibold
+        } else {
+            Typeface::SansMedium
+        },
+    );
+    let dims_font = egui::FontId::monospace(if selected { 11.5 } else { 11.0 });
+    let name = painter.layout_no_wrap(board.name.clone(), name_font, name_color);
+    let dims = painter.layout_no_wrap(dimensions, dims_font, dims_color);
+    let show_id = selected || overlays.ids;
+    let id = painter.layout_no_wrap(
+        board_short_id(board),
+        egui::FontId::monospace(10.5),
+        if selected { tw::ACCENT_DARK } else { tw::FAINT },
+    );
+    let stacked =
+        name.size().y + dims.size().y + 2.0 + if show_id { id.size().y + 2.0 } else { 0.0 };
+    let mut label_bottom = region.center().y;
+    if full_part_label_fits(region.size(), name.size().x, dims.size().x)
+        && region.height() >= stacked + 6.0
+    {
+        let mut y = region.center().y - stacked / 2.0;
+        label_bottom = y + stacked;
+        for galley in [Some(name), Some(dims), show_id.then_some(id)]
+            .into_iter()
+            .flatten()
+        {
+            let size = galley.size();
+            painter.galley(
+                egui::pos2(region.center().x - size.x / 2.0, y),
+                galley,
+                name_color,
+            );
+            y += size.y + 2.0;
+        }
+    } else if region.width() >= name.size().x + dims.size().x + 8.0 + 10.0
+        && region.height() >= name.size().y + 2.0
+    {
+        // Short parts: name and dimensions on one line.
+        let total = name.size().x + 8.0 + dims.size().x;
+        let x = region.center().x - total / 2.0;
+        let dims_x = x + name.size().x + 8.0;
+        label_bottom = region.center().y + name.size().y / 2.0;
+        painter.galley(
+            egui::pos2(x, region.center().y - name.size().y / 2.0),
             name,
-            font.clone(),
-            egui::Color32::BLACK,
+            name_color,
         );
-        painter.text(
-            region.center() + egui::vec2(0.0, 8.0),
-            egui::Align2::CENTER_CENTER,
-            dimensions,
-            font,
-            egui::Color32::BLACK,
+        painter.galley(
+            egui::pos2(dims_x, region.center().y - dims.size().y / 2.0),
+            dims,
+            dims_color,
         );
-    } else {
-        // Compact identity refers to the associated full label below the sheet.
-        let center = region.center();
-        let anchor = center;
-        let radius = (region.width().min(region.height()) * 0.45).clamp(2.0, 9.0);
-        painter.circle_filled(anchor, radius, egui::Color32::from_rgb(48, 57, 49));
-        painter.text(
-            anchor,
-            egui::Align2::CENTER_CENTER,
-            callout.to_string(),
-            egui::FontId::proportional(10.0),
-            egui::Color32::WHITE,
+    } else if region.width() >= name.size().x + 8.0 && region.height() >= name.size().y + 2.0 {
+        painter.galley(region.center() - name.size() / 2.0, name, name_color);
+    }
+    // Small grain glyph in the bottom-right corner.
+    if let Some(direction) = grain
+        && (selected || overlays.grain)
+        && region.width() >= 40.0
+        && region.bottom() - 20.0 >= label_bottom
+    {
+        let color = if selected { tw::ACCENT_DARK } else { tw::FAINT };
+        let mut right = region.right() - 8.0;
+        if selected && region.width() >= 110.0 {
+            let text = painter.layout_no_wrap(
+                localizer.text("sheet-overlay-grain").to_lowercase(),
+                egui::FontId::proportional(10.5),
+                color,
+            );
+            let size = text.size();
+            painter.galley(
+                egui::pos2(right - size.x, region.bottom() - 6.0 - size.y),
+                text,
+                color,
+            );
+            right -= size.x + 4.0;
+        }
+        let rect = egui::Rect::from_center_size(
+            egui::pos2(right - 6.0, region.bottom() - 12.0),
+            egui::Vec2::splat(12.0),
         );
+        let mut image = icons::icon(Icon::Grain, color, 12.0);
+        if direction.y.abs() > direction.x.abs() {
+            image = image.rotate(std::f32::consts::FRAC_PI_2, egui::Vec2::splat(0.5));
+        }
+        image.paint_at(ui, rect);
     }
 }
 
@@ -1257,6 +1894,436 @@ pub struct SheetFocus {
     pub scroll_to_target: bool,
 }
 
+/// Compact button used on issue cards (28 high, radius 6, 12px text).
+fn small_button(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    text: &str,
+    primary: bool,
+    enabled: bool,
+) -> egui::Response {
+    let (fill, ink) = if primary {
+        (tw::TEXT, tw::PANEL)
+    } else {
+        (tw::VIEWPORT, tw::TEXT)
+    };
+    let label = tw::medium(ui, text, 12.0).color(ink);
+    let button = match icon {
+        Some(icon) => egui::Button::image_and_text(icons::icon(icon, ink, 13.0), label),
+        None => egui::Button::new(label),
+    };
+    ui.add_enabled(
+        enabled,
+        button
+            .fill(fill)
+            .stroke(Stroke::NONE)
+            .corner_radius(6)
+            .min_size(egui::vec2(0.0, 28.0)),
+    )
+}
+
+/// A sheet card in the priority list. The whole card is the click target.
+fn sheet_card(
+    ui: &mut egui::Ui,
+    project: &Project,
+    stock: &Stock,
+    piece: Option<&StockPieceReadModel>,
+    selected: bool,
+    enabled: bool,
+    localizer: &Localizer,
+) -> egui::Response {
+    let locale = locale(localizer);
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 58.0), egui::Sense::hover());
+    let response = ui.interact(
+        rect,
+        ui.id().with(("sheet-card", stock.id)),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let alias = project.stock_alias(stock.id).unwrap_or("?");
+    let material = stock_material(project, stock, locale);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            enabled,
+            selected,
+            format!("{alias} {material}"),
+        )
+    });
+    let fill = if selected {
+        tw::ACCENT_BG
+    } else if enabled && response.hovered() {
+        tw::HOVER_ROW
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(rect, 8.0, fill);
+    let thumb = egui::Rect::from_min_size(rect.min + egui::vec2(8.0, 9.0), egui::vec2(60.0, 40.0));
+    paint_thumbnail(ui.painter(), thumb, project, stock, selected);
+    let used = project.allocations.iter().any(|a| a.stock_id == stock.id);
+    let count = project
+        .allocations
+        .iter()
+        .filter(|a| a.stock_id == stock.id)
+        .count();
+    let (alias_ink, name_ink, meta_ink) = if selected {
+        (tw::ACCENT_DARK, tw::ACCENT_INK, CARD_ACTIVE_INK)
+    } else if used {
+        (tw::MUTED, tw::TEXT, tw::FAINT)
+    } else {
+        (tw::FAINT, tw::SECONDARY, tw::FAINT)
+    };
+    let text_rect = egui::Rect::from_min_max(
+        egui::pos2(thumb.right() + 10.0, rect.top() + 6.0),
+        egui::pos2(rect.right() - 8.0, rect.bottom() - 4.0),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(text_rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.spacing_mut().item_spacing.y = 2.0;
+    let row = |ui: &mut egui::Ui, height: f32, add: &mut dyn FnMut(&mut egui::Ui)| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| add(ui),
+        );
+    };
+    let owned = stock.source == StockSource::Owned;
+    let chip_text = localizer.text("sheet-owned-chip");
+    let chip_width = if owned {
+        child
+            .painter()
+            .layout_no_wrap(
+                chip_text.clone(),
+                egui::FontId::proportional(10.5),
+                tw::OK_INK,
+            )
+            .size()
+            .x
+            + 12.0
+            + 6.0
+    } else {
+        0.0
+    };
+    row(&mut child, 19.0, &mut |ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(
+            tw::mono(alias, 12.0)
+                .font(tw::weighted_font(ui, 12.0, Typeface::MonoSemibold))
+                .color(alias_ink),
+        );
+        let name_width = (ui.available_width() - chip_width).max(20.0);
+        ui.scope(|ui| {
+            ui.set_max_width(name_width);
+            ui.add(
+                egui::Label::new(tw::medium(ui, material.clone(), 13.0).color(name_ink))
+                    .truncate()
+                    .selectable(false),
+            );
+        });
+        if owned {
+            egui::Frame::new()
+                .fill(tw::OK_BG)
+                .corner_radius(8)
+                .inner_margin(Margin::symmetric(6, 0))
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Label::new(RichText::new(&chip_text).size(10.5).color(tw::OK_INK))
+                            .wrap_mode(egui::TextWrapMode::Extend),
+                    );
+                });
+        }
+    });
+    let dims = compact_dims(&[stock.length, stock.width], locale);
+    let meta = if used {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("count", count);
+        format!(
+            "{dims} · {}",
+            localizer.format("sheet-card-parts", Some(&args))
+        )
+    } else {
+        format!("{dims} · {}", localizer.text("sheet-card-unused"))
+    };
+    child.add(
+        egui::Label::new(tw::mono(meta, 11.0).color(meta_ink))
+            .truncate()
+            .selectable(false),
+    );
+    let proof = piece.map(|p| &p.proof);
+    if let Some(percent) = card_utilization(proof) {
+        row(&mut child, 14.0, &mut |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let bar_width = (ui.available_width() - 34.0).max(20.0);
+            let (bar, _) =
+                ui.allocate_exact_size(egui::vec2(bar_width, 14.0), egui::Sense::hover());
+            let track = egui::Rect::from_center_size(bar.center(), egui::vec2(bar.width(), 4.0));
+            ui.painter().rect_filled(
+                track,
+                2.0,
+                if selected {
+                    tw::WARN_STROKE
+                } else {
+                    tw::VIEWPORT
+                },
+            );
+            let mut filled = track;
+            filled.set_width(track.width() * percent.min(100) as f32 / 100.0);
+            ui.painter().rect_filled(
+                filled,
+                2.0,
+                if selected {
+                    THUMB_ACTIVE_EDGE
+                } else {
+                    tw::FAINT
+                },
+            );
+            ui.label(
+                RichText::new(format!("{percent}%"))
+                    .size(11.0)
+                    .color(meta_ink),
+            );
+        });
+    } else if used {
+        row(&mut child, 14.0, &mut |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.add(icons::icon(Icon::Warning, tw::WARN, 11.0));
+            ui.add(
+                egui::Label::new(
+                    RichText::new(localizer.text(match proof {
+                        Some(SheetProof::SearchExhausted) => "sheet-card-unknown",
+                        _ => "sheet-card-conflict",
+                    }))
+                    .size(11.0)
+                    .color(tw::WARN_INK),
+                )
+                .truncate(),
+            );
+        });
+    }
+    response.on_hover_text(format!(
+        "{} · {}",
+        stock.name,
+        card_status(proof, localizer)
+    ))
+}
+
+/// Short reason for a Needs stock card.
+fn issue_reason(
+    project: &Project,
+    board: &Board,
+    entry: &BoardDiagnostic,
+    localizer: &Localizer,
+) -> String {
+    if entry.status == Status::Unallocated {
+        if needs_new_stock(project, entry) {
+            let material = project
+                .materials
+                .iter()
+                .find(|m| m.id == board.material_id)
+                .map_or("?", |m| m.name.as_str());
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("material", material);
+            args.set(
+                "thickness",
+                format!("{} mm", mm_text(board.thickness, locale(localizer))),
+            );
+            return localizer.format("sheet-issue-no-stock", Some(&args));
+        }
+        return localizer.text("sheet-issue-unplaced");
+    }
+    capitalized(
+        entry
+            .reasons
+            .iter()
+            .filter(|r| **r != Reason::MissingAllocation)
+            .map(|reason| localizer.text(reason.key()))
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn issue_card(
+    ui: &mut egui::Ui,
+    project: &Project,
+    model: Option<&StockReadModel>,
+    entry: &BoardDiagnostic,
+    board: &Board,
+    hidden: bool,
+    focused: bool,
+    modal: bool,
+    repairing: bool,
+    localizer: &Localizer,
+) -> Option<Request> {
+    let mut request = None;
+    let add_stock = needs_new_stock(project, entry);
+    let locale = locale(localizer);
+    egui::Frame::new()
+        .fill(tw::CARD)
+        .stroke(Stroke::new(
+            1.0,
+            if focused { tw::FOCUS } else { tw::WARN_STROKE },
+        ))
+        .corner_radius(8)
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 7.0;
+                ui.add(icons::icon(Icon::Warning, tw::WARN, 14.0));
+                let dims = compact_dims(&[board.length, board.width, board.thickness], locale);
+                let dims_width = ui
+                    .painter()
+                    .layout_no_wrap(dims.clone(), egui::FontId::monospace(11.0), tw::FAINT)
+                    .size()
+                    .x;
+                let name_width =
+                    (ui.available_width() - dims_width - if hidden { 24.0 } else { 6.0 }).max(30.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(name_width);
+                    ui.add(
+                        egui::Label::new(tw::medium(ui, board.name.clone(), 13.0).color(tw::TEXT))
+                            .truncate(),
+                    );
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(tw::mono(dims, 11.0).color(tw::FAINT));
+                    if hidden {
+                        ui.add(icons::icon(Icon::EyeOff, tw::FAINT, 13.0))
+                            .on_hover_text(localizer.text("global-hidden"));
+                    }
+                });
+            });
+            let mut reason = issue_reason(project, board, entry, localizer);
+            if project.allocations.iter().any(|allocation| {
+                allocation.board_id == board.id
+                    && matches!(
+                        model
+                            .and_then(|m| m.miniature(allocation.stock_id))
+                            .map(|piece| &piece.proof),
+                        Some(SheetProof::Violation(ReconstructionViolation::Cut(
+                            CutError::InvalidTrim
+                        )))
+                    )
+            }) {
+                reason.push_str(". ");
+                reason.push_str(&localizer.text("sheet-trim-conflict"));
+            }
+            ui.add(egui::Label::new(RichText::new(reason).size(12.0).color(tw::MUTED)).wrap());
+            let primary_text = if add_stock {
+                let material = project
+                    .materials
+                    .iter()
+                    .find(|m| m.id == board.material_id)
+                    .map_or("?", |m| m.name.as_str());
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("material", material);
+                localizer.format("sheet-add-named", Some(&args))
+            } else {
+                localizer.text("global-repair")
+            };
+            let reveal_text = localizer.text("sheet-reveal");
+            let font = tw::weighted_font(ui, 12.0, Typeface::SansMedium);
+            let text_width = |text: &str| {
+                ui.painter()
+                    .layout_no_wrap(text.to_owned(), font.clone(), tw::TEXT)
+                    .size()
+                    .x
+            };
+            let padding = ui.spacing().button_padding.x * 2.0;
+            // Reveal moves into the overflow menu when the card is too narrow.
+            let reveal_inline = text_width(&primary_text)
+                + padding
+                + 13.0
+                + ui.spacing().icon_spacing
+                + text_width(&reveal_text)
+                + padding
+                + 22.0
+                + 8.0
+                <= ui.available_width();
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let primary = small_button(
+                    ui,
+                    Some(if add_stock { Icon::Plus } else { Icon::Move }),
+                    &primary_text,
+                    true,
+                    if add_stock {
+                        !modal && !repairing
+                    } else {
+                        !modal
+                    },
+                );
+                let primary = if add_stock {
+                    primary.on_hover_text(localizer.text("sheet-add-material"))
+                } else {
+                    primary
+                };
+                if primary.clicked() {
+                    request = Some(issue_resolution(project, entry));
+                }
+                if reveal_inline
+                    && small_button(ui, None, &reveal_text, false, !modal && !repairing)
+                        .on_hover_text(localizer.text("global-locate"))
+                        .clicked()
+                {
+                    request = Some(Request::with(A::LocateIssue, Target::Board(board.id)));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let more = tw::ghost_icon_sized(
+                        ui,
+                        Icon::Dots,
+                        &localizer.text("sheet-more-actions"),
+                        tw::SECONDARY,
+                        15.0,
+                        22.0,
+                        !modal,
+                        false,
+                    );
+                    egui::Popup::menu(&more)
+                        .align(egui::RectAlign::BOTTOM_END)
+                        .show(|ui| {
+                            ui.set_min_width(180.0);
+                            if !reveal_inline
+                                && ui
+                                    .add_enabled(!repairing, egui::Button::new(&reveal_text))
+                                    .clicked()
+                            {
+                                request =
+                                    Some(Request::with(A::LocateIssue, Target::Board(board.id)));
+                            }
+                            if add_stock {
+                                if ui.button(localizer.text("global-repair")).clicked() {
+                                    request = Some(Request::with(
+                                        A::RepairIssue,
+                                        Target::Board(board.id),
+                                    ));
+                                }
+                            } else if ui
+                                .add_enabled(
+                                    !repairing,
+                                    egui::Button::new(localizer.text("stock-new")),
+                                )
+                                .clicked()
+                            {
+                                request =
+                                    Some(Request::with(A::AddIssueStock, Target::Board(board.id)));
+                            }
+                        });
+                });
+            });
+        });
+    request
+}
+
 /// The host renders this in the Cut plan controls pane. Selection and repair
 /// requests use the same actions as the canvas, without borrowing its height.
 pub fn show_sheet_list(
@@ -1269,35 +2336,7 @@ pub fn show_sheet_list(
     focus: SheetFocus,
 ) -> Option<Request> {
     let project = editor.preview().unwrap_or(editor.project());
-    let key = diagnostics_key(project, editor.preview().is_some());
-    if repair
-        .stock_model_cache
-        .as_ref()
-        .is_none_or(|(cached, _)| *cached != key)
-    {
-        repair.hovered_cut = None;
-        repair.stock_model_cache = Some((key.clone(), StockReadModel::build(project).ok()));
-    }
-    if repair
-        .board_diagnostics_cache
-        .as_ref()
-        .is_none_or(|(cached, _)| *cached != key)
-    {
-        repair.board_diagnostics_cache = Some((
-            key,
-            repair
-                .stock_model_cache
-                .as_ref()
-                .and_then(|(_, model)| model.as_ref())
-                .map(|model| model.boards.clone())
-                .unwrap_or_else(|| allocation_diagnostics::diagnose(project)),
-        ));
-    }
-    let model = repair
-        .stock_model_cache
-        .as_ref()
-        .and_then(|(_, model)| model.as_ref());
-    let diagnostics = &repair.board_diagnostics_cache.as_ref().unwrap().1;
+    repair.refresh(project, editor.preview().is_some());
     let ordered = project.ordered_stock();
     if focus.scroll_to_target
         && let Some(id) = focus.sheet
@@ -1311,184 +2350,210 @@ pub fn show_sheet_list(
     {
         repair.focused_sheet = ordered.first().map(|stock| stock.id);
     }
+    let repairing = repair.active();
+    let focused_sheet = repair.focused_sheet;
+    let model = repair.model();
+    let diagnostics = &repair.board_diagnostics_cache.as_ref().unwrap().1;
     let mut request = None;
-    ui.horizontal(|ui| {
-        ui.strong(localizer.text("sheet-priority-cards"));
-        if ui
-            .add_enabled(
-                !modal && !repair.active(),
-                egui::Button::new("+").min_size(egui::vec2(24.0, 24.0)),
-            )
-            .on_hover_text(localizer.text("stock-new"))
-            .clicked()
-        {
-            request = Some(Request::new(A::NewStock));
-        }
-    });
-    for (rank, stock) in ordered.into_iter().enumerate() {
-        let piece = model.and_then(|model| model.miniature(stock.id));
-        let count = project
-            .allocations
-            .iter()
-            .filter(|a| a.stock_id == stock.id)
-            .count();
-        let material = project
-            .materials
-            .iter()
-            .find(|m| m.id == stock.material_id)
-            .map(|m| m.name.as_str())
-            .unwrap_or("?");
-        let title = format!(
-            "{}  {}",
-            project.stock_alias(stock.id).unwrap_or("?"),
-            material
-        );
-        let description = format!(
-            "{} × {} · {count} {}",
-            format_length(stock.length, Unit::Mm, locale(localizer), 0),
-            format_length(stock.width, Unit::Mm, locale(localizer), 0),
-            localizer.text("sheet-parts")
-        );
-        ui.horizontal(|ui| {
-            sheet_thumbnail(ui, project, stock);
-            ui.vertical(|ui| {
-                if ui
-                    .add_enabled(
-                        !modal,
-                        egui::Button::new(title).selected(repair.focused_sheet == Some(stock.id)),
-                    )
-                    .clicked()
+    let mut chosen = None;
+    egui::Frame::new()
+        .inner_margin(Margin {
+            left: 14,
+            right: 10,
+            top: 0,
+            bottom: 0,
+        })
+        .show(ui, |ui| {
+            tw::section_bar(ui, &localizer.text("sheet-priority-cards"), |ui| {
+                if tw::ghost_icon_sized(
+                    ui,
+                    Icon::Plus,
+                    &localizer.text("stock-new"),
+                    tw::SECONDARY,
+                    15.0,
+                    26.0,
+                    !modal && !repairing,
+                    false,
+                )
+                .clicked()
                 {
-                    repair.focused_sheet = Some(stock.id);
+                    request = Some(Request::new(A::NewStock));
                 }
-                ui.small(description);
-                ui.small(format!(
-                    "#{} · {} · {}{}",
-                    piece.map_or(rank + 1, |p| p.global_rank),
-                    localizer.text(match stock.source {
-                        plan_my_cabinet::domain::StockSource::Owned => "stock-owned",
-                        plan_my_cabinet::domain::StockSource::ToPurchase => "stock-purchase",
-                    }),
-                    card_status(piece.map(|p| &p.proof), localizer),
-                    card_utilization(piece.map(|p| &p.proof))
-                        .map_or(String::new(), |n| format!(" · {n}%")),
-                ));
             });
         });
-    }
-    ui.separator();
-    ui.strong(localizer.text("sheet-needs-stock"));
-    if !needs_stock(diagnostics).any(|_| true) {
-        ui.small(localizer.text("sheet-no-issues"));
-    }
-    for entry in needs_stock(diagnostics) {
-        let Some(board) = project.boards.iter().find(|b| b.id == entry.board_id) else {
-            continue;
-        };
-        ui.group(|ui| {
-            ui.strong(format!(
-                "{}{}",
-                board_label(board),
-                if selection.visible(project, board.id) {
-                    String::new()
-                } else {
-                    format!(" · {}", localizer.text("global-hidden"))
-                }
-            ));
-            ui.small(format!(
-                "{} × {} × {}",
-                format_length(board.length, Unit::Mm, locale(localizer), 3),
-                format_length(board.width, Unit::Mm, locale(localizer), 3),
-                format_length(board.thickness, Unit::Mm, locale(localizer), 3)
-            ));
-            for reason in &entry.reasons {
-                ui.colored_label(egui::Color32::DARK_RED, localizer.text(reason.key()));
-            }
-            if project.allocations.iter().any(|allocation| {
-                allocation.board_id == board.id
-                    && matches!(
-                        model
-                            .and_then(|m| m.miniature(allocation.stock_id))
-                            .map(|piece| &piece.proof),
-                        Some(SheetProof::Violation(ReconstructionViolation::Cut(
-                            CutError::InvalidTrim
-                        )))
+    egui::Frame::new()
+        .inner_margin(Margin::symmetric(8, 0))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            if ordered.is_empty() {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(localizer.text("sheet-no-pieces"))
+                            .size(12.0)
+                            .color(tw::MUTED),
                     )
-            }) {
-                ui.colored_label(
-                    egui::Color32::DARK_RED,
-                    localizer.text("sheet-trim-conflict"),
+                    .wrap(),
                 );
             }
-            ui.horizontal_wrapped(|ui| {
-                if ui
-                    .add_enabled(
-                        !modal && !repair.active(),
-                        egui::Button::new(localizer.text("global-locate")),
-                    )
-                    .clicked()
-                {
-                    request = Some(Request::with(A::LocateIssue, Target::Board(board.id)));
+            for stock in &ordered {
+                let piece = model.and_then(|model| model.miniature(stock.id));
+                let response = sheet_card(
+                    ui,
+                    project,
+                    stock,
+                    piece,
+                    focused_sheet == Some(stock.id),
+                    !modal,
+                    localizer,
+                );
+                if response.clicked() {
+                    chosen = Some(stock.id);
                 }
-                if ui
-                    .add_enabled(
-                        !modal && !repair.active(),
-                        egui::Button::new(localizer.text(if needs_new_stock(project, entry) {
-                            "sheet-add-material"
-                        } else {
-                            "global-repair"
-                        })),
-                    )
-                    .clicked()
-                {
-                    request = Some(issue_resolution(project, entry));
+                response.context_menu(|ui| {
+                    if ui
+                        .add_enabled(
+                            !modal && !repairing,
+                            egui::Button::new(localizer.text("sheet-edit-stock")),
+                        )
+                        .clicked()
+                    {
+                        request = Some(Request::with(A::EditStock, Target::Stock(stock.id)));
+                        ui.close();
+                    }
+                });
+            }
+        });
+    ui.add_space(10.0);
+    tw::divider(ui);
+    let issues: Vec<_> = needs_stock(diagnostics).collect();
+    egui::Frame::new()
+        .inner_margin(Margin::symmetric(14, 0))
+        .show(ui, |ui| {
+            tw::section_bar(ui, &localizer.text("sheet-needs-stock"), |ui| {
+                if !issues.is_empty() {
+                    ui.label(
+                        RichText::new(issues.len().to_string())
+                            .font(tw::weighted_font(ui, 11.0, Typeface::MonoSemibold))
+                            .color(tw::WARN),
+                    );
                 }
             });
         });
-        if focus.scroll_to_target && focus.issue == Some(board.id) {
-            ui.scroll_to_cursor(Some(egui::Align::TOP));
-        }
+    egui::Frame::new()
+        .inner_margin(Margin {
+            left: 8,
+            right: 8,
+            top: 0,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            if issues.is_empty() {
+                ui.horizontal(|ui| {
+                    ui.add_space(6.0);
+                    ui.add(icons::icon(Icon::Check, tw::OK, 13.0));
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(localizer.text("sheet-no-issues"))
+                                .size(12.0)
+                                .color(tw::MUTED),
+                        )
+                        .wrap(),
+                    );
+                });
+            }
+            for entry in issues {
+                let Some(board) = project.boards.iter().find(|b| b.id == entry.board_id) else {
+                    continue;
+                };
+                let focused = focus.issue == Some(board.id);
+                if let Some(next) = issue_card(
+                    ui,
+                    project,
+                    model,
+                    entry,
+                    board,
+                    !selection.visible(project, board.id),
+                    focused,
+                    modal,
+                    repairing,
+                    localizer,
+                ) {
+                    request = Some(next);
+                }
+                if focus.scroll_to_target && focused {
+                    ui.scroll_to_cursor(Some(egui::Align::TOP));
+                }
+            }
+        });
+    if let Some(id) = chosen {
+        repair.focused_sheet = Some(id);
     }
     request
 }
 
-/// Render into the host's existing Cut plan inspector ScrollArea, after the
-/// central sheet. Hover is session-only and read on the next canvas frame.
+/// Pinned footer of the Cut plan controls pane: "+ Sheet or offcut".
+pub fn show_sheet_footer(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    repair: &RepairUi,
+    modal: bool,
+) -> Option<Request> {
+    let enabled = !modal && !repair.active();
+    let width = ui.available_width();
+    ui.add_enabled(
+        enabled,
+        egui::Button::image_and_text(
+            icons::icon(Icon::Plus, tw::TEXT, 14.0),
+            tw::medium(ui, localizer.text("sheet-footer-add"), 13.0).color(tw::TEXT),
+        )
+        .fill(tw::VIEWPORT)
+        .stroke(Stroke::NONE)
+        .corner_radius(7)
+        .min_size(egui::vec2(width, 32.0)),
+    )
+    .on_hover_text(localizer.text("stock-new"))
+    .clicked()
+    .then(|| Request::new(A::NewStock))
+}
+
+/// Render into the host's Cut plan inspector ScrollArea. Hover is
+/// session-only and read on the next canvas frame.
+#[cfg(test)]
 pub fn show_focused_inspector(
     ui: &mut egui::Ui,
     editor: &ProjectEditor,
     localizer: &Localizer,
     repair: &mut RepairUi,
 ) {
+    show_focused_inspector_with_reserve(ui, editor, localizer, repair, None);
+}
+
+/// Like `show_focused_inspector`; with `reserve`, the cut sequence scrolls on
+/// its own so that much height stays free below it (for the optimizer).
+pub fn show_focused_inspector_with_reserve(
+    ui: &mut egui::Ui,
+    editor: &ProjectEditor,
+    localizer: &Localizer,
+    repair: &mut RepairUi,
+    reserve: Option<f32>,
+) {
     let project = editor.preview().unwrap_or(editor.project());
-    let key = diagnostics_key(project, editor.preview().is_some());
-    if repair
-        .stock_model_cache
-        .as_ref()
-        .is_none_or(|(cached, _)| *cached != key)
-    {
-        repair.hovered_cut = None;
-        repair.stock_model_cache = Some((key, StockReadModel::build(project).ok()));
-    }
-    ui.heading(localizer.text("sheet-heading"));
+    repair.refresh(project, editor.preview().is_some());
     let stock = repair
         .focused_sheet
         .and_then(|id| project.stock.iter().find(|s| s.id == id));
-    if let Some(stock) = stock {
-        ui.small(stock_label(project, stock));
-    }
+    let highlighted = repair
+        .hovered_cut
+        .zip(stock)
+        .and_then(|((sheet, number), stock)| (sheet == stock.id).then_some(number));
     let hovered = sheet_inspector(
         ui,
-        stock.and_then(|stock| {
-            repair
-                .stock_model_cache
-                .as_ref()?
-                .1
-                .as_ref()?
-                .miniature(stock.id)
-        }),
+        stock.and_then(|stock| repair.model()?.miniature(stock.id)),
+        project,
         localizer,
-        true,
+        highlighted,
+        reserve,
     );
     let next = stock.and_then(|stock| hovered.map(|number| (stock.id, number)));
     if repair.hovered_cut != next {
@@ -1514,6 +2579,696 @@ pub fn show(
     )
 }
 
+fn tool_group() -> egui::Frame {
+    egui::Frame::new()
+        .fill(tw::PANEL)
+        .stroke(Stroke::new(1.0, tw::BORDER_SOFT))
+        .corner_radius(9)
+        .inner_margin(3)
+}
+
+/// 28×28 icon button (optionally mirrored) with an accessible name.
+fn nav_button(ui: &mut egui::Ui, mirrored: bool, label: &str, enabled: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(28.0, 28.0),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let response = response.on_hover_text(label);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    if enabled && response.hovered() {
+        ui.painter().rect_filled(rect, 6.0, tw::VIEWPORT);
+    }
+    let color = if enabled { tw::SECONDARY } else { tw::DISABLED };
+    let mut image = icons::icon(Icon::ChevRight, color, 15.0);
+    if mirrored {
+        image = image.rotate(std::f32::consts::PI, egui::Vec2::splat(0.5));
+    }
+    image.paint_at(
+        ui,
+        egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(15.0)),
+    );
+    response
+}
+
+/// Segment or toggle button inside a toolbar group.
+fn tool_toggle(
+    ui: &mut egui::Ui,
+    text: &str,
+    icon: Option<Icon>,
+    selected: bool,
+    dark: bool,
+    enabled: bool,
+) -> egui::Response {
+    let (fill, ink) = match (selected, dark) {
+        (true, true) => (tw::TEXT, tw::PANEL),
+        (true, false) => (tw::VIEWPORT, tw::TEXT),
+        (false, _) => (Color32::TRANSPARENT, tw::SECONDARY),
+    };
+    let label = if selected {
+        tw::medium(ui, text, 12.5).color(ink)
+    } else {
+        RichText::new(text).size(12.5).color(ink)
+    };
+    let button = match icon {
+        Some(icon) => egui::Button::image_and_text(icons::icon(icon, ink, 14.0), label),
+        None => egui::Button::new(label),
+    };
+    ui.add_enabled(
+        enabled,
+        button
+            .selected(selected)
+            .fill(fill)
+            .stroke(Stroke::NONE)
+            .corner_radius(6)
+            .min_size(egui::vec2(0.0, 28.0)),
+    )
+}
+
+#[derive(Default)]
+struct ToolbarOutput {
+    focus: Option<Uuid>,
+    begin: bool,
+    accept: bool,
+    cancel: bool,
+    fit: bool,
+}
+
+fn show_toolbar(
+    ui: &mut egui::Ui,
+    project: &Project,
+    ordered: &[&Stock],
+    repair: &mut RepairUi,
+    can_accept: bool,
+    modal: bool,
+    localizer: &Localizer,
+) -> ToolbarOutput {
+    let mut out = ToolbarOutput::default();
+    let locale = locale(localizer);
+    let index = ordered
+        .iter()
+        .position(|s| Some(s.id) == repair.focused_sheet);
+    let right_width_id = ui.id().with("sheet-toolbar-right-width");
+    let right_width: f32 = ui.data(|d| d.get_temp(right_width_id)).unwrap_or(330.0);
+    let mut measured = right_width;
+    let inline = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            if let Some(index) = index {
+                let stock = ordered[index];
+                tool_group().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if nav_button(
+                            ui,
+                            true,
+                            &localizer.text("sheet-previous"),
+                            !modal && index > 0,
+                        )
+                        .clicked()
+                        {
+                            out.focus = Some(ordered[index - 1].id);
+                        }
+                        ui.label(
+                            tw::mono(project.stock_alias(stock.id).unwrap_or("?"), 12.5)
+                                .font(tw::weighted_font(ui, 12.5, Typeface::MonoSemibold))
+                                .color(tw::TEXT),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!(
+                                    "{} · {}",
+                                    stock_material(project, stock, locale),
+                                    dims_text(stock.length, stock.width, locale)
+                                ))
+                                .size(13.0)
+                                .color(tw::TEXT),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Extend),
+                        )
+                        .on_hover_text(&stock.name);
+                        if nav_button(
+                            ui,
+                            false,
+                            &localizer.text("sheet-next"),
+                            !modal && index + 1 < ordered.len(),
+                        )
+                        .clicked()
+                        {
+                            out.focus = Some(ordered[index + 1].id);
+                        }
+                    });
+                });
+            }
+            let active = repair.active();
+            tool_group().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let view = tool_toggle(
+                        ui,
+                        &localizer.text("sheet-mode-view"),
+                        None,
+                        !active,
+                        true,
+                        !modal,
+                    );
+                    if active {
+                        view.on_hover_text(localizer.text("sheet-mode-view-hint"));
+                    }
+                    let edit_label = localizer.text("sheet-edit");
+                    let repair_button = tool_toggle(
+                        ui,
+                        &localizer.text("sheet-mode-repair"),
+                        Some(Icon::Move),
+                        active,
+                        true,
+                        !modal,
+                    );
+                    repair_button.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Button,
+                            !modal,
+                            active,
+                            &edit_label,
+                        )
+                    });
+                    if repair_button
+                        .on_hover_text(localizer.text("sheet-repair-hint"))
+                        .clicked()
+                        && !active
+                    {
+                        out.begin = true;
+                    }
+                });
+            });
+            if active {
+                out.accept = tw::icon_text_button(
+                    ui,
+                    Icon::Check,
+                    &localizer.text("sheet-accept"),
+                    true,
+                    !modal && can_accept,
+                )
+                .clicked();
+                out.cancel =
+                    tw::secondary_button_enabled(ui, &localizer.text("sheet-cancel"), !modal)
+                        .on_hover_text("Esc")
+                        .clicked();
+            }
+            let remaining = ui.available_width();
+            if remaining >= right_width + 1.0 {
+                ui.add_space(remaining - right_width - 1.0);
+                measured = toolbar_view_controls(ui, repair, &mut out, localizer);
+                true
+            } else {
+                false
+            }
+        })
+        .inner;
+    if !inline {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            measured = toolbar_view_controls(ui, repair, &mut out, localizer);
+        });
+    }
+    ui.data_mut(|d| d.insert_temp(right_width_id, measured));
+    out
+}
+
+/// Overlay toggles and Fit/zoom. Returns the width they used.
+fn toolbar_view_controls(
+    ui: &mut egui::Ui,
+    repair: &mut RepairUi,
+    out: &mut ToolbarOutput,
+    localizer: &Localizer,
+) -> f32 {
+    let toggles = tool_group()
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let overlays = &mut repair.overlays;
+                for (value, key, hint) in [
+                    (
+                        &mut overlays.cuts,
+                        "sheet-overlay-cuts",
+                        "sheet-overlay-cuts-hint",
+                    ),
+                    (
+                        &mut overlays.offcuts,
+                        "sheet-overlay-offcuts",
+                        "sheet-overlay-offcuts-hint",
+                    ),
+                    (
+                        &mut overlays.grain,
+                        "sheet-overlay-grain",
+                        "sheet-overlay-grain-hint",
+                    ),
+                    (
+                        &mut overlays.ids,
+                        "sheet-overlay-ids",
+                        "sheet-overlay-ids-hint",
+                    ),
+                ] {
+                    if tool_toggle(ui, &localizer.text(key), None, *value, false, true)
+                        .on_hover_text(localizer.text(hint))
+                        .clicked()
+                    {
+                        *value = !*value;
+                    }
+                }
+            });
+        })
+        .response
+        .rect;
+    let zoom = tool_group()
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let fit_label = localizer.text("sheet-fit");
+                let fit = ui
+                    .add(
+                        egui::Button::image_and_text(
+                            icons::icon(Icon::Frame, tw::SECONDARY, 15.0),
+                            tw::mono(localizer.text("sheet-fit-short"), 12.0).color(tw::TEXT),
+                        )
+                        .fill(Color32::TRANSPARENT)
+                        .stroke(Stroke::NONE)
+                        .corner_radius(6)
+                        .min_size(egui::vec2(0.0, 28.0)),
+                    )
+                    .on_hover_text(&fit_label);
+                fit.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &fit_label)
+                });
+                if fit.clicked() {
+                    out.fit = true;
+                }
+                for (symbol, key, factor) in [
+                    ("−", "sheet-zoom-out", 1.0 / 1.25_f32),
+                    ("+", "sheet-zoom-in", 1.25),
+                ] {
+                    let label = localizer.text(key);
+                    let response = ui
+                        .add(
+                            egui::Button::new(tw::mono(symbol, 14.0).color(tw::SECONDARY))
+                                .fill(Color32::TRANSPARENT)
+                                .stroke(Stroke::NONE)
+                                .corner_radius(6)
+                                .min_size(egui::vec2(26.0, 28.0)),
+                        )
+                        .on_hover_text(&label);
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label)
+                    });
+                    if response.clicked() {
+                        repair.zoom = (repair.zoom.max(0.1) * factor).clamp(0.25, 4.0);
+                    }
+                }
+            });
+        })
+        .response
+        .rect;
+    toggles.width() + zoom.width() + ui.spacing().item_spacing.x
+}
+
+fn show_legend(ui: &egui::Ui, origin: egui::Pos2, kerf: Length, localizer: &Localizer) {
+    let painter = ui.painter();
+    let font = egui::FontId::proportional(11.5);
+    let mut x = origin.x;
+    let y = origin.y;
+    let swatch = |x: f32| egui::Rect::from_min_size(egui::pos2(x, y - 5.0), egui::vec2(14.0, 10.0));
+    let mut args = fluent_bundle::FluentArgs::new();
+    args.set("kerf", format!("{} mm", mm_text(kerf, locale(localizer))));
+    for (index, text) in [
+        localizer.text("sheet-legend-part"),
+        localizer.text("sheet-legend-offcut"),
+        localizer.format("sheet-legend-kerf", Some(&args)),
+        localizer.text("sheet-legend-conflict"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let rect = swatch(x);
+        match index {
+            0 => {
+                painter.rect_filled(rect, 0.0, PART_FILL);
+                painter.rect_stroke(
+                    rect,
+                    0.0,
+                    Stroke::new(1.0, PART_EDGE),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            1 => {
+                painter.rect_filled(rect, 0.0, OFFCUT_FILL);
+                let hatch = painter.with_clip_rect(rect);
+                let mut hx = rect.left() - rect.height();
+                while hx < rect.right() {
+                    hatch.line_segment(
+                        [
+                            egui::pos2(hx, rect.bottom()),
+                            egui::pos2(hx + rect.height(), rect.top()),
+                        ],
+                        Stroke::new(1.0, Color32::from_rgb(216, 209, 196)),
+                    );
+                    hx += 4.0;
+                }
+            }
+            2 => {
+                painter.rect_filled(
+                    egui::Rect::from_center_size(rect.center(), egui::vec2(14.0, 3.0)),
+                    0.0,
+                    tw::KERF,
+                );
+            }
+            _ => {
+                painter.rect_filled(rect, 0.0, CONFLICT_FILL);
+                paint_dashed_rect(
+                    painter,
+                    rect.shrink(0.5),
+                    Stroke::new(1.0, tw::KERF),
+                    2.0,
+                    2.0,
+                );
+            }
+        }
+        let galley = painter.layout_no_wrap(text, font.clone(), tw::MUTED);
+        let width = galley.size().x;
+        painter.galley(
+            egui::pos2(x + 20.0, y - galley.size().y / 2.0),
+            galley,
+            tw::MUTED,
+        );
+        x += 20.0 + width + 16.0;
+    }
+}
+
+/// Repair controls for the selected part, shown as a strip under the toolbar.
+fn show_repair_strip(
+    ui: &mut egui::Ui,
+    project: &Project,
+    repair: &mut RepairUi,
+    modal: bool,
+    preview: bool,
+    localizer: &Localizer,
+) -> Option<RepairAction> {
+    let mut action = None;
+    let locale = locale(localizer);
+    egui::Frame::new()
+        .inner_margin(Margin {
+            left: 14,
+            right: 14,
+            top: 0,
+            bottom: 8,
+        })
+        .show(ui, |ui| {
+            tw::floating_frame()
+                .inner_margin(Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
+                    let Some(id) = repair.board else {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.add(icons::icon(Icon::Move, tw::ACCENT, 14.0));
+                            ui.label(
+                                RichText::new(localizer.text("sheet-repair-pick"))
+                                    .size(12.5)
+                                    .color(tw::SECONDARY),
+                            )
+                            .on_hover_text(localizer.text("sheet-repair-hint"));
+                        });
+                        return;
+                    };
+                    let allocated = project.allocations.iter().find(|a| a.board_id == id);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add(icons::icon(Icon::Move, tw::ACCENT, 14.0));
+                        let name = project
+                            .boards
+                            .iter()
+                            .find(|b| b.id == id)
+                            .map(|b| b.name.clone())
+                            .unwrap_or_default();
+                        ui.label(tw::medium(ui, name, 13.0).color(tw::TEXT))
+                            .on_hover_text(localizer.text("sheet-selected"));
+                        if allocated.is_some_and(|a| a.locked) {
+                            ui.add(icons::icon(Icon::Lock, tw::FAINT, 13.0))
+                                .on_hover_text(localizer.text("sheet-locked-error"));
+                        }
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(localizer.text("sheet-target"))
+                                .size(12.0)
+                                .color(tw::MUTED),
+                        );
+                        let previous = repair.stock;
+                        egui::ComboBox::from_id_salt("sheet-target-stock")
+                            .width(150.0)
+                            .truncate()
+                            .selected_text(
+                                project
+                                    .stock
+                                    .iter()
+                                    .find(|s| Some(s.id) == repair.stock)
+                                    .map(|s| stock_label(project, s))
+                                    .unwrap_or_default(),
+                            )
+                            .show_ui(ui, |ui| {
+                                for stock in project.ordered_stock() {
+                                    ui.selectable_value(
+                                        &mut repair.stock,
+                                        Some(stock.id),
+                                        stock_label(project, stock),
+                                    );
+                                }
+                            });
+                        if repair.stock != previous {
+                            repair.placement_dirty = true;
+                        }
+                    });
+                    let unit = repair.entry_unit.unwrap_or_else(|| numeric_unit(project));
+                    let mut valid = true;
+                    let mut notes = Vec::new();
+                    ui.horizontal_wrapped(|ui| {
+                        for axis in 0..2 {
+                            let label = localizer.text(if axis == 0 {
+                                "sheet-origin-x"
+                            } else {
+                                "sheet-origin-y"
+                            });
+                            ui.label(RichText::new(&label).size(12.0).color(tw::MUTED));
+                            let invalid = parse_length(&repair.origin[axis], unit).is_err();
+                            if tw::value_field(
+                                ui,
+                                ui.id().with(("sheet-origin", axis)),
+                                &label,
+                                &mut repair.origin[axis],
+                                96.0,
+                                None,
+                                Some(if axis == 0 {
+                                    tw::KERF
+                                } else {
+                                    Color32::from_rgb(78, 154, 87)
+                                }),
+                                !modal,
+                                invalid,
+                            )
+                            .changed()
+                            {
+                                repair.entry_unit.get_or_insert(unit);
+                                repair.consent[axis] = false;
+                                repair.placement_dirty = true;
+                            }
+                            match parse_length(&repair.origin[axis], unit) {
+                                Ok(parsed) => {
+                                    if let Conversion::NeedsConfirmation(value) = parsed.conversion
+                                    {
+                                        notes.push((axis, Some(value)));
+                                    }
+                                }
+                                Err(_) => notes.push((axis, None)),
+                            }
+                            valid &= coordinate(&repair.origin[axis], unit, repair.consent[axis])
+                                .is_some();
+                        }
+                        if ui
+                            .checkbox(
+                                &mut repair.quarter_turn,
+                                RichText::new(localizer.text("sheet-quarter-turn")).size(12.5),
+                            )
+                            .changed()
+                        {
+                            repair.placement_dirty = true;
+                        }
+                    });
+                    for (axis, rounded) in notes {
+                        match rounded {
+                            Some(value) => {
+                                let mut args = fluent_bundle::FluentArgs::new();
+                                args.set("entered", repair.origin[axis].as_str());
+                                args.set("rounded", format_length(value, Unit::Mm, locale, 3));
+                                ui.checkbox(
+                                    &mut repair.consent[axis],
+                                    localizer.format("rounding-confirmation", Some(&args)),
+                                );
+                            }
+                            None => {
+                                ui.label(
+                                    RichText::new(localizer.text("sheet-coordinate-error"))
+                                        .size(11.5)
+                                        .color(tw::DANGER),
+                                );
+                            }
+                        }
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        if small_button(
+                            ui,
+                            Some(Icon::Place),
+                            &localizer.text("sheet-stage"),
+                            true,
+                            !modal
+                                && valid
+                                && repair.stock.is_some()
+                                && !allocated.is_some_and(|a| a.locked),
+                        )
+                        .clicked()
+                        {
+                            action = Some(RepairAction::Place(
+                                id,
+                                repair.stock.unwrap(),
+                                [
+                                    coordinate(&repair.origin[0], unit, repair.consent[0]).unwrap(),
+                                    coordinate(&repair.origin[1], unit, repair.consent[1]).unwrap(),
+                                ],
+                                repair.quarter_turn,
+                            ));
+                        }
+                        if let Some(a) = allocated {
+                            if small_button(
+                                ui,
+                                None,
+                                &localizer.text("sheet-unallocate-action"),
+                                false,
+                                !modal && !repair.placement_dirty,
+                            )
+                            .clicked()
+                            {
+                                action = Some(RepairAction::Unallocate(id));
+                            }
+                            if small_button(
+                                ui,
+                                Some(Icon::Lock),
+                                &localizer.text(if a.locked {
+                                    "sheet-unlock"
+                                } else {
+                                    "sheet-lock"
+                                }),
+                                false,
+                                !modal && !repair.placement_dirty,
+                            )
+                            .clicked()
+                            {
+                                action = Some(RepairAction::Lock(id, !a.locked));
+                            }
+                        }
+                    });
+                    if let Some(key) = repair.error {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(localizer.text(key))
+                                    .size(12.0)
+                                    .color(tw::DANGER),
+                            )
+                            .wrap(),
+                        );
+                    }
+                    show_affected_statuses(ui, project, repair, preview, localizer);
+                });
+        });
+    action
+}
+
+fn show_affected_statuses(
+    ui: &mut egui::Ui,
+    project: &Project,
+    repair: &mut RepairUi,
+    preview: bool,
+    localizer: &Localizer,
+) {
+    let Some(affected) = &repair.affected else {
+        return;
+    };
+    let mut stocks: Vec<_> = affected.iter().copied().collect();
+    if stocks.is_empty() {
+        return;
+    }
+    stocks.sort_unstable();
+    let key = diagnostics_key(project, preview);
+    if repair
+        .affected_cache
+        .as_ref()
+        .is_none_or(|(cached, ids, _)| *cached != key || *ids != stocks)
+    {
+        let statuses = stocks
+            .iter()
+            .copied()
+            .map(|stock_id| {
+                let status =
+                    reconstruct_witness(project, stock_id, project.cutting_kerf, WITNESS_BUDGET);
+                let message = match status {
+                    Reconstruction::Verified { .. } => "sheet-verified",
+                    Reconstruction::BudgetExhausted => "sheet-feasibility-unknown",
+                    Reconstruction::RuleViolation(ReconstructionViolation::Witness(
+                        WitnessError::MaterialMismatch(_),
+                    )) => "conflict-material-identity",
+                    Reconstruction::RuleViolation(ReconstructionViolation::Witness(
+                        WitnessError::ThicknessMismatch(_),
+                    )) => "conflict-thickness",
+                    Reconstruction::RuleViolation(ReconstructionViolation::Witness(
+                        WitnessError::GrainMismatch(_),
+                    )) => "conflict-grain",
+                    Reconstruction::RuleViolation(ReconstructionViolation::Witness(
+                        WitnessError::PlacementMismatch(_),
+                    )) => "conflict-outside-stock",
+                    Reconstruction::RuleViolation(ReconstructionViolation::Cut(
+                        CutError::SubKerfEdge,
+                    )) => "sheet-kerf-conflict",
+                    Reconstruction::RuleViolation(_) => "sheet-cut-conflict",
+                };
+                (stock_id, message)
+            })
+            .collect();
+        repair.affected_cache = Some((key, stocks, statuses));
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        for &(stock_id, message) in &repair.affected_cache.as_ref().unwrap().2 {
+            let verified = message == "sheet-verified";
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.add(icons::icon(
+                    if verified { Icon::Check } else { Icon::Warning },
+                    if verified { tw::OK } else { tw::KERF },
+                    12.0,
+                ));
+                ui.label(
+                    RichText::new(format!(
+                        "{}: {}",
+                        project.stock_alias(stock_id).unwrap_or("?"),
+                        localizer.text(message)
+                    ))
+                    .size(11.5)
+                    .color(if verified { tw::OK_INK } else { tw::DANGER }),
+                );
+            });
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)] // The host passes the same workspace inputs plus its pane availability.
 pub fn show_with_layout(
     ui: &mut egui::Ui,
@@ -1533,39 +3288,11 @@ pub fn show_with_layout(
     }
     let project = editor.preview().unwrap_or(editor.project()).clone();
     let project = &project;
-    if !separate_inspector {
-        ui.heading(localizer.text("sheet-heading"));
-    }
+    let preview = editor.preview().is_some();
+    let loc = locale(localizer);
     let mut action = None;
     let mut selection_request = None;
-    let mut accept = false;
-    let mut cancel = false;
-    let key = diagnostics_key(project, editor.preview().is_some());
-    if repair
-        .stock_model_cache
-        .as_ref()
-        .is_none_or(|(cached, _)| *cached != key)
-    {
-        repair.hovered_cut = None;
-        repair.stock_model_cache = Some((key.clone(), StockReadModel::build(project).ok()));
-    }
-    if repair
-        .board_diagnostics_cache
-        .as_ref()
-        .is_none_or(|(cached, _)| *cached != key)
-    {
-        repair.board_diagnostics_cache = Some((
-            key.clone(),
-            repair
-                .stock_model_cache
-                .as_ref()
-                .unwrap()
-                .1
-                .as_ref()
-                .map(|model| model.boards.clone())
-                .unwrap_or_else(|| allocation_diagnostics::diagnose(project)),
-        ));
-    }
+    repair.refresh(project, preview);
     let model = repair.stock_model_cache.as_ref().unwrap().1.clone();
     let board_diagnostics = repair.board_diagnostics_cache.as_ref().unwrap().1.clone();
     let ordered = project.ordered_stock();
@@ -1578,249 +3305,28 @@ pub fn show_with_layout(
             .filter(|id| ordered.iter().any(|s| s.id == *id))
             .or_else(|| ordered.first().map(|s| s.id));
     }
-    if !separate_inspector {
-        ui.horizontal(|ui| {
-            ui.strong(localizer.text("sheet-priority-cards"));
-            if ui
-                .add_enabled(
-                    !modal && !repair.active(),
-                    egui::Button::new(localizer.text("stock-new")),
-                )
-                .clicked()
-            {
-                selection_request = Some(Request::new(A::NewStock));
-            }
-        });
-        egui::ScrollArea::horizontal()
-            .id_salt("sheet-cards")
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for stock in &ordered {
-                        let piece = model.as_ref().and_then(|m| m.miniature(stock.id));
-                        let proof = piece.map(|p| &p.proof);
-                        let count = project
-                            .allocations
-                            .iter()
-                            .filter(|a| a.stock_id == stock.id)
-                            .count();
-                        let material = project
-                            .materials
-                            .iter()
-                            .find(|m| m.id == stock.material_id)
-                            .map(|m| m.name.as_str())
-                            .unwrap_or("?");
-                        let title = format!(
-                            "{} · {} · {}",
-                            project.stock_alias(stock.id).unwrap_or("?"),
-                            material,
-                            stock.name
-                        );
-                        let description = format!(
-                            "{} × {} · {} {}",
-                            format_length(stock.length, Unit::Mm, locale(localizer), 0),
-                            format_length(stock.width, Unit::Mm, locale(localizer), 0),
-                            count,
-                            localizer.text("sheet-parts")
-                        );
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(230.0, 150.0),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                sheet_thumbnail(ui, project, stock);
-                                if ui
-                                    .add_enabled(
-                                        !modal,
-                                        egui::Button::new(title)
-                                            .min_size(egui::vec2(220.0, 36.0))
-                                            .selected(repair.focused_sheet == Some(stock.id)),
-                                    )
-                                    .clicked()
-                                {
-                                    repair.focused_sheet = Some(stock.id);
-                                }
-                                ui.small(description);
-                                ui.small(format!(
-                                    "#{} · {} · {}",
-                                    piece.map(|p| p.global_rank).unwrap_or_else(|| ordered
-                                        .iter()
-                                        .position(|s| s.id == stock.id)
-                                        .unwrap()
-                                        + 1),
-                                    localizer.text(match stock.source {
-                                        plan_my_cabinet::domain::StockSource::Owned =>
-                                            "stock-owned",
-                                        plan_my_cabinet::domain::StockSource::ToPurchase =>
-                                            "stock-purchase",
-                                    }),
-                                    card_status(proof, localizer)
-                                ));
-                                if let Some(percent) = card_utilization(proof) {
-                                    ui.small(format!("{percent}%"));
-                                }
-                            },
-                        );
-                    }
-                });
-            });
-        ui.separator();
-        ui.strong(localizer.text("sheet-needs-stock"));
-        if !needs_stock(&board_diagnostics).any(|_| true) {
-            ui.small(localizer.text("sheet-no-issues"));
-        }
-        for entry in needs_stock(&board_diagnostics) {
-            let Some(board) = project.boards.iter().find(|b| b.id == entry.board_id) else {
-                continue;
-            };
-            ui.group(|ui| {
-                let hidden = !selection.visible(project, board.id);
-                ui.strong(format!(
-                    "{}{}",
-                    board_label(board),
-                    if hidden {
-                        format!(" · {}", localizer.text("global-hidden"))
-                    } else {
-                        String::new()
-                    }
-                ));
-                ui.small(format!(
-                    "{} × {} × {}",
-                    format_length(board.length, Unit::Mm, locale(localizer), 3),
-                    format_length(board.width, Unit::Mm, locale(localizer), 3),
-                    format_length(board.thickness, Unit::Mm, locale(localizer), 3)
-                ));
-                for reason in &entry.reasons {
-                    ui.colored_label(egui::Color32::DARK_RED, localizer.text(reason.key()));
-                }
-                if project.allocations.iter().any(|allocation| {
-                    allocation.board_id == board.id
-                        && matches!(
-                            model
-                                .as_ref()
-                                .and_then(|m| m.miniature(allocation.stock_id))
-                                .map(|piece| &piece.proof),
-                            Some(SheetProof::Violation(ReconstructionViolation::Cut(
-                                CutError::InvalidTrim
-                            )))
-                        )
-                }) {
-                    ui.colored_label(
-                        egui::Color32::DARK_RED,
-                        localizer.text("sheet-trim-conflict"),
-                    );
-                }
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            !modal && !repair.active(),
-                            egui::Button::new(localizer.text("global-locate")),
-                        )
-                        .clicked()
-                    {
-                        selection_request =
-                            Some(Request::with(A::LocateIssue, Target::Board(board.id)));
-                    }
-                    if needs_new_stock(project, entry) {
-                        if ui
-                            .add_enabled(
-                                !modal && !repair.active(),
-                                egui::Button::new(localizer.text("sheet-add-material")),
-                            )
-                            .clicked()
-                        {
-                            selection_request = Some(issue_resolution(project, entry));
-                        }
-                    } else if ui
-                        .add_enabled(
-                            !modal && !repair.active(),
-                            egui::Button::new(localizer.text("global-repair")),
-                        )
-                        .clicked()
-                    {
-                        selection_request = Some(issue_resolution(project, entry));
-                    }
-                });
-            });
-            if focus.scroll_to_target && focus.issue == Some(board.id) {
-                ui.scroll_to_cursor(Some(egui::Align::TOP));
-            }
-        }
+    let can_accept = repair.active() && repair.can_accept(editor);
+    let toolbar = egui::Frame::new()
+        .inner_margin(Margin::symmetric(14, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            show_toolbar(ui, project, &ordered, repair, can_accept, modal, localizer)
+        })
+        .inner;
+    if let Some(id) = toolbar.focus {
+        repair.focused_sheet = Some(id);
     }
-    if let Some(index) = ordered
-        .iter()
-        .position(|s| Some(s.id) == repair.focused_sheet)
-    {
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!modal && index > 0, egui::Button::new("‹"))
-                .on_hover_text(localizer.text("sheet-previous"))
-                .clicked()
-            {
-                repair.focused_sheet = Some(ordered[index - 1].id);
-            }
-            let name = stock_label(project, ordered[index]);
-            ui.strong(if separate_inspector {
-                name.clone()
-            } else {
-                format!("{} · {name}", localizer.text("sheet-target"))
-            })
-            .on_hover_text(ordered[index].id.to_string());
-            if ui
-                .add_enabled(!modal && index + 1 < ordered.len(), egui::Button::new("›"))
-                .on_hover_text(localizer.text("sheet-next"))
-                .clicked()
-            {
-                repair.focused_sheet = Some(ordered[index + 1].id);
-            }
-        });
-        let stock = ordered
-            .iter()
-            .find(|s| Some(s.id) == repair.focused_sheet)
-            .copied()
-            .unwrap();
-        let piece = model.as_ref().and_then(|m| m.miniature(stock.id));
-        if !separate_inspector {
-            ui.small(card_status(piece.map(|p| &p.proof), localizer));
-            if let Some(piece) = piece
-                && let Some(percent) = card_utilization(Some(&piece.proof))
-            {
-                ui.small(format!(
-                    "{}: {percent}% · {}: {}",
-                    localizer.text("sheet-utilization"),
-                    localizer.text("sheet-physical-cuts"),
-                    piece.proof.cut_count().unwrap()
-                ));
-            }
-        }
-    } else {
-        ui.small(localizer.text("sheet-no-pieces"));
+    let accept = toolbar.accept;
+    let mut cancel = toolbar.cancel;
+    if toolbar.fit {
+        repair.zoom = 1.0;
     }
-    if !repair.active() {
-        if !separate_inspector {
-            ui.small(localizer.text("sheet-read-only"));
-        }
-        if ui
-            .add_enabled(!modal, egui::Button::new(localizer.text("sheet-edit")))
-            .clicked()
-        {
-            let _ = actions::contextual(Request::new(A::BeginRepair), Ok(()), || {
-                repair.begin(editor, selection, locale(localizer))
-            });
-        }
-    } else {
-        if !separate_inspector {
-            ui.small(localizer.text("sheet-repair-hint"));
-        }
-        ui.horizontal(|ui| {
-            accept = ui
-                .add_enabled(
-                    !modal && repair.can_accept(editor),
-                    egui::Button::new(localizer.text("sheet-accept")),
-                )
-                .clicked();
-            cancel = ui
-                .add_enabled(!modal, egui::Button::new(localizer.text("sheet-cancel")))
-                .clicked();
+    if toolbar.begin {
+        let _ = actions::contextual(Request::new(A::BeginRepair), Ok(()), || {
+            repair.begin(editor, selection, loc)
         });
+    }
+    if repair.active() {
         if !modal
             && ui.input(|i| i.key_pressed(egui::Key::Escape))
             && !egui::Popup::is_any_open(ui.ctx())
@@ -1831,655 +3337,385 @@ pub fn show_with_layout(
         if modal {
             repair.drag = None;
         }
-        repair.select(project, selection.active, locale(localizer));
-        if let Some(id) = repair.board {
-            let allocated = project.allocations.iter().find(|a| a.board_id == id);
-            ui.label(format!(
-                "{}: {}",
-                localizer.text("sheet-selected"),
-                project
-                    .boards
-                    .iter()
-                    .find(|b| b.id == id)
-                    .map(board_label)
-                    .unwrap_or_default()
-            ));
-            ui.horizontal(|ui| {
-                ui.label(localizer.text("sheet-target"));
-                let previous = repair.stock;
-                egui::ComboBox::from_id_salt("sheet-target-stock")
-                    .selected_text(
-                        project
-                            .stock
-                            .iter()
-                            .find(|s| Some(s.id) == repair.stock)
-                            .map(|s| stock_label(project, s))
-                            .unwrap_or_default(),
-                    )
-                    .show_ui(ui, |ui| {
-                        for stock in project.ordered_stock() {
-                            ui.selectable_value(
-                                &mut repair.stock,
-                                Some(stock.id),
-                                stock_label(project, stock),
-                            )
-                            .on_hover_text(stock.id.to_string());
-                        }
-                    });
-                if repair.stock != previous {
-                    repair.placement_dirty = true;
-                }
-            });
-            let unit = repair.entry_unit.unwrap_or_else(|| numeric_unit(project));
-            let mut valid = true;
-            for axis in 0..2 {
-                ui.horizontal(|ui| {
-                    ui.label(localizer.text(if axis == 0 {
-                        "sheet-origin-x"
-                    } else {
-                        "sheet-origin-y"
-                    }));
-                    if ui.text_edit_singleline(&mut repair.origin[axis]).changed() {
-                        repair.entry_unit.get_or_insert(unit);
-                        repair.consent[axis] = false;
-                        repair.placement_dirty = true;
-                    }
-                });
-                match parse_length(&repair.origin[axis], unit) {
-                    Ok(parsed) => {
-                        if let Conversion::NeedsConfirmation(value) = parsed.conversion {
-                            let mut args = fluent_bundle::FluentArgs::new();
-                            args.set("entered", repair.origin[axis].as_str());
-                            args.set(
-                                "rounded",
-                                format_length(value, Unit::Mm, locale(localizer), 3),
-                            );
-                            ui.checkbox(
-                                &mut repair.consent[axis],
-                                localizer.format("rounding-confirmation", Some(&args)),
-                            );
-                        }
-                    }
-                    Err(_) => {
-                        ui.colored_label(
-                            egui::Color32::DARK_RED,
-                            localizer.text("sheet-coordinate-error"),
-                        );
-                    }
-                }
-                valid &= coordinate(&repair.origin[axis], unit, repair.consent[axis]).is_some();
-            }
-            if ui
-                .checkbox(
-                    &mut repair.quarter_turn,
-                    localizer.text("sheet-quarter-turn"),
-                )
-                .changed()
-            {
-                repair.placement_dirty = true;
-            }
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        !modal
-                            && valid
-                            && repair.stock.is_some()
-                            && !allocated.is_some_and(|a| a.locked),
-                        egui::Button::new(localizer.text("sheet-stage")),
-                    )
-                    .clicked()
-                {
-                    action = Some(RepairAction::Place(
-                        id,
-                        repair.stock.unwrap(),
-                        [
-                            coordinate(&repair.origin[0], unit, repair.consent[0]).unwrap(),
-                            coordinate(&repair.origin[1], unit, repair.consent[1]).unwrap(),
-                        ],
-                        repair.quarter_turn,
-                    ));
-                }
-                if let Some(a) = allocated {
-                    if ui
-                        .add_enabled(
-                            !modal && !repair.placement_dirty,
-                            egui::Button::new(localizer.text("sheet-unallocate-action")),
-                        )
-                        .clicked()
-                    {
-                        action = Some(RepairAction::Unallocate(id));
-                    }
-                    if ui
-                        .add_enabled(
-                            !modal && !repair.placement_dirty,
-                            egui::Button::new(localizer.text(if a.locked {
-                                "sheet-unlock"
-                            } else {
-                                "sheet-lock"
-                            })),
-                        )
-                        .clicked()
-                    {
-                        action = Some(RepairAction::Lock(id, !a.locked));
-                    }
-                }
-            });
-        }
-        if let Some(key) = repair.error {
-            ui.colored_label(egui::Color32::DARK_RED, localizer.text(key));
-        }
-        if let Some(affected) = &repair.affected {
-            let mut stocks: Vec<_> = affected.iter().copied().collect();
-            stocks.sort_unstable();
-            let key = diagnostics_key(project, editor.preview().is_some());
-            if repair
-                .affected_cache
-                .as_ref()
-                .is_none_or(|(cached, ids, _)| *cached != key || *ids != stocks)
-            {
-                let statuses = stocks
-                    .iter()
-                    .copied()
-                    .map(|stock_id| {
-                        let status = reconstruct_witness(
-                            project,
-                            stock_id,
-                            project.cutting_kerf,
-                            WITNESS_BUDGET,
-                        );
-                        let message = match status {
-                            Reconstruction::Verified { .. } => "sheet-verified",
-                            Reconstruction::BudgetExhausted => "sheet-feasibility-unknown",
-                            Reconstruction::RuleViolation(ReconstructionViolation::Witness(
-                                WitnessError::MaterialMismatch(_),
-                            )) => "conflict-material-identity",
-                            Reconstruction::RuleViolation(ReconstructionViolation::Witness(
-                                WitnessError::ThicknessMismatch(_),
-                            )) => "conflict-thickness",
-                            Reconstruction::RuleViolation(ReconstructionViolation::Witness(
-                                WitnessError::GrainMismatch(_),
-                            )) => "conflict-grain",
-                            Reconstruction::RuleViolation(ReconstructionViolation::Witness(
-                                WitnessError::PlacementMismatch(_),
-                            )) => "conflict-outside-stock",
-                            Reconstruction::RuleViolation(ReconstructionViolation::Cut(
-                                CutError::SubKerfEdge,
-                            )) => "sheet-kerf-conflict",
-                            Reconstruction::RuleViolation(_) => "sheet-cut-conflict",
-                        };
-                        (stock_id, message)
-                    })
-                    .collect();
-                repair.affected_cache = Some((key, stocks, statuses));
-            }
-            for &(stock_id, message) in &repair.affected_cache.as_ref().unwrap().2 {
-                ui.colored_label(
-                    if message == "sheet-verified" {
-                        egui::Color32::DARK_GREEN
-                    } else {
-                        egui::Color32::DARK_RED
-                    },
-                    format!(
-                        "{}: {}",
-                        project
-                            .stock
-                            .iter()
-                            .find(|s| s.id == stock_id)
-                            .map(|s| stock_label(project, s))
-                            .unwrap_or_else(|| stock_id.to_string()),
-                        localizer.text(message)
-                    ),
-                );
-            }
-        }
+        repair.select(project, selection.active, loc);
+        action = show_repair_strip(ui, project, repair, modal, preview, localizer);
     }
     let issues = diagnostic_issues(&board_diagnostics);
     let canvas_sheet = repair.focused_sheet;
-    ui.horizontal_wrapped(|ui| {
-        if ui.button(localizer.text("sheet-fit")).clicked() {
-            repair.zoom = 1.0;
-        }
-        if ui
-            .button("−")
-            .on_hover_text(localizer.text("sheet-zoom-out"))
-            .clicked()
-        {
-            repair.zoom = (repair.zoom.max(0.1) / 1.25).max(0.25);
-        }
-        if ui
-            .button("+")
-            .on_hover_text(localizer.text("sheet-zoom-in"))
-            .clicked()
-        {
-            repair.zoom = (repair.zoom.max(0.1) * 1.25).min(4.0);
-        }
-        ui.checkbox(
-            &mut repair.overlays.cuts,
-            localizer.text("sheet-overlay-cuts"),
-        );
-        ui.checkbox(
-            &mut repair.overlays.offcuts,
-            localizer.text("sheet-overlay-offcuts"),
-        );
-        ui.checkbox(
-            &mut repair.overlays.grain,
-            localizer.text("sheet-overlay-grain"),
-        );
-        ui.checkbox(
-            &mut repair.overlays.ids,
-            localizer.text("sheet-overlay-ids"),
-        );
-    });
-    ui.small(localizer.text("sheet-legend"));
     egui::ScrollArea::vertical()
         .id_salt("sheet-workspace-scroll")
         .show(ui, |ui| {
-            for stock in project
-                .ordered_stock()
-                .into_iter()
-                .filter(|s| Some(s.id) == canvas_sheet)
-            {
-                let width = ui.available_width();
-                let height =
-                    ui.available_height().max(280.0) - if separate_inspector { 25.0 } else { 0.0 };
-                let size = sheet_panes(egui::Pos2::ZERO, width, height, separate_inspector).bounds;
-                let (allocated, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                let layout = sheet_panes(allocated.min, width, height, separate_inspector);
-                // Inspect first, even though it is on the right: pointer state
-                // reaches the canvas painter during this same frame.
-                let hovered_cut = if separate_inspector {
-                    repair
-                        .hovered_cut
-                        .and_then(|(id, number)| (id == stock.id).then_some(number))
-                } else {
-                    let mut inspector_ui = ui.new_child(
-                        egui::UiBuilder::new()
-                            .id_salt(("sheet-inspector-pane", stock.id))
-                            .max_rect(layout.inspector),
-                    );
-                    inspector_ui.set_clip_rect(layout.inspector.intersect(ui.clip_rect()));
-                    egui::ScrollArea::vertical()
-                        .id_salt(("sheet-sequence-scroll", stock.id))
-                        .max_height(layout.inspector.height())
-                        .show(&mut inspector_ui, |ui| {
-                            sheet_inspector(
-                                ui,
-                                model.as_ref().and_then(|m| m.miniature(stock.id)),
-                                localizer,
-                                false,
-                            )
-                        })
-                        .inner
-                };
-                let mut canvas_ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .id_salt(("sheet-canvas-pane", stock.id))
-                        .max_rect(layout.canvas),
-                );
-                canvas_ui.set_clip_rect(layout.canvas.intersect(ui.clip_rect()));
-                egui::ScrollArea::both()
-                    .id_salt(("sheet-canvas-scroll", stock.id))
-                    .max_height(layout.canvas.height())
-                    .show(&mut canvas_ui, |ui| {
-                        ui.separator();
-                        let heading = ui.strong(stock_label(project, stock));
-                        heading.on_hover_text(stock.id.to_string());
-                        let scale = sheet_scale(
-                            stock,
-                            (layout.canvas.width() - 72.0).max(1.0),
-                            (layout.canvas.height() - 115.0).max(1.0),
-                        ) * repair.zoom.max(0.1);
-                        let sheet_size = egui::vec2(
-                            (stock.length.micrometres() as f64 / 1000.0 * f64::from(scale)) as f32,
-                            (stock.width.micrometres() as f64 / 1000.0 * f64::from(scale)) as f32,
+            let Some(stock) = ordered.iter().find(|s| Some(s.id) == canvas_sheet).copied() else {
+                egui::Frame::new()
+                    .inner_margin(Margin::same(24))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new(localizer.text("sheet-no-pieces"))
+                                .size(13.0)
+                                .color(tw::MUTED),
                         );
-                        // Keep partially outside draft placements visible at the edge.
-                        let gutter = egui::vec2(34.0, 28.0);
-                        let (canvas, response) = ui.allocate_exact_size(
-                            sheet_size.max(egui::vec2(1.0, 1.0)) + gutter * 2.0,
-                            egui::Sense::click_and_drag(),
-                        );
-                        let painter = ui.painter().with_clip_rect(canvas);
-                        let sheet = egui::Rect::from_min_size(canvas.min + gutter, sheet_size);
-                        painter.rect_filled(sheet, 0.0, egui::Color32::from_rgb(233, 221, 195));
-                        painter.rect_stroke(
-                            sheet,
-                            0.0,
-                            egui::Stroke::new(2.0, egui::Color32::DARK_GRAY),
-                            egui::StrokeKind::Inside,
-                        );
-                        paint_rulers(&painter, sheet, stock, scale);
-                        let proof = model
-                            .as_ref()
-                            .and_then(|m| m.miniature(stock.id))
-                            .map(|p| &p.proof);
-                        let witness = proof.and_then(|p| p.verified().map(|(tree, _)| tree));
-                        if let Some(tree) = witness {
-                            paint_witness(
-                                &painter,
-                                sheet,
-                                tree,
-                                scale,
-                                SheetOverlays {
-                                    cuts: false,
-                                    ..repair.overlays
-                                },
-                                None,
-                            );
-                        }
-                        let allocations: Vec<_> = project
-                            .allocations
-                            .iter()
-                            .filter(|a| a.stock_id == stock.id)
-                            .collect();
-                        let hit_regions: Vec<_> = allocations
-                            .iter()
-                            .filter_map(|a| {
-                                footprint(project, a).map(|rect| {
-                                    (allocation_rect(sheet.min, scale, rect), a.board_id)
-                                })
-                            })
-                            .collect();
-                        if repair.active()
-                            && !modal
-                            && !cancel
-                            && !repair.placement_dirty
-                            && !ui.ctx().egui_wants_keyboard_input()
-                        {
-                            if response.drag_started()
-                                && let Some(pointer) = response.interact_pointer_pos()
-                                && let Some(id) = hit_board(
-                                    &hit_regions,
-                                    canvas,
-                                    ui.input(|i| i.pointer.press_origin()).unwrap_or(pointer),
-                                )
-                                && let Some(a) =
-                                    project.allocations.iter().find(|a| a.board_id == id)
-                            {
-                                choose_sheet_board(project, selection, id, false);
-                                repair.select(project, Some(id), locale(localizer));
-                                if !a.locked {
-                                    repair.drag = Some(SheetDrag {
-                                        board: id,
-                                        stock: stock.id,
-                                        origin: a.origin,
-                                        turn: a.quarter_turn,
-                                        start: ui
-                                            .input(|i| i.pointer.press_origin())
-                                            .unwrap_or(pointer),
-                                        candidate: None,
-                                    });
-                                }
-                            }
-                            if let Some(drag) = repair.drag.as_mut()
-                                && drag.stock == stock.id
-                                && let Some(pointer) = response.interact_pointer_pos()
-                            {
-                                drag.update(project, pointer, scale);
-                            }
-                            if response.drag_stopped()
-                                && let Some(drag) = repair.drag.take()
-                            {
-                                if drag.stock == stock.id {
-                                    let pointer =
-                                        response.interact_pointer_pos().unwrap_or(drag.start);
-                                    action = Some(RepairAction::Place(
-                                        drag.board,
-                                        drag.stock,
-                                        drag_origin(drag.origin, pointer - drag.start, scale),
-                                        drag.turn,
-                                    ));
-                                } else {
-                                    repair.drag = Some(drag);
-                                }
-                            }
-                        }
-                        for (index, allocation) in allocations.iter().enumerate() {
-                            let (Some(board), Some(rect)) = (
-                                project.boards.iter().find(|b| b.id == allocation.board_id),
-                                footprint(project, allocation),
-                            ) else {
-                                continue;
-                            };
-                            let region = allocation_rect(sheet.min, scale, rect);
-                            let selected = selection.active == Some(board.id);
-                            let conflict = issues.get(&board.id).is_some_and(|v| !v.is_empty());
-                            paint_allocation(
-                                &painter,
-                                region,
-                                board,
-                                localizer,
-                                repair.overlays,
-                                index + 1,
-                                PartEmphasis {
-                                    selected,
-                                    in_selection: selection.ids.contains(&board.id),
-                                    conflict,
-                                },
-                            );
-                            if repair.overlays.grain
-                                && let Some(material) =
-                                    project.materials.iter().find(|m| m.id == board.material_id)
-                                && let Some(direction) = grain_direction(
-                                    board.effective_grain(material),
-                                    allocation.quarter_turn,
-                                )
-                                && region.width() >= 42.0
-                                && region.height() >= 42.0
-                            {
-                                painter.with_clip_rect(region).arrow(
-                                    region.left_top() + egui::vec2(7.0, 7.0),
-                                    direction,
-                                    egui::Stroke::new(1.5, egui::Color32::from_rgb(35, 49, 110)),
-                                );
-                            }
-                        }
-                        if let Some(tree) = witness {
-                            paint_witness(
-                                &painter,
-                                sheet,
-                                tree,
-                                scale,
-                                SheetOverlays {
-                                    offcuts: false,
-                                    ..repair.overlays
-                                },
-                                hovered_cut,
-                            );
-                        }
-                        if let Some(drag) = repair.drag.as_ref()
-                            && drag.stock == stock.id
-                            && let Some((origin, status)) = drag.candidate
-                            && let Some(allocation) = project
-                                .allocations
-                                .iter()
-                                .find(|a| a.board_id == drag.board)
-                            && let Some(rect) = footprint(project, allocation)
-                        {
-                            let ghost = allocation_rect(
-                                sheet.min,
-                                scale,
-                                [
-                                    origin[0].micrometres(),
-                                    origin[1].micrometres(),
-                                    rect[2],
-                                    rect[3],
-                                ],
-                            );
-                            painter.rect_stroke(
-                                ghost,
-                                0.0,
-                                egui::Stroke::new(3.0, status.color()),
-                                egui::StrokeKind::Outside,
-                            );
-                            painter.text(
-                                canvas.min + egui::vec2(gutter.x, 2.0),
-                                egui::Align2::LEFT_TOP,
-                                localizer.text(status.key()),
-                                egui::FontId::proportional(13.0),
-                                status.color(),
-                            );
-                        }
-                        // Stock grain is in sheet coordinates, independent of assembly rotation.
-                        let arrow = match stock.grain {
-                            StockGrain::AlongX => Some(egui::vec2(34.0, 0.0)),
-                            StockGrain::AlongY => Some(egui::vec2(0.0, 34.0)),
-                            _ => None,
-                        };
-                        if repair.overlays.grain
-                            && let Some(direction) = arrow
-                        {
-                            let start = sheet.min + egui::vec2(10.0, 10.0);
-                            painter.arrow(
-                                start,
-                                direction,
-                                egui::Stroke::new(3.0, egui::Color32::from_rgb(35, 49, 110)),
-                            );
-                        }
-                        ui.small(format!(
-                            "{}: {}",
-                            localizer.text("stock-grain"),
-                            localizer.text(match stock.grain {
-                                StockGrain::AlongX => "stock-grain-x",
-                                StockGrain::AlongY => "stock-grain-y",
-                                StockGrain::Nondirectional => "stock-grain-none",
-                                StockGrain::Unknown => "stock-grain-unknown",
-                            })
-                        ));
-                        if !modal
-                            && !ui.ctx().egui_wants_keyboard_input()
-                            && response.clicked()
-                            && (!repair.active() || !repair.placement_dirty)
-                            && let Some(pointer) = response.interact_pointer_pos()
-                            && let Some(id) = hit_board(&hit_regions, canvas, pointer)
-                        {
-                            selection_request = Some(
-                                Request::with(A::SelectSheetBoard, Target::Board(id)).argument(
-                                    Argument::Additive(
-                                        ui.input(|i| i.modifiers.command || i.modifiers.shift),
-                                    ),
-                                ),
-                            );
-                        }
-                        for (_, id) in hit_regions {
-                            if let Some(board) = project.boards.iter().find(|b| b.id == id) {
-                                let warning = issues.get(&id).map(|v| issue_text(localizer, v));
-                                ui.horizontal(|ui| {
-                                    let label = board_label(board);
-                                    if ui
-                                        .add_enabled(
-                                            !modal && (!repair.active() || !repair.placement_dirty),
-                                            egui::Button::new(label)
-                                                .selected(selection.active == Some(id)),
-                                        )
-                                        .clicked()
-                                    {
-                                        selection_request = Some(
-                                            Request::with(A::SelectSheetBoard, Target::Board(id))
-                                                .argument(Argument::Additive(ui.input(|i| {
-                                                    i.modifiers.command || i.modifiers.shift
-                                                }))),
-                                        );
-                                    }
-                                    if let Some(warning) = warning {
-                                        ui.colored_label(
-                                            egui::Color32::DARK_RED,
-                                            format!("⚠ {warning}"),
-                                        );
-                                    }
-                                });
-                            }
-                        }
-                        for (index, allocation) in project
-                            .allocations
-                            .iter()
-                            .filter(|a| a.stock_id == stock.id)
-                            .enumerate()
-                        {
-                            if let Some(board) =
-                                project.boards.iter().find(|b| b.id == allocation.board_id)
-                            {
-                                ui.small(format!(
-                                    "{} · {} · {} × {} · X {} / Y {}{}",
-                                    index + 1,
-                                    if repair.overlays.ids {
-                                        board_label(board)
-                                    } else {
-                                        board.name.clone()
-                                    },
-                                    format_length(board.length, Unit::Mm, locale(localizer), 3),
-                                    format_length(board.width, Unit::Mm, locale(localizer), 3),
-                                    format_length(
-                                        allocation.origin[0],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                    format_length(
-                                        allocation.origin[1],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                    issues
-                                        .get(&board.id)
-                                        .map(|items| format!(
-                                            " · ⚠ {}",
-                                            issue_text(localizer, items)
-                                        ))
-                                        .unwrap_or_default(),
-                                ));
-                            }
-                        }
-                        if repair.overlays.offcuts
-                            && let Some(tree) = witness
-                        {
-                            for (id, node) in tree
-                                .nodes()
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, node)| node.kind == CutKind::Offcut)
-                            {
-                                ui.small(format!(
-                                    "{} #{id} · {} × {} · X {} / Y {}",
-                                    localizer.text("sheet-overlay-offcuts"),
-                                    format_length(
-                                        node.rectangle.extent[0],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                    format_length(
-                                        node.rectangle.extent[1],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                    format_length(
-                                        node.rectangle.origin[0],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                    format_length(
-                                        node.rectangle.origin[1],
-                                        Unit::Mm,
-                                        locale(localizer),
-                                        3
-                                    ),
-                                ));
-                            }
-                        }
                     });
+                return;
+            };
+            let width = ui.available_width();
+            let height = ui.available_height().max(280.0);
+            let size = sheet_panes(egui::Pos2::ZERO, width, height, separate_inspector).bounds;
+            let (allocated, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let layout = sheet_panes(allocated.min, width, height, separate_inspector);
+            let piece = model.as_ref().and_then(|m| m.miniature(stock.id));
+            // Inspect first, even though it is on the right: pointer state
+            // reaches the canvas painter during this same frame.
+            let hovered_cut = if separate_inspector {
+                repair
+                    .hovered_cut
+                    .and_then(|(id, number)| (id == stock.id).then_some(number))
+            } else {
+                let mut inspector_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt(("sheet-inspector-pane", stock.id))
+                        .max_rect(layout.inspector),
+                );
+                inspector_ui.set_clip_rect(layout.inspector.intersect(ui.clip_rect()));
+                inspector_ui
+                    .painter()
+                    .rect_filled(layout.inspector, 9.0, tw::PANEL);
+                egui::ScrollArea::vertical()
+                    .id_salt(("sheet-sequence-scroll", stock.id))
+                    .max_height(layout.inspector.height())
+                    .show(&mut inspector_ui, |ui| {
+                        ui.set_width(layout.inspector.width());
+                        sheet_inspector(ui, piece, project, localizer, None, None)
+                    })
+                    .inner
+            };
+            let mut canvas_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt(("sheet-canvas-pane", stock.id))
+                    .max_rect(layout.canvas),
+            );
+            canvas_ui.set_clip_rect(layout.canvas.intersect(ui.clip_rect()));
+            let view = egui::Rect::from_min_max(
+                layout.canvas.min,
+                egui::pos2(
+                    layout.canvas.right(),
+                    (layout.canvas.bottom() - LEGEND_HEIGHT).max(layout.canvas.top() + 60.0),
+                ),
+            );
+            show_legend(
+                &canvas_ui,
+                egui::pos2(
+                    layout.canvas.left() + 14.0,
+                    view.bottom() + LEGEND_HEIGHT / 2.0,
+                ),
+                project.cutting_kerf,
+                localizer,
+            );
+            let mut scroll_ui = canvas_ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt(("sheet-canvas-view", stock.id))
+                    .max_rect(view),
+            );
+            let mut scroll = egui::ScrollArea::both()
+                .id_salt(("sheet-canvas-scroll", stock.id))
+                .max_height(view.height())
+                .max_width(view.width())
+                .auto_shrink([false, false]);
+            if toolbar.fit {
+                scroll = scroll.scroll_offset(egui::Vec2::ZERO);
             }
-            if repair.focused_sheet.is_some()
-                && !project
+            scroll.show(&mut scroll_ui, |ui| {
+                let margin = SHEET_PADDING * 2.0 + RULER_ROOM;
+                let scale = sheet_scale(
+                    stock,
+                    (view.width() - margin).max(1.0),
+                    (view.height() - margin).max(1.0),
+                ) * repair.zoom.max(0.1);
+                let sheet_size = egui::vec2(
+                    (stock.length.micrometres() as f64 / 1000.0 * f64::from(scale)) as f32,
+                    (stock.width.micrometres() as f64 / 1000.0 * f64::from(scale)) as f32,
+                )
+                .max(egui::vec2(1.0, 1.0));
+                let content = egui::vec2(
+                    view.width().max(sheet_size.x + margin),
+                    view.height().max(sheet_size.y + margin),
+                );
+                let (canvas, response) =
+                    ui.allocate_exact_size(content, egui::Sense::click_and_drag());
+                let free = content - sheet_size - egui::vec2(margin, margin);
+                let sheet = egui::Rect::from_min_size(
+                    canvas.min
+                        + egui::vec2(
+                            SHEET_PADDING + RULER_ROOM + (free.x / 2.0).max(0.0),
+                            SHEET_PADDING + RULER_ROOM + (free.y / 2.0).max(0.0),
+                        ),
+                    sheet_size,
+                );
+                if response.hovered() {
+                    let zoom = ui.input(|i| i.zoom_delta());
+                    if zoom != 1.0 {
+                        repair.zoom = (repair.zoom * zoom).clamp(0.25, 4.0);
+                    }
+                }
+                let painter = ui
+                    .painter()
+                    .with_clip_rect(canvas.intersect(ui.clip_rect()));
+                painter.add(
+                    egui::Shadow {
+                        offset: [0, 6],
+                        blur: 20,
+                        spread: 0,
+                        color: Color32::from_rgba_unmultiplied(60, 45, 25, 36),
+                    }
+                    .as_shape(sheet, 0.0),
+                );
+                painter.rect_filled(sheet, 0.0, SHEET_FILL);
+                paint_rulers(&painter, sheet, stock, loc);
+                let witness = piece.and_then(|p| p.proof.verified().map(|(tree, _)| tree));
+                if let Some(tree) = witness {
+                    paint_witness(
+                        &painter,
+                        sheet,
+                        tree,
+                        scale,
+                        SheetOverlays {
+                            cuts: false,
+                            ..repair.overlays
+                        },
+                        None,
+                    );
+                }
+                let allocations: Vec<_> = project
                     .allocations
                     .iter()
-                    .any(|a| Some(a.stock_id) == repair.focused_sheet)
-            {
-                ui.small(localizer.text("sheet-no-placements"));
-            }
+                    .filter(|a| a.stock_id == stock.id)
+                    .collect();
+                let hit_regions: Vec<_> = allocations
+                    .iter()
+                    .filter_map(|a| {
+                        footprint(project, a)
+                            .map(|rect| (allocation_rect(sheet.min, scale, rect), a.board_id))
+                    })
+                    .collect();
+                if repair.active()
+                    && !modal
+                    && !cancel
+                    && !repair.placement_dirty
+                    && !ui.ctx().egui_wants_keyboard_input()
+                {
+                    if response.drag_started()
+                        && let Some(pointer) = response.interact_pointer_pos()
+                        && let Some(id) = hit_board(
+                            &hit_regions,
+                            canvas,
+                            ui.input(|i| i.pointer.press_origin()).unwrap_or(pointer),
+                        )
+                        && let Some(a) = project.allocations.iter().find(|a| a.board_id == id)
+                    {
+                        choose_sheet_board(project, selection, id, false);
+                        repair.select(project, Some(id), loc);
+                        if !a.locked {
+                            repair.drag = Some(SheetDrag {
+                                board: id,
+                                stock: stock.id,
+                                origin: a.origin,
+                                turn: a.quarter_turn,
+                                start: ui.input(|i| i.pointer.press_origin()).unwrap_or(pointer),
+                                candidate: None,
+                            });
+                        }
+                    }
+                    if let Some(drag) = repair.drag.as_mut()
+                        && drag.stock == stock.id
+                        && let Some(pointer) = response.interact_pointer_pos()
+                    {
+                        drag.update(project, pointer, scale);
+                    }
+                    if response.drag_stopped()
+                        && let Some(drag) = repair.drag.take()
+                    {
+                        if drag.stock == stock.id {
+                            let pointer = response.interact_pointer_pos().unwrap_or(drag.start);
+                            action = Some(RepairAction::Place(
+                                drag.board,
+                                drag.stock,
+                                drag_origin(drag.origin, pointer - drag.start, scale),
+                                drag.turn,
+                            ));
+                        } else {
+                            repair.drag = Some(drag);
+                        }
+                    }
+                }
+                let mut parts_ui = ui.new_child(egui::UiBuilder::new().max_rect(sheet));
+                parts_ui.set_clip_rect(sheet.intersect(ui.clip_rect()));
+                for allocation in &allocations {
+                    let (Some(board), Some(rect)) = (
+                        project.boards.iter().find(|b| b.id == allocation.board_id),
+                        footprint(project, allocation),
+                    ) else {
+                        continue;
+                    };
+                    let region = allocation_rect(sheet.min, scale, rect);
+                    let grain = project
+                        .materials
+                        .iter()
+                        .find(|m| m.id == board.material_id)
+                        .and_then(|material| {
+                            grain_direction(
+                                board.effective_grain(material),
+                                allocation.quarter_turn,
+                            )
+                        });
+                    paint_allocation(
+                        &parts_ui,
+                        region,
+                        board,
+                        localizer,
+                        repair.overlays,
+                        grain,
+                        PartEmphasis {
+                            selected: selection.active == Some(board.id),
+                            in_selection: selection.ids.contains(&board.id),
+                            conflict: issues.get(&board.id).is_some_and(|v| !v.is_empty()),
+                        },
+                    );
+                    if allocation.locked && region.width() >= 24.0 && region.height() >= 20.0 {
+                        icons::icon(Icon::Lock, tw::FAINT, 11.0).paint_at(
+                            &parts_ui,
+                            egui::Rect::from_min_size(
+                                egui::pos2(region.right() - 16.0, region.top() + 5.0),
+                                egui::Vec2::splat(11.0),
+                            ),
+                        );
+                    }
+                }
+                if let Some(tree) = witness {
+                    paint_witness(
+                        &painter,
+                        sheet,
+                        tree,
+                        scale,
+                        SheetOverlays {
+                            offcuts: false,
+                            ..repair.overlays
+                        },
+                        hovered_cut,
+                    );
+                }
+                painter.rect_stroke(
+                    sheet,
+                    0.0,
+                    Stroke::new(1.0, SHEET_EDGE),
+                    egui::StrokeKind::Outside,
+                );
+                if let Some(drag) = repair.drag.as_ref()
+                    && drag.stock == stock.id
+                    && let Some((origin, status)) = drag.candidate
+                    && let Some(allocation) = project
+                        .allocations
+                        .iter()
+                        .find(|a| a.board_id == drag.board)
+                    && let Some(rect) = footprint(project, allocation)
+                {
+                    let ghost = allocation_rect(
+                        sheet.min,
+                        scale,
+                        [
+                            origin[0].micrometres(),
+                            origin[1].micrometres(),
+                            rect[2],
+                            rect[3],
+                        ],
+                    );
+                    painter.rect_filled(ghost, 0.0, status.color().gamma_multiply(0.16));
+                    painter.rect_stroke(
+                        ghost,
+                        0.0,
+                        Stroke::new(3.0, status.color()),
+                        egui::StrokeKind::Outside,
+                    );
+                    let text = painter.layout_no_wrap(
+                        localizer.text(status.key()),
+                        egui::FontId::proportional(12.0),
+                        tw::PANEL,
+                    );
+                    let pill = egui::Rect::from_min_size(
+                        ghost.left_top() - egui::vec2(0.0, text.size().y + 10.0),
+                        text.size() + egui::vec2(12.0, 6.0),
+                    );
+                    painter.rect_filled(pill, 5.0, status.color());
+                    painter.galley(pill.min + egui::vec2(6.0, 3.0), text, tw::PANEL);
+                }
+                if allocations.is_empty() {
+                    let mut empty = ui.new_child(egui::UiBuilder::new().max_rect(sheet).layout(
+                        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                    ));
+                    empty.label(
+                        RichText::new(localizer.text("sheet-no-placements"))
+                            .size(12.5)
+                            .color(tw::FAINT),
+                    );
+                }
+                let pointer_part = response
+                    .hover_pos()
+                    .and_then(|pointer| hit_board(&hit_regions, canvas, pointer));
+                if repair.drag.is_none()
+                    && let Some(id) = pointer_part
+                    && let Some(board) = project.boards.iter().find(|b| b.id == id)
+                {
+                    let warning = issues.get(&id).map(|v| issue_text(localizer, v));
+                    let allocation = project.allocations.iter().find(|a| a.board_id == id);
+                    response.clone().on_hover_ui_at_pointer(|ui| {
+                        ui.label(tw::medium(ui, board.name.clone(), 13.0).color(tw::TEXT));
+                        ui.label(
+                            tw::mono(
+                                format!(
+                                    "{} · {}",
+                                    dims_text(board.length, board.width, loc),
+                                    board_short_id(board)
+                                ),
+                                11.5,
+                            )
+                            .color(tw::MUTED),
+                        );
+                        if let Some(allocation) = allocation {
+                            ui.label(
+                                tw::mono(
+                                    format!(
+                                        "X {} · Y {}",
+                                        mm_text(allocation.origin[0], loc),
+                                        mm_text(allocation.origin[1], loc)
+                                    ),
+                                    11.5,
+                                )
+                                .color(tw::FAINT),
+                            );
+                        }
+                        if let Some(warning) = warning {
+                            ui.label(
+                                RichText::new(capitalized(warning))
+                                    .size(12.0)
+                                    .color(tw::DANGER),
+                            );
+                        }
+                    });
+                }
+                if !modal
+                    && !ui.ctx().egui_wants_keyboard_input()
+                    && response.clicked()
+                    && (!repair.active() || !repair.placement_dirty)
+                    && let Some(pointer) = response.interact_pointer_pos()
+                    && let Some(id) = hit_board(&hit_regions, canvas, pointer)
+                {
+                    selection_request = Some(
+                        Request::with(A::SelectSheetBoard, Target::Board(id)).argument(
+                            Argument::Additive(
+                                ui.input(|i| i.modifiers.command || i.modifiers.shift),
+                            ),
+                        ),
+                    );
+                }
+            });
         });
     if let Some(action) = action {
         let moved = match &action {
@@ -2508,11 +3744,7 @@ pub fn show_with_layout(
         .is_ok_and(|succeeded| succeeded);
         if succeeded && let Some(id) = moved {
             repair.board = None;
-            repair.select(
-                editor.preview().unwrap_or(editor.project()),
-                Some(id),
-                locale(localizer),
-            );
+            repair.select(editor.preview().unwrap_or(editor.project()), Some(id), loc);
         }
     }
     if accept
@@ -2541,14 +3773,7 @@ pub fn show_with_layout(
         )
         .is_ok()
     {
-        editor.cancel_preview();
-        let focused_sheet = repair.focused_sheet;
-        let overlays = repair.overlays;
-        let zoom = repair.zoom;
-        *repair = RepairUi::default();
-        repair.focused_sheet = focused_sheet;
-        repair.overlays = overlays;
-        repair.zoom = zoom;
+        repair.cancel_navigation(editor);
     }
     selection_request
 }
@@ -2759,7 +3984,7 @@ mod tests {
         let mut editor = ProjectEditor::new(project).unwrap();
         assert_eq!(
             stock_label(editor.project(), &editor.project().stock[0]),
-            format!("O1 · offcut ({})", short_id(id))
+            "O1 · offcut"
         );
         let mut selection = Selection::default();
         selection.choose(Some(editor.project().boards[0].id), false);
@@ -2791,6 +4016,12 @@ mod tests {
         output.drop_without_applying_deltas();
         assert!(
             labels.iter().any(|label| label.contains(&expected)),
+            "{labels:?}"
+        );
+        // Raw UUIDs never reach the surface; the alias is the identity.
+        let raw = id.to_string();
+        assert!(
+            !labels.iter().any(|label| label.contains(&raw[..8])),
             "{labels:?}"
         );
     }
@@ -3378,11 +4609,7 @@ mod tests {
                     },
                 );
                 let sheet = output.shapes.iter().find_map(|shape| match &shape.shape {
-                    egui::Shape::Rect(rect)
-                        if rect.fill == egui::Color32::from_rgb(233, 221, 195) =>
-                    {
-                        Some(rect.rect)
-                    }
+                    egui::Shape::Rect(rect) if rect.fill == SHEET_FILL => Some(rect.rect),
                     _ => None,
                 });
                 let ghost_colors: Vec<_> = output
@@ -3414,7 +4641,7 @@ mod tests {
         let scale = sheet_scale(&editor.project().stock[0], sheet.width(), 280.0);
         let invalid = start + egui::vec2(100.0 * scale, 0.0);
         let (_, colors) = frame!(vec![egui::Event::PointerMoved(invalid)]);
-        assert!(colors.contains(&egui::Color32::RED));
+        assert!(colors.contains(&tw::KERF));
         assert_eq!(
             repair.drag.as_ref().unwrap().candidate.unwrap().1,
             DragStatus::Violation(Issue::Overlap)
@@ -3422,7 +4649,7 @@ mod tests {
         assert_eq!(editor.preview().unwrap(), &original);
         assert_eq!(editor.project(), &original);
         let (_, colors) = frame!(vec![egui::Event::PointerMoved(start)]);
-        assert!(colors.contains(&egui::Color32::GREEN));
+        assert!(colors.contains(&tw::OK));
         assert_eq!(
             repair.drag.as_ref().unwrap().candidate.unwrap().1,
             DragStatus::Verified
@@ -3543,18 +4770,17 @@ mod tests {
     }
 
     #[test]
-    fn conflicted_selected_allocation_paints_crossed_overlay_and_active_outline() {
+    fn conflicted_selected_allocation_paints_dashed_conflict_and_active_outline() {
         let ctx = egui::Context::default();
         let project = fixture();
         let output = ctx.run_ui(Default::default(), |ui| {
-            let painter = ui.painter();
             paint_allocation(
-                painter,
+                ui,
                 egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(80.0, 40.0)),
                 &project.boards[0],
                 &Localizer::new(Language::En),
                 SheetOverlays::default(),
-                1,
+                None,
                 PartEmphasis {
                     selected: true,
                     in_selection: true,
@@ -3562,14 +4788,27 @@ mod tests {
                 },
             );
         });
-        let crosses = output.shapes.iter().filter(|shape| matches!(
-            &shape.shape,
-            egui::Shape::LineSegment { stroke, .. } if stroke.color == egui::Color32::DARK_RED
-        )).count();
-        assert_eq!(crosses, 2);
+        // Conflict: #FBE3E0 fill with a dashed kerf outline at the recorded position.
         assert!(output.shapes.iter().any(|shape| matches!(
             &shape.shape,
-            egui::Shape::Rect(rect) if rect.stroke.color == egui::Color32::YELLOW
+            egui::Shape::Rect(rect) if rect.fill == CONFLICT_FILL
+                && rect.rect == egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(80.0, 40.0))
+        )));
+        let dashes = output
+            .shapes
+            .iter()
+            .filter(|shape| {
+                matches!(
+                    &shape.shape,
+                    egui::Shape::LineSegment { stroke, .. } if stroke.color == tw::KERF
+                )
+            })
+            .count();
+        assert!(dashes >= 8, "dashed conflict outline: {dashes}");
+        // The active selection keeps its 2px accent outline on top.
+        assert!(output.shapes.iter().any(|shape| matches!(
+            &shape.shape,
+            egui::Shape::Rect(rect) if rect.stroke.color == tw::ACCENT_DARK && rect.stroke.width == 2.0
         )));
         output.drop_without_applying_deltas();
     }
@@ -3612,12 +4851,12 @@ mod tests {
             let overlays = SheetOverlays::default();
             paint_witness(ui.painter(), sheet, tree, 0.1, overlays, None);
             paint_allocation(
-                ui.painter(),
+                ui,
                 egui::Rect::from_min_size(sheet.min, egui::vec2(8.0, 5.0)),
                 &project.boards[0],
                 &Localizer::new(Language::En),
                 overlays,
-                1,
+                None,
                 PartEmphasis {
                     selected: false,
                     in_selection: false,
@@ -3625,9 +4864,9 @@ mod tests {
                 },
             );
         });
-        let markers = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::Circle(circle) if circle.fill == egui::Color32::from_rgb(109, 58, 31))).count();
+        let markers = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::Circle(circle) if circle.fill == tw::PANEL && circle.stroke.color == tw::KERF)).count();
         assert_eq!(markers, operations.len());
-        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::LineSegment { stroke, .. } if stroke.color == egui::Color32::from_rgb(174, 95, 55) && stroke.width >= 1.0)));
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::LineSegment { stroke, .. } if stroke.color == kerf_band() && stroke.width >= 1.6)));
         output.drop_without_applying_deltas();
     }
 
@@ -3653,19 +4892,19 @@ mod tests {
             .into_iter()
             .find(|cut| cut.axis == Axis::Y && cut.input != tree.root())
             .unwrap();
-        let row = cut_row(WHITE_STOCK_ID, tree, &crosscut, &localizer, false);
-        assert!(row.contains(&format!("Input piece: #{}", crosscut.input)));
-        assert!(row.contains(&witness_piece_uuid(WHITE_STOCK_ID, crosscut.input).to_string()));
-        assert!(
-            row.contains(&witness_piece_uuid(WHITE_STOCK_ID, crosscut.outputs.first).to_string())
-        );
-        assert!(row.contains(&format!("Low-side output: #{}", crosscut.outputs.first)));
-        assert!(row.contains(&format!("High-side output: #{}", crosscut.outputs.second)));
+        let row = cut_row(tree, &crosscut, &localizer, false);
+        assert!(row.contains(&format!("Input piece: P{}", crosscut.input)));
+        assert!(row.contains(&format!("Low-side output: P{}", crosscut.outputs.first)));
+        assert!(row.contains(&format!("High-side output: P{}", crosscut.outputs.second)));
         assert!(row.contains("Reference edge:") && row.contains("Kerf side:"));
+        // Shop rows never expose raw UUIDs.
+        assert!(!row.contains(&WHITE_STOCK_ID.to_string()[..8]));
+        let first = &tree.operations()[0];
+        let first_op = cut_operation_text(tree, first, false, &localizer);
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         let output = ctx.run_ui(Default::default(), |ui| {
-            sheet_inspector(ui, Some(piece), &localizer, false);
+            sheet_inspector(ui, Some(piece), &project, &localizer, None, None);
         });
         let labels: Vec<_> = output
             .platform_output
@@ -3677,14 +4916,15 @@ mod tests {
             .filter_map(|(_, node)| node.label().or_else(|| node.value()).map(str::to_owned))
             .collect();
         for expected in [
-            "MDF White",
-            "18.000 mm",
+            "Sheet S1",
+            "MDF White 18",
             "BRL 289.90",
-            "Recoverable offcut area",
+            "Utilization",
+            "Physical cuts",
+            "Reusable offcuts",
             "Kerf loss",
-            "Trim loss",
-            "#1",
-            &crosscut.input.to_string(),
+            first_op.as_str(),
+            &format!("P{}", crosscut.input),
         ] {
             assert!(
                 labels.iter().any(|label| label.contains(expected)),
@@ -3709,9 +4949,7 @@ mod tests {
         assert_eq!(accounting.kerf_loss, 5_000 * 50_000);
         assert_eq!(area_label(accounting.trim_loss), "0.000250 m²");
         let localizer = Localizer::new(Language::En);
-        assert!(
-            cut_row(piece.id, tree, &tree.operations()[0], &localizer, true).contains("trim pass")
-        );
+        assert!(cut_row(tree, &tree.operations()[0], &localizer, true).contains("trim pass"));
         for proof in [
             SheetProof::SearchExhausted,
             SheetProof::Violation(ReconstructionViolation::NoSlicing),
@@ -3720,7 +4958,7 @@ mod tests {
             let ctx = egui::Context::default();
             ctx.enable_accesskit();
             let output = ctx.run_ui(Default::default(), |ui| {
-                sheet_inspector(ui, Some(&piece), &localizer, false);
+                sheet_inspector(ui, Some(&piece), &project, &localizer, None, None);
             });
             let labels: Vec<_> = output
                 .platform_output
@@ -3772,14 +5010,15 @@ mod tests {
             events,
             ..Default::default()
         };
+        let second_op = cut_operation_text(tree, &tree.operations()[1], false, &localizer);
         let first = ctx.run_ui(input(vec![]), |ui| {
-            sheet_inspector(ui, Some(piece), &localizer, false);
+            sheet_inspector(ui, Some(piece), &project, &localizer, None, None);
         });
         let pointer = first
             .shapes
             .iter()
             .find_map(|shape| match &shape.shape {
-                egui::Shape::Text(text) if text.galley.text().starts_with("#2") => {
+                egui::Shape::Text(text) if text.galley.text() == second_op => {
                     Some(text.pos + egui::vec2(5.0, 5.0))
                 }
                 _ => None,
@@ -3789,7 +5028,7 @@ mod tests {
         let sheet = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(275.0, 183.0));
         let mut hovered = None;
         let second = ctx.run_ui(input(vec![egui::Event::PointerMoved(pointer)]), |ui| {
-            hovered = sheet_inspector(ui, Some(piece), &localizer, false);
+            hovered = sheet_inspector(ui, Some(piece), &project, &localizer, None, None);
             paint_witness(
                 ui.painter(),
                 sheet,
@@ -3803,7 +5042,7 @@ mod tests {
         let cut = &tree.operations()[1];
         let band = kerf_geometry(tree, cut, sheet.min, 0.1);
         assert!(second.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.rect == band && rect.fill == egui::Color32::from_rgb(25, 85, 190).linear_multiply(0.9))));
+            egui::Shape::Rect(rect) if rect.rect == band && rect.fill == CUT_HIGHLIGHT)));
         assert_eq!(project, reference_fixture::project());
         second.drop_without_applying_deltas();
     }
@@ -3868,14 +5107,15 @@ mod tests {
                 },
             )
         };
+        let first_op = cut_operation_text(tree, &tree.operations()[0], false, &localizer);
+        let last_op = cut_operation_text(tree, &tree.operations()[8], false, &localizer);
         let first = frame(vec![], &mut editor, &mut repair, &mut selection);
         let row = first
             .shapes
             .iter()
             .find_map(|shape| match &shape.shape {
                 egui::Shape::Text(text)
-                    if text.galley.text().starts_with("#1")
-                        && text.galley.text().contains("Input piece")
+                    if text.galley.text() == first_op
                         && shape.clip_rect.contains(text.pos + egui::vec2(5.0, 5.0)) =>
                 {
                     Some(text.pos + egui::vec2(5.0, 5.0))
@@ -3891,10 +5131,7 @@ mod tests {
                 _ => false,
             })
         };
-        assert!(marker_visible(
-            &first.shapes,
-            egui::Color32::from_rgb(109, 58, 31)
-        ));
+        assert!(marker_visible(&first.shapes, tw::PANEL));
         first.drop_without_applying_deltas();
         let second = frame(
             vec![egui::Event::PointerMoved(row)],
@@ -3902,11 +5139,13 @@ mod tests {
             &mut repair,
             &mut selection,
         );
-        let marker = marker_visible(&second.shapes, egui::Color32::from_rgb(25, 85, 190));
+        let marker = marker_visible(&second.shapes, CUT_HIGHLIGHT);
         let cut = tree.operations()[0];
-        let band = second.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(25, 85, 190).linear_multiply(0.9)
-                && shape.clip_rect.intersects(rect.rect) && cut.number == 1));
+        let band = second.shapes.iter().any(|shape| {
+            matches!(&shape.shape,
+            egui::Shape::Rect(rect) if rect.fill == CUT_HIGHLIGHT
+                && shape.clip_rect.intersects(rect.rect) && cut.number == 1)
+        });
         assert_eq!(selection.active, None);
         assert_eq!(editor.project(), &original);
         second.drop_without_applying_deltas();
@@ -3948,8 +5187,7 @@ mod tests {
             );
             last_row = scrolled.shapes.iter().find_map(|shape| match &shape.shape {
                 egui::Shape::Text(text)
-                    if text.galley.text().starts_with("#9")
-                        && text.galley.text().contains("Input piece")
+                    if text.galley.text() == last_op
                         && shape.clip_rect.contains(text.pos + egui::vec2(5.0, 5.0)) =>
                 {
                     Some(text.pos + egui::vec2(5.0, 5.0))
@@ -3968,7 +5206,7 @@ mod tests {
             &mut repair,
             &mut selection,
         );
-        let linked = marker_visible(&last.shapes, egui::Color32::from_rgb(25, 85, 190));
+        let linked = marker_visible(&last.shapes, CUT_HIGHLIGHT);
         last.drop_without_applying_deltas();
         assert!(
             linked,
@@ -4042,10 +5280,21 @@ mod tests {
                 },
             )
         };
+        let tree = StockReadModel::build(editor.project())
+            .unwrap()
+            .miniature(WHITE_STOCK_ID)
+            .unwrap()
+            .proof
+            .verified()
+            .unwrap()
+            .0
+            .clone();
+        let first_op = cut_operation_text(&tree, &tree.operations()[0], false, &localizer);
+        let heading = localizer.text("sheet-sequence-heading").to_uppercase();
         let first = frame(vec![], &mut editor, &mut repair, &mut selection);
         let row = first.shapes.iter().find_map(|shape| match &shape.shape {
             egui::Shape::Text(text)
-                if text.galley.text().starts_with("#1")
+                if text.galley.text() == first_op
                     && text.pos.x >= width
                     && shape.clip_rect.contains(text.pos + egui::vec2(5.0, 5.0)) =>
             {
@@ -4057,9 +5306,7 @@ mod tests {
             .shapes
             .iter()
             .filter_map(|shape| match &shape.shape {
-                egui::Shape::Text(text) if text.galley.text().contains("SHEET INSPECTOR") => {
-                    Some(text.pos.x)
-                }
+                egui::Shape::Text(text) if text.galley.text() == heading => Some(text.pos.x),
                 _ => None,
             })
             .collect();
@@ -4087,9 +5334,11 @@ mod tests {
         second.drop_without_applying_deltas();
         assert_eq!(repair.hovered_cut, Some((WHITE_STOCK_ID, 1)));
         let third = frame(vec![], &mut editor, &mut repair, &mut selection);
-        let band = third.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(25, 85, 190).linear_multiply(0.9)
-                && shape.clip_rect.intersects(rect.rect)));
+        let band = third.shapes.iter().any(|shape| {
+            matches!(&shape.shape,
+            egui::Shape::Rect(rect) if rect.fill == CUT_HIGHLIGHT
+                && shape.clip_rect.intersects(rect.rect))
+        });
         third.drop_without_applying_deltas();
         assert!(
             band,
@@ -4110,8 +5359,10 @@ mod tests {
         assert_eq!(editor.project(), &original);
         repair.focused_sheet = Some(reference_fixture::OAK_STOCK_ID);
         let other = frame(vec![], &mut editor, &mut repair, &mut selection);
-        let stale_band = other.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(25, 85, 190).linear_multiply(0.9)));
+        let stale_band = other.shapes.iter().any(|shape| {
+            matches!(&shape.shape,
+            egui::Shape::Rect(rect) if rect.fill == CUT_HIGHLIGHT)
+        });
         other.drop_without_applying_deltas();
         assert!(!stale_band, "a cut hover cannot leak to another sheet");
         assert!(
@@ -4145,7 +5396,6 @@ mod tests {
         }
         assert!(full_part_label_fits(egui::vec2(175.0, 80.0), 62.0, 100.0));
         assert!(!full_part_label_fits(egui::vec2(45.0, 18.0), 62.0, 100.0));
-        assert!(ruler_step(0.08) as f32 * 0.08 >= 42.0);
     }
 
     #[test]
@@ -4194,7 +5444,7 @@ mod tests {
         };
         let output = frame(vec![], &mut editor, &mut repair, &mut selection);
         assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(233, 221, 195))));
+            egui::Shape::Rect(rect) if rect.fill == SHEET_FILL)));
         output.drop_without_applying_deltas();
         let wheel = vec![
             egui::Event::PointerMoved(egui::pos2(630.0, 480.0)),
@@ -4209,7 +5459,7 @@ mod tests {
         output.drop_without_applying_deltas();
         let output = frame(vec![], &mut editor, &mut repair, &mut selection);
         let inspector_visible = output.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Text(text) if text.galley.text().contains("SHEET INSPECTOR") && shape.clip_rect.contains(text.pos)));
+            egui::Shape::Text(text) if text.galley.text() == "CUT SEQUENCE" && shape.clip_rect.contains(text.pos)));
         output.drop_without_applying_deltas();
         assert!(
             inspector_visible,
@@ -4278,21 +5528,37 @@ mod tests {
                 SheetFocus::default(),
             );
         });
-        let labels: Vec<_> = output
-            .platform_output
-            .accesskit_update
-            .as_ref()
-            .unwrap()
-            .nodes
+        let sheet = output
+            .shapes
             .iter()
-            .filter_map(|(_, node)| node.label().or_else(|| node.value()).map(str::to_owned))
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == SHEET_FILL => Some(rect.rect),
+                _ => None,
+            })
+            .expect("sheet painted");
+        let scale = sheet.width() / 205.0;
+        let conflicts: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill == CONFLICT_FILL && rect.rect.height() > 11.0 =>
+                {
+                    Some(rect.rect)
+                }
+                _ => None,
+            })
             .collect();
-        let has_conflict_position = labels
-            .iter()
-            .any(|label| label.contains("X 102.000 mm / Y 0.000 mm") && label.contains('⚠'));
         assert_eq!(editor.project(), &before);
         output.drop_without_applying_deltas();
-        assert!(has_conflict_position, "{labels:?}");
+        // Both overlap participants are drawn as conflicts at their recorded origins.
+        assert_eq!(conflicts.len(), 2, "{conflicts:?}");
+        assert!(
+            conflicts
+                .iter()
+                .any(|rect| (rect.min.x - (sheet.min.x + 102.0 * scale)).abs() < 0.5),
+            "{conflicts:?}"
+        );
     }
 
     #[test]
@@ -4332,9 +5598,7 @@ mod tests {
             .shapes
             .iter()
             .filter_map(|shape| match &shape.shape {
-                egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(232, 239, 226) => {
-                    Some(rect.rect)
-                }
+                egui::Shape::Rect(rect) if rect.fill == OFFCUT_FILL => Some(rect.rect),
                 _ => None,
             })
             .collect();
@@ -4380,12 +5644,12 @@ mod tests {
                     );
                 },
             );
-            let crosses = output.shapes.iter().filter(|shape| matches!(
+            let conflicts = output.shapes.iter().filter(|shape| matches!(
                 &shape.shape,
-                egui::Shape::LineSegment { stroke, .. } if stroke.color == egui::Color32::DARK_RED
+                egui::Shape::Rect(rect) if rect.fill == CONFLICT_FILL && rect.rect.height() > 11.0
             )).count();
             output.drop_without_applying_deltas();
-            crosses
+            conflicts
         };
         assert_eq!(frame(&mut editor), 0);
         let preview = editor
@@ -4393,7 +5657,7 @@ mod tests {
             .unwrap();
         editor.edit_board_dimension(preview).unwrap();
         assert_eq!(editor.project().allocations, original);
-        assert_eq!(frame(&mut editor), 4);
+        assert_eq!(frame(&mut editor), 2);
         editor.undo().unwrap();
         assert_eq!(frame(&mut editor), 0);
     }

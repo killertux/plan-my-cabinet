@@ -487,7 +487,6 @@ struct DesktopApp {
     first_fit_notice: Option<FirstFit>,
     material_conflicts: Vec<AllocationConflict>,
     allocation_diagnostics: Option<(sheet_ui::DiagnosticsKey, Vec<BoardDiagnostic>)>,
-    allocation_preview_diagnostics: Option<(sheet_ui::DiagnosticsKey, Vec<BoardDiagnostic>)>,
     design_stock_snapshot: Option<((Uuid, u64), StockReadModel)>,
     shell_estimate: Option<(
         (Uuid, u64),
@@ -601,7 +600,6 @@ impl Default for DesktopApp {
             first_fit_notice: None,
             material_conflicts: Vec::new(),
             allocation_diagnostics: None,
-            allocation_preview_diagnostics: None,
             design_stock_snapshot: None,
             shell_estimate: None,
             export_mode: ExportMode::Draft,
@@ -4138,94 +4136,6 @@ impl DesktopApp {
         });
     }
 
-    fn show_allocation_issues(&mut self, ui: &mut egui::Ui) {
-        let project = self
-            .editor
-            .preview()
-            .unwrap_or(self.editor.project())
-            .clone();
-        // A preview can change without a committed revision. Cache only committed
-        // diagnostics, and invalidate on undo/redo and project replacement via id/revision.
-        let key = sheet_ui::diagnostics_key(&project, self.editor.preview().is_some());
-        let cache = if self.editor.preview().is_some() {
-            &mut self.allocation_preview_diagnostics
-        } else {
-            &mut self.allocation_diagnostics
-        };
-        if cache.as_ref().is_none_or(|(cached, _)| *cached != key) {
-            *cache = Some((key, diagnose(&project)));
-        }
-        let diagnostics = cache.as_ref().unwrap().1.clone();
-        let issue_count = diagnostics
-            .iter()
-            .filter(|d| d.status != AllocationStatus::AllocatedValid)
-            .count();
-        ui.heading(format!(
-            "{}: {} / {}",
-            self.localizer.text("global-issues"),
-            issue_count,
-            diagnostics.len()
-        ));
-        for diagnostic in diagnostics
-            .into_iter()
-            .filter(|d| d.status != AllocationStatus::AllocatedValid)
-        {
-            let Some(board) = project.boards.iter().find(|b| b.id == diagnostic.board_id) else {
-                continue;
-            };
-            let hidden = !self.selection.visible(&project, board.id);
-            ui.group(|ui| {
-                ui.label(format!(
-                    "{} · {}{}",
-                    board.name,
-                    self.localizer.text(match diagnostic.status {
-                        AllocationStatus::Unallocated => "board-unallocated",
-                        AllocationStatus::Conflicted => "global-conflicted",
-                        AllocationStatus::UnknownSearchBudget => "sheet-feasibility-unknown",
-                        AllocationStatus::AllocatedValid => "board-allocated",
-                    }),
-                    if hidden {
-                        format!(" · {}", self.localizer.text("global-hidden"))
-                    } else {
-                        String::new()
-                    }
-                ));
-                ui.small(
-                    diagnostic
-                        .reasons
-                        .iter()
-                        .map(|r| self.localizer.text(r.key()))
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                );
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button(self.localizer.text("global-locate")).clicked() {
-                        let _ = self.invoke(Request::with(A::LocateIssue, Target::Board(board.id)));
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.modal_open() || self.sheet_repair.active(),
-                            egui::Button::new(self.localizer.text("global-repair")),
-                        )
-                        .clicked()
-                    {
-                        let _ = self.invoke(Request::with(A::RepairIssue, Target::Board(board.id)));
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(self.localizer.text("stock-new")),
-                        )
-                        .clicked()
-                    {
-                        let _ =
-                            self.invoke(Request::with(A::AddIssueStock, Target::Board(board.id)));
-                    }
-                });
-            });
-        }
-    }
-
     /// The status bar and rail share committed global diagnostics. Repair
     /// previews use their own key in the issue list, never masquerading as a
     /// saved plan. Neither bounded witness search runs on an unchanged frame.
@@ -4919,21 +4829,27 @@ impl DesktopApp {
                 }
             }
             Workspace::CutPlan => {
-                if let Some(id) = self.session.allocation_issue {
-                    ui.colored_label(
-                        theme_widgets::WARN_INK,
-                        format!("{} · {id}", self.localizer.text("shell-unallocated")),
-                    );
-                }
-                sheet_ui::show_focused_inspector(
+                // The optimizer stays pinned at the bottom: the sequence scrolls
+                // on its own, and short content is padded.
+                let height_id = egui::Id::new("cut-plan-optimizer-height");
+                let needed: f32 = ui.data(|d| d.get_temp(height_id)).unwrap_or(170.0);
+                sheet_ui::show_focused_inspector_with_reserve(
                     ui,
                     &self.editor,
                     &self.localizer,
                     &mut self.sheet_repair,
+                    (!self.optimizer.has_result()).then_some(needed + 4.0),
                 );
+                let remaining = ui.clip_rect().bottom() - ui.cursor().top();
+                if !self.optimizer.has_result() && remaining > needed + 1.0 {
+                    ui.add_space(remaining - needed - 1.0);
+                }
                 let blocked = self.external_modal_open();
+                let top = ui.cursor().top();
                 self.optimizer
                     .show(ui, &mut self.editor, &self.localizer, blocked);
+                let used = ui.min_rect().bottom() - top;
+                ui.data_mut(|d| d.insert_temp(height_id, used));
                 self.optimizer.show_inspector_comparison(
                     ui,
                     self.editor.project(),
@@ -5008,6 +4924,26 @@ impl DesktopApp {
                 )
                 .show(ui, |ui| self.show_hardware_footer(ui));
         }
+        if active == Workspace::CutPlan {
+            // "+ Sheet or offcut" stays pinned under the scrolling sheet list.
+            let blocked = self.palette.open || self.other_modal_open();
+            let footer = egui::Panel::bottom(egui::Id::new("cut-plan-controls-footer"))
+                .resizable(false)
+                .show_separator_line(true)
+                .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 10)))
+                .show(ui, |ui| {
+                    sheet_ui::show_sheet_footer(
+                        ui,
+                        &self.localizer,
+                        &self.sheet_repair,
+                        blocked,
+                    )
+                })
+                .inner;
+            if let Some(request) = footer {
+                let _ = self.invoke(request);
+            }
+        }
         let scroll = egui::ScrollArea::vertical()
             .id_salt((
                 "workspace-controls-scroll",
@@ -5026,27 +4962,22 @@ impl DesktopApp {
                             .show(ui, |ui| self.show_stock_materials(ui));
                     }
                     Workspace::CutPlan => {
-                        egui::Frame::new()
-                            .inner_margin(egui::Margin::symmetric(10, 4))
-                            .show(ui, |ui| {
-                                let blocked = self.palette.open || self.other_modal_open();
-                                if let Some(request) = sheet_ui::show_sheet_list(
-                                    ui,
-                                    &self.editor,
-                                    &self.selection,
-                                    &self.localizer,
-                                    &mut self.sheet_repair,
-                                    blocked,
-                                    sheet_ui::SheetFocus {
-                                        sheet: self.session.focused_sheet,
-                                        issue: self.session.allocation_issue,
-                                        scroll_to_target: self.session.pending_cut_focus,
-                                    },
-                                ) {
-                                    let _ = self.invoke(request);
-                                }
-                                self.show_allocation_issues(ui);
-                            });
+                        let blocked = self.palette.open || self.other_modal_open();
+                        if let Some(request) = sheet_ui::show_sheet_list(
+                            ui,
+                            &self.editor,
+                            &self.selection,
+                            &self.localizer,
+                            &mut self.sheet_repair,
+                            blocked,
+                            sheet_ui::SheetFocus {
+                                sheet: self.session.focused_sheet,
+                                issue: self.session.allocation_issue,
+                                scroll_to_target: self.session.pending_cut_focus,
+                            },
+                        ) {
+                            let _ = self.invoke(request);
+                        }
                     }
                     Workspace::Hardware => {
                         self.show_pinned_catalog(ui);
@@ -6158,7 +6089,7 @@ mod tests {
                     },
                     |ui| app.show_scrolled_workspace_inspector(ui, width, 3000.0),
                 );
-                let label = app.localizer.text("optimize-heading");
+                let label = app.localizer.text("optimize-all-sheets").to_uppercase();
                 let (clip, text) = output
                     .shapes
                     .iter()
@@ -7775,7 +7706,9 @@ mod tests {
             .collect::<Vec<_>>();
         let sequence = labels
             .iter()
-            .find(|(label, _)| label == &app.localizer.text("sheet-cut-sequence"))
+            .find(|(label, _)| {
+                label == &app.localizer.text("sheet-sequence-heading").to_uppercase()
+            })
             .unwrap_or_else(|| panic!("Cut sequence not in host inspector: {labels:?}"));
         assert!(sequence.1.x > 1100.0, "{sequence:?}");
         let sheet = output
@@ -7783,7 +7716,7 @@ mod tests {
             .iter()
             .find_map(|shape| match &shape.shape {
                 egui::Shape::Rect(rect)
-                    if rect.fill == egui::Color32::from_rgb(233, 221, 195)
+                    if rect.fill == egui::Color32::from_rgb(247, 245, 240)
                         && rect.rect.width() > 500.0 =>
                 {
                     Some(rect.rect)
@@ -7803,7 +7736,7 @@ mod tests {
         assert!(
             labels
                 .iter()
-                .any(|(label, pos)| label == "1" && pos.x < 1100.0)
+                .any(|(label, pos)| label == "C1" && pos.x < 1100.0)
         );
         assert_eq!(app.editor.project(), &before);
         output.drop_without_applying_deltas();
