@@ -111,24 +111,64 @@ impl DesktopApp {
             self.project_files.welcome.refresh(dir.as_deref());
         }
         let mut intents = Vec::new();
-        egui::CentralPanel::default().show(ui, |ui| {
-            let welcome = &mut self.project_files.welcome;
-            if let Some(error) = &welcome.error {
-                ui.colored_label(egui::Color32::DARK_RED, error);
-            }
-            if welcome.locating() {
-                ui.label(self.localizer.text("project-choosing"));
-            }
-            if let Some(message) = &self.project_files.message {
-                ui.label(message);
-            }
-            intents = welcome.state.show(
-                ui,
-                &self.localizer,
-                &welcome.rows,
-                welcome.discoveries.as_deref(),
-            );
-        });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(crate::theme_widgets::APP))
+            .show(ui, |ui| {
+                let welcome = &mut self.project_files.welcome;
+                intents = welcome.state.show(
+                    ui,
+                    &self.localizer,
+                    &welcome.rows,
+                    welcome.discoveries.as_deref(),
+                );
+            });
+        // Transient status floats over the recent list instead of pushing the
+        // layout down: errors in a warning callout, progress/info plainly.
+        let welcome = &self.project_files.welcome;
+        let mut notes: Vec<(String, bool)> = Vec::new();
+        if let Some(error) = &welcome.error {
+            notes.push((error.clone(), true));
+        }
+        if welcome.locating() {
+            notes.push((self.localizer.text("project-choosing"), false));
+        }
+        if let Some(message) = &self.project_files.message {
+            notes.push((message.clone(), false));
+        }
+        if !notes.is_empty() {
+            let offset_x = if ui.ctx().content_rect().width() >= 730.0 {
+                170.0
+            } else {
+                0.0
+            };
+            egui::Area::new(egui::Id::new("welcome-status-notes"))
+                .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(offset_x, -20.0))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    ui.set_max_width(560.0);
+                    for (text, error) in notes {
+                        let frame = if error {
+                            crate::theme_widgets::warn_callout()
+                        } else {
+                            crate::theme_widgets::floating_frame()
+                                .inner_margin(egui::Margin::symmetric(12, 8))
+                        };
+                        frame.show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(text).size(12.0).color(
+                                    if error {
+                                        crate::theme_widgets::WARN_INK
+                                    } else {
+                                        crate::theme_widgets::SECONDARY
+                                    },
+                                ))
+                                .wrap(),
+                            );
+                        });
+                        ui.add_space(6.0);
+                    }
+                });
+        }
         if !self.project_files.blocking() && !self.modal_open() {
             for intent in intents {
                 self.handle_welcome_intent(intent);

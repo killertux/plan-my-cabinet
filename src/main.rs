@@ -53,6 +53,7 @@ mod capture;
 mod command_palette;
 mod currency_ui;
 mod door_joint_ui;
+mod handoff_ui;
 mod hardware_ui;
 mod hinge_ui;
 mod icons;
@@ -3489,457 +3490,652 @@ impl DesktopApp {
         }
     }
 
-    fn show_export_counts(&self, ui: &mut egui::Ui) {
-        let project = self.editor.project();
-        let counts = [
-            ("handoff-packet-parts", project.boards.len()),
-            ("handoff-packet-sheets", project.stock.len()),
-            ("handoff-packet-hinges", project.hinge_installations.len()),
-        ];
-        let font = egui::TextStyle::Small.resolve(ui.style());
-        let minimum_card_width = counts
-            .iter()
-            .flat_map(|(key, _)| {
-                self.localizer
-                    .text(key)
-                    .split_whitespace()
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .map(|word| {
-                ui.painter()
-                    .layout_no_wrap(word, font.clone(), theme_widgets::TEXT)
-                    .size()
-                    .x
-                    + 16.0
-            })
-            .fold(0.0, f32::max);
-        let columns = if ui.available_width()
-            >= 3.0 * minimum_card_width + 2.0 * ui.spacing().item_spacing.x
-        {
-            3
-        } else {
-            1
-        };
-        // Allocate columns before rendering: horizontal_wrapped measures a
-        // group's contents in the *remaining* row width, squeezing the last
-        // localized label into a one-character-wide column.
-        for row in counts.chunks(columns) {
-            ui.columns(columns, |columns| {
-                for (column, (key, count)) in columns.iter_mut().zip(row) {
-                    let width = column.available_width();
-                    egui::Frame::group(column.style()).show(column, |ui| {
-                        // Columns justify their contents by default, which
-                        // spreads letters across wrapped count-card headings.
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                            ui.set_width((width - 16.0).max(1.0));
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(self.localizer.text(key)).small(),
-                                )
-                                .wrap(),
-                            );
-                            ui.strong(count.to_string());
-                        });
+    /// Handoff left pane: packet type and PDF options scroll above a pinned
+    /// export footer.
+    fn show_export_preparation(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom(egui::Id::new((
+            "handoff-export-footer",
+            self.editor.project().id,
+        )))
+        .resizable(false)
+        .show_separator_line(true)
+        .frame(
+            egui::Frame::new()
+                .fill(theme_widgets::PANEL)
+                .inner_margin(egui::Margin {
+                    left: 16,
+                    right: 16,
+                    top: 14,
+                    bottom: 14,
+                }),
+        )
+        .show(ui, |ui| self.show_export_footer(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(("handoff-controls", self.editor.project().id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin {
+                                left: 12,
+                                right: 12,
+                                top: 4,
+                                bottom: 14,
+                            })
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                self.show_export_options(ui);
+                            });
                     });
-                }
             });
+    }
+
+    /// Short, ID-free text for one export issue plus its full description.
+    fn handoff_issue_text(&self, issue: &ExportIssue) -> (String, String) {
+        let project = self.editor.project();
+        let l = &self.localizer;
+        let alias = |id: Uuid| {
+            project
+                .stock_alias(id)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    project
+                        .stock
+                        .iter()
+                        .find(|piece| piece.id == id)
+                        .map_or_else(|| l.text("receipt-kind-stock"), |piece| piece.name.clone())
+                })
+        };
+        match issue {
+            ExportIssue::Board {
+                name,
+                stock_id,
+                reasons,
+                ..
+            } => {
+                let reasons = reasons
+                    .iter()
+                    .map(|r| l.text(r.key()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let short = format!("{name} · {reasons}");
+                let full = match stock_id {
+                    Some(stock) => format!("{name} · {} · {reasons}", alias(*stock)),
+                    None => short.clone(),
+                };
+                (short, full)
+            }
+            ExportIssue::Sheet { id, name, reason } => {
+                let key = match reason {
+                    SheetIssue::BudgetExhausted => "sheet-feasibility-unknown",
+                    _ => "sheet-cut-conflict",
+                };
+                let short = format!("{} · {}", alias(*id), l.text(key));
+                (
+                    short.clone(),
+                    format!("{} ({name}) · {}", alias(*id), l.text(key)),
+                )
+            }
+            ExportIssue::KerfUnconfirmed(_) => {
+                let text = l.text("export-kerf-unconfirmed");
+                (text.clone(), text)
+            }
+            ExportIssue::UnknownPrice { stock_id } => {
+                let short = match stock_id {
+                    Some(id) => {
+                        let mut args = FluentArgs::new();
+                        args.set("item", alias(*id));
+                        l.format("handoff-price-unknown", Some(&args))
+                    }
+                    None => l.text("handoff-cut-fee-unknown"),
+                };
+                (short, l.text("export-price-unknown"))
+            }
+            ExportIssue::Hardware { name, .. } => (
+                format!("{name} · {}", l.text("handoff-hardware-issue")),
+                format!("{name}: {}", l.text("export-hardware-unverified")),
+            ),
+            ExportIssue::Installation { name, .. } => (
+                format!("{name} · {}", l.text("pdf-installation-withheld")),
+                format!("{name}: {}", l.text("pdf-installation-withheld")),
+            ),
+            ExportIssue::JointNeedsReview { .. } => {
+                let text = l.text("pdf-joint-review");
+                (text.clone(), text)
+            }
+            ExportIssue::InvalidWood(_) => {
+                let text = l.text("pdf-invalid-wood");
+                (text.clone(), text)
+            }
         }
     }
 
-    fn show_export_preparation(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.localizer.text("export-preparation"));
-        self.show_export_counts(ui);
-        let mut mode_choice = self.export_mode;
-        let can_shop = self.shop_ready_available();
-        let first_board_issue = self
+    fn handoff_issue_route(issue: &ExportIssue) -> Option<HandoffFix> {
+        match issue {
+            ExportIssue::Board { id, .. } => {
+                Some(HandoffFix::Navigate(Destination::BoardAllocation(*id)))
+            }
+            ExportIssue::Sheet { id, .. } => Some(HandoffFix::Navigate(Destination::Sheet(*id))),
+            ExportIssue::KerfUnconfirmed(_) => Some(HandoffFix::Kerf),
+            ExportIssue::UnknownPrice { stock_id: Some(id) } => Some(HandoffFix::Stock(*id)),
+            ExportIssue::UnknownPrice { stock_id: None } => Some(HandoffFix::CutFee),
+            ExportIssue::Hardware { id, .. } => Some(HandoffFix::Hardware(*id)),
+            ExportIssue::Installation { id, .. } => {
+                Some(HandoffFix::Navigate(Destination::Installation(*id)))
+            }
+            ExportIssue::JointNeedsReview {
+                installation_id, ..
+            } => Some(HandoffFix::Navigate(Destination::Installation(
+                *installation_id,
+            ))),
+            ExportIssue::InvalidWood(_) => None,
+        }
+    }
+
+    fn apply_handoff_fix(&mut self, route: HandoffFix) {
+        match route {
+            HandoffFix::Navigate(target) => {
+                self.navigate_session(target);
+            }
+            HandoffFix::Stock(id) => {
+                if self
+                    .editor
+                    .project()
+                    .stock
+                    .iter()
+                    .any(|piece| piece.id == id)
+                    && matches!(
+                        self.request_navigation(NavigationRoute::Workspace(Workspace::Stock)),
+                        Outcome::Navigated
+                    )
+                {
+                    self.session.stock_piece = Some(id);
+                    self.session.inspector = Some(InspectorTarget::Sheet(id));
+                }
+            }
+            HandoffFix::Hardware(id) => {
+                if matches!(
+                    self.request_navigation(NavigationRoute::Workspace(Workspace::Hardware)),
+                    Outcome::Navigated
+                ) && self
+                    .editor
+                    .project()
+                    .hardware
+                    .iter()
+                    .any(|hardware| hardware.id == id)
+                {
+                    self.selection.choose(Some(id), false);
+                }
+            }
+            HandoffFix::Kerf => {
+                let _ = self.invoke(Request::new(A::EditKerf));
+            }
+            HandoffFix::CutFee => {
+                let _ = self.invoke(Request::new(A::EditCutFee));
+            }
+        }
+    }
+
+    fn show_export_options(&mut self, ui: &mut egui::Ui) {
+        let heading = |ui: &mut egui::Ui, text: String| {
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                ui.vertical(|ui| theme_widgets::inspector_heading(ui, &text, |_| ()));
+            });
+        };
+        heading(ui, self.localizer.text("handoff-packet-type"));
+        let key = self.export_key();
+        let prepared = self
             .export_candidate
             .as_ref()
-            .and_then(|(key, result)| {
-                (key == &self.export_key()).then(|| match result {
-                    Ok(packet) => packet.wood_issues(),
-                    Err(ReviewPreparationError::Blocked(blocked)) => &blocked.issues,
-                    Err(_) => &[],
-                })
-            })
-            .and_then(|issues| {
-                issues.iter().find_map(|issue| match issue {
-                    ExportIssue::Board {
-                        id, name, reasons, ..
-                    } => Some((
-                        *id,
-                        name.clone(),
-                        reasons.first().map(|reason| reason.key()),
-                    )),
-                    _ => None,
-                })
-            });
-        let mut card_fix = None;
-        for (mode, title, description) in [
-            (
-                ExportMode::Draft,
-                "export-draft",
-                "handoff-draft-description",
-            ),
-            (
-                ExportMode::ShopReady,
-                "export-shop-ready",
-                if can_shop {
-                    "handoff-shop-available"
-                } else {
-                    "handoff-shop-unavailable"
-                },
-            ),
-        ] {
-            egui::Frame::new()
-                .fill(theme_widgets::PANEL)
-                .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER))
-                .corner_radius(7.0)
-                .inner_margin(9.0)
-                .show(ui, |ui| {
-                    ui.add_enabled_ui(mode != ExportMode::ShopReady || can_shop, |ui| {
-                        ui.radio_value(&mut mode_choice, mode, self.localizer.text(title));
-                    });
-                    ui.small(self.localizer.text(description));
-                    if mode == ExportMode::ShopReady
-                        && let Some((id, name, reason)) = &first_board_issue
-                    {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.colored_label(
-                                theme_widgets::WARN_INK,
-                                format!(
-                                    "{}: {}",
-                                    name,
-                                    reason.map_or_else(
-                                        || self.localizer.text("export-wood-blocked"),
-                                        |key| self.localizer.text(key)
-                                    ),
-                                ),
-                            );
-                            if ui
-                                .add_enabled(
-                                    !self.modal_open(),
-                                    egui::Button::new(self.localizer.text("handoff-fix")),
-                                )
-                                .clicked()
-                            {
-                                card_fix = Some(*id);
-                            }
-                        });
-                    }
-                });
+            .filter(|(cached, _)| *cached == key)
+            .map(|(_, result)| result);
+        let (wood, notices, prepared_ok, failed): (Vec<ExportIssue>, Vec<ExportIssue>, bool, bool) =
+            match prepared {
+                Some(Ok(packet)) => (
+                    packet.wood_issues().to_vec(),
+                    packet.notices().to_vec(),
+                    true,
+                    false,
+                ),
+                Some(Err(ReviewPreparationError::Blocked(blocked))) => {
+                    (blocked.issues.clone(), Vec::new(), false, false)
+                }
+                Some(Err(_)) => (Vec::new(), Vec::new(), false, true),
+                None => (Vec::new(), Vec::new(), false, false),
+            };
+        let checked = prepared.is_some();
+        let can_shop = self.shop_ready_available();
+        let modal = self.modal_open();
+        let mut mode_choice = self.export_mode;
+        let mut fix = None;
+
+        ui.spacing_mut().item_spacing.y = 6.0;
+        let draft = handoff_ui::radio_card(
+            ui,
+            egui::Id::new("handoff-packet-draft"),
+            self.export_mode == ExportMode::Draft,
+            None,
+            &self.localizer.text("export-draft"),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(self.localizer.text("handoff-draft-description"))
+                            .size(12.0)
+                            .color(theme_widgets::MUTED),
+                    )
+                    .wrap(),
+                );
+            },
+        );
+        if draft.is_some_and(|r| r.clicked()) {
+            mode_choice = ExportMode::Draft;
         }
-        if let Some(id) = card_fix {
-            self.navigate_session(Destination::BoardAllocation(id));
+
+        let project = self.editor.project();
+        let locale = if self.localizer.language() == Language::En {
+            Locale::En
+        } else {
+            Locale::PtBr
+        };
+        let kerf_ok = project.confirmed_shop_kerf == Some(project.cutting_kerf);
+        let mut kerf_args = FluentArgs::new();
+        kerf_args.set(
+            "kerf",
+            assembly_ui::short_length(project.cutting_kerf, locale),
+        );
+        let kerf_text = self.localizer.format(
+            if kerf_ok {
+                "handoff-kerf-ok"
+            } else {
+                "handoff-kerf-unconfirmed"
+            },
+            Some(&kerf_args),
+        );
+        let kerf_detail = if kerf_ok {
+            kerf_confirmation_label(project, &self.localizer)
+        } else {
+            Some(self.localizer.text("export-kerf-unconfirmed"))
+        };
+        let sheets = project
+            .allocations
+            .iter()
+            .map(|allocation| allocation.stock_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let issues: Vec<(ExportIssue, bool)> = wood
+            .iter()
+            .filter(|issue| !matches!(issue, ExportIssue::KerfUnconfirmed(_)))
+            .map(|issue| (issue.clone(), true))
+            .chain(notices.iter().map(|issue| (issue.clone(), false)))
+            .collect();
+        let wood_clear = prepared_ok
+            && !wood
+                .iter()
+                .any(|issue| !matches!(issue, ExportIssue::KerfUnconfirmed(_)));
+        let expanded_id = egui::Id::new("handoff-issues-expanded");
+        let mut expanded: bool = ui.ctx().data(|d| d.get_temp(expanded_id)).unwrap_or(false);
+        let shop_unavailable = self.localizer.text("handoff-shop-unavailable");
+        let fix_short = self.localizer.text("handoff-fix-short");
+        let fix_label = self.localizer.text("handoff-fix");
+        let shop = handoff_ui::radio_card(
+            ui,
+            egui::Id::new("handoff-packet-shop"),
+            self.export_mode == ExportMode::ShopReady,
+            (!can_shop).then_some(shop_unavailable.as_str()),
+            &self.localizer.text("export-shop-ready"),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let kerf_fix =
+                    (!kerf_ok).then_some((fix_short.as_str(), fix_label.as_str(), !modal));
+                if handoff_ui::check_line(
+                    ui,
+                    if kerf_ok {
+                        handoff_ui::Check::Ok
+                    } else {
+                        handoff_ui::Check::Warn
+                    },
+                    &kerf_text,
+                    kerf_detail.as_deref(),
+                    kerf_fix,
+                ) {
+                    fix = Some(HandoffFix::Kerf);
+                }
+                if !checked {
+                    handoff_ui::check_line(
+                        ui,
+                        handoff_ui::Check::Pending,
+                        &self.localizer.text("handoff-checking"),
+                        None,
+                        None,
+                    );
+                    return;
+                }
+                if failed {
+                    handoff_ui::check_line(
+                        ui,
+                        handoff_ui::Check::Warn,
+                        &self.localizer.text("export-wood-blocked"),
+                        None,
+                        None,
+                    );
+                }
+                if wood_clear {
+                    handoff_ui::check_line(
+                        ui,
+                        handoff_ui::Check::Ok,
+                        &self.localizer.count("handoff-cuts-ok", sheets as u64),
+                        Some(&self.localizer.text("export-wood-verified")),
+                        None,
+                    );
+                }
+                let limit = if expanded { issues.len() } else { 3 };
+                for (issue, blocking) in issues.iter().take(limit) {
+                    let (short, full) = self.handoff_issue_text(issue);
+                    let route = Self::handoff_issue_route(issue);
+                    let link = route
+                        .as_ref()
+                        .map(|_| (fix_short.as_str(), fix_label.as_str(), !modal));
+                    if handoff_ui::check_line(
+                        ui,
+                        if *blocking {
+                            handoff_ui::Check::Warn
+                        } else {
+                            handoff_ui::Check::Note
+                        },
+                        &short,
+                        Some(&full),
+                        link,
+                    ) {
+                        fix = route;
+                    }
+                }
+                if issues.len() > 3 {
+                    ui.horizontal(|ui| {
+                        ui.add_space(18.0);
+                        let text = if expanded {
+                            self.localizer.text("handoff-fewer-issues")
+                        } else {
+                            self.localizer
+                                .count("handoff-more-issues", (issues.len() - 3) as u64)
+                        };
+                        let rest = issues
+                            .iter()
+                            .skip(3)
+                            .map(|(issue, _)| self.handoff_issue_text(issue).0)
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let response =
+                            handoff_ui::link(ui, &text, &text, theme_widgets::MUTED, true);
+                        let response = if expanded {
+                            response
+                        } else {
+                            response.on_hover_text(rest)
+                        };
+                        if response.clicked() {
+                            expanded = !expanded;
+                        }
+                    });
+                }
+            },
+        );
+        ui.ctx().data_mut(|d| d.insert_temp(expanded_id, expanded));
+        if shop.is_some_and(|r| r.clicked()) {
+            mode_choice = ExportMode::ShopReady;
+        }
+        if let Some(route) = fix {
+            self.apply_handoff_fix(route);
         }
         if mode_choice != self.export_mode {
             let _ = self
                 .invoke(Request::new(A::SetExportMode).argument(Argument::ExportMode(mode_choice)));
         }
-        let mut language_choice = self.export_language;
-        ui.horizontal(|ui| {
-            ui.label(self.localizer.text("export-language"));
-            ui.radio_value(
-                &mut language_choice,
-                Language::En,
-                self.localizer.text("language-en"),
-            );
-            ui.radio_value(
-                &mut language_choice,
-                Language::PtBr,
-                self.localizer.text("language-pt-br"),
-            );
-        });
-        if language_choice != self.export_language {
-            let _ = self.invoke(
-                Request::new(A::SetExportLanguage).argument(Argument::Language(language_choice)),
-            );
-        }
-        let mut units_choice = self.export_units;
-        egui::ComboBox::from_label(self.localizer.text("export-output-units"))
-            .selected_text(self.localizer.text(unit_key(self.export_units)))
-            .show_ui(ui, |ui| {
-                for unit in [Unit::Mm, Unit::Cm, Unit::M, Unit::Inch, Unit::Foot] {
-                    ui.selectable_value(
-                        &mut units_choice,
-                        unit,
-                        self.localizer.text(unit_key(unit)),
+
+        ui.add_space(8.0);
+        heading(ui, self.localizer.text("handoff-pdf-output"));
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(4, 0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 8.0;
+                let label_width = 78.0;
+                let mut language_choice = self.export_language;
+                let language_text = |language: Language| {
+                    self.localizer.text(match language {
+                        Language::En => "handoff-lang-en",
+                        Language::PtBr => "handoff-lang-pt",
+                    })
+                };
+                handoff_ui::field_row(
+                    ui,
+                    &self.localizer.text("handoff-language"),
+                    label_width,
+                    false,
+                    |ui| {
+                        egui::ComboBox::from_id_salt("handoff-export-language")
+                            .width(ui.available_width())
+                            .height(200.0)
+                            .icon(|ui, rect, _, _| {
+                                icons::icon(icons::Icon::ChevDown, theme_widgets::MUTED, 11.0)
+                                    .paint_at(
+                                        ui,
+                                        egui::Rect::from_center_size(
+                                            rect.center(),
+                                            egui::vec2(11.0, 11.0),
+                                        ),
+                                    );
+                            })
+                            .selected_text(
+                                egui::RichText::new(language_text(self.export_language)).size(13.0),
+                            )
+                            .show_ui(ui, |ui| {
+                                for language in [Language::En, Language::PtBr] {
+                                    ui.selectable_value(
+                                        &mut language_choice,
+                                        language,
+                                        language_text(language),
+                                    );
+                                }
+                            })
+                            .response
+                            .on_hover_text(self.localizer.text("export-language"));
+                    },
+                );
+                if language_choice != self.export_language {
+                    let _ = self.invoke(
+                        Request::new(A::SetExportLanguage)
+                            .argument(Argument::Language(language_choice)),
                     );
                 }
-            });
-        if units_choice != self.export_units {
-            let _ =
-                self.invoke(Request::new(A::SetExportUnits).argument(Argument::Unit(units_choice)));
-        }
-        let mut sections = self.export_sections;
-        ui.separator();
-        ui.checkbox(
-            &mut sections.parts_and_costs,
-            self.localizer.text("export-section-parts"),
-        );
-        ui.checkbox(
-            &mut sections.sheets_and_cut_steps,
-            self.localizer.text("export-section-sheets"),
-        );
-        ui.checkbox(
-            &mut sections.hinge_references,
-            self.localizer.text("export-section-hinges"),
-        );
-        if sections != self.export_sections {
-            self.export_sections = sections;
-            self.invalidate_export_review();
-        }
-        ui.label(format!(
-            "{}: {}",
-            self.localizer.text("pdf-currency"),
-            self.editor.project().currency.code()
-        ));
-        if self.editor.project().confirmed_shop_kerf != Some(self.editor.project().cutting_kerf) {
-            ui.colored_label(
-                egui::Color32::YELLOW,
-                self.localizer.text("export-kerf-unconfirmed"),
-            );
-            if ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(self.localizer.text("export-confirm-kerf")),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::ConfirmKerf));
-            }
-        } else if let Some(label) = kerf_confirmation_label(self.editor.project(), &self.localizer)
-        {
-            ui.label(label);
-        }
-        let project = self.editor.project();
-        let key = self.export_key();
-        if self
-            .export_candidate
-            .as_ref()
-            .is_none_or(|(cached, _)| *cached != key)
-        {
-            ui.label(self.localizer.text("export-review-stale"));
-            ui.ctx().request_repaint_after(Duration::from_millis(50));
-            return;
-        }
-        let prepared = &self.export_candidate.as_ref().expect("prepared").1;
-        let (issues, notices, ready) = match &prepared {
-            Ok(plan) => (plan.wood_issues(), plan.notices(), true),
-            Err(ReviewPreparationError::Blocked(blocked)) => (&blocked.issues[..], &[][..], false),
-            Err(_) => (&[][..], &[][..], false),
-        };
-        if self.export_mode == ExportMode::Draft {
-            ui.colored_label(
-                egui::Color32::LIGHT_RED,
-                self.localizer.text("export-draft-watermark"),
-            );
-        } else if ready {
-            ui.label(self.localizer.text("export-wood-verified"));
-        } else {
-            ui.colored_label(
-                egui::Color32::LIGHT_RED,
-                self.localizer.text("export-wood-blocked"),
-            );
-        }
-        let mut fix = None;
-        for issue in issues.iter().chain(notices) {
-            let route = match issue {
-                ExportIssue::Board { id, .. } => {
-                    Some(HandoffFix::Navigate(Destination::BoardAllocation(*id)))
+                let mut units_choice = self.export_units;
+                let unit_labels = [Unit::Mm, Unit::Cm, Unit::M, Unit::Inch, Unit::Foot]
+                    .map(|unit| (unit, self.localizer.text(unit_key(unit))));
+                handoff_ui::field_row(
+                    ui,
+                    &self.localizer.text("handoff-units"),
+                    label_width,
+                    false,
+                    |ui| {
+                        let options = unit_labels
+                            .iter()
+                            .map(|(unit, label)| (*unit, label.as_str()))
+                            .collect::<Vec<_>>();
+                        theme_widgets::segmented(ui, &mut units_choice, &options)
+                            .on_hover_text(self.localizer.text("export-output-units"));
+                    },
+                );
+                if units_choice != self.export_units {
+                    let _ = self.invoke(
+                        Request::new(A::SetExportUnits).argument(Argument::Unit(units_choice)),
+                    );
                 }
-                ExportIssue::Sheet { id, .. } => {
-                    Some(HandoffFix::Navigate(Destination::Sheet(*id)))
+                let mut sections = self.export_sections;
+                handoff_ui::field_row(
+                    ui,
+                    &self.localizer.text("handoff-include"),
+                    label_width,
+                    true,
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        for (value, key) in [
+                            (&mut sections.parts_and_costs, "export-section-parts"),
+                            (&mut sections.sheets_and_cut_steps, "export-section-sheets"),
+                            (&mut sections.hinge_references, "export-section-hinges"),
+                        ] {
+                            handoff_ui::checkbox(ui, value, &self.localizer.text(key));
+                        }
+                    },
+                );
+                if sections != self.export_sections {
+                    self.export_sections = sections;
+                    self.invalidate_export_review();
                 }
-                ExportIssue::KerfUnconfirmed(_) => Some(HandoffFix::Kerf),
-                ExportIssue::UnknownPrice { stock_id: Some(id) } => Some(HandoffFix::Stock(*id)),
-                ExportIssue::UnknownPrice { stock_id: None } => Some(HandoffFix::CutFee),
-                ExportIssue::Hardware { id, .. } => Some(HandoffFix::Hardware(*id)),
-                ExportIssue::Installation { id, .. } => {
-                    Some(HandoffFix::Navigate(Destination::Installation(*id)))
-                }
-                ExportIssue::JointNeedsReview {
-                    installation_id, ..
-                } => Some(HandoffFix::Navigate(Destination::Installation(
-                    *installation_id,
-                ))),
-                ExportIssue::InvalidWood(_) => None,
-            };
-            ui.group(|ui| {
-                match issue {
-                    ExportIssue::Board {
-                        id,
-                        name,
-                        stock_id,
-                        reasons,
-                    } => {
-                        ui.label(format!(
-                            "{name} ({id}) · {} · {}",
-                            stock_id.map_or_else(|| "—".into(), |s| stock_reference(project, s)),
-                            reasons
-                                .iter()
-                                .map(|r| self.localizer.text(r.key()))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ));
-                    }
-                    ExportIssue::Sheet { id, name, reason } => {
-                        let key = match reason {
-                            SheetIssue::BudgetExhausted => "sheet-feasibility-unknown",
-                            _ => "sheet-cut-conflict",
-                        };
-                        ui.label(format!(
-                            "{} · {name}: {}",
-                            stock_reference(project, *id),
-                            self.localizer.text(key)
-                        ));
-                    }
-                    ExportIssue::KerfUnconfirmed(_) => {
-                        ui.label(self.localizer.text("export-kerf-unconfirmed"));
-                    }
-                    ExportIssue::UnknownPrice { stock_id } => {
-                        ui.label(format!(
-                            "{}: {}",
-                            self.localizer.text("export-price-unknown"),
-                            stock_id.map_or_else(
-                                || self.localizer.text("export-cut-fee"),
-                                |id| stock_reference(project, id)
+                ui.add_space(6.0);
+                let mut args = FluentArgs::new();
+                args.set("currency", self.editor.project().currency.code());
+                egui::Frame::new()
+                    .fill(theme_widgets::APP)
+                    .corner_radius(8)
+                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(
+                                    self.localizer.format("handoff-output-note", Some(&args)),
+                                )
+                                .size(11.5)
+                                .color(theme_widgets::MUTED),
                             )
-                        ));
-                    }
-                    ExportIssue::Hardware { id, name, .. } => {
-                        ui.label(format!(
-                            "{name} ({id}): {}",
-                            self.localizer.text("export-hardware-unverified")
-                        ));
-                    }
-                    ExportIssue::Installation { id, name, reason } => {
-                        ui.label(format!(
-                            "{name} ({id}): {reason:?} — {}",
-                            self.localizer.text("pdf-installation-withheld")
-                        ));
-                    }
-                    ExportIssue::JointNeedsReview {
-                        id,
-                        installation_id,
-                    } => {
-                        ui.label(format!(
-                            "{installation_id} ({id}): {}",
-                            self.localizer.text("pdf-joint-review")
-                        ));
-                    }
-                    ExportIssue::InvalidWood(_) => {
-                        ui.label(self.localizer.text("pdf-invalid-wood"));
-                    }
-                };
-                if let Some(route) = route
-                    && ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(self.localizer.text("handoff-fix")),
-                        )
-                        .clicked()
-                {
-                    fix = Some(route);
-                }
+                            .wrap(),
+                        );
+                    });
             });
-        }
-        if let Some(route) = fix {
-            match route {
-                HandoffFix::Navigate(target) => {
-                    self.navigate_session(target);
-                }
-                HandoffFix::Stock(id) => {
-                    if self
-                        .editor
-                        .project()
-                        .stock
-                        .iter()
-                        .any(|piece| piece.id == id)
-                        && matches!(
-                            self.request_navigation(NavigationRoute::Workspace(Workspace::Stock)),
-                            Outcome::Navigated
-                        )
-                    {
-                        self.session.stock_piece = Some(id);
-                        self.session.inspector = Some(InspectorTarget::Sheet(id));
-                    }
-                }
-                HandoffFix::Hardware(id) => {
-                    if matches!(
-                        self.request_navigation(NavigationRoute::Workspace(Workspace::Hardware)),
-                        Outcome::Navigated
-                    ) && self
-                        .editor
-                        .project()
-                        .hardware
-                        .iter()
-                        .any(|hardware| hardware.id == id)
-                    {
-                        self.selection.choose(Some(id), false);
-                    }
-                }
-                HandoffFix::Kerf => {
-                    let _ = self.invoke(Request::new(A::EditKerf));
-                }
-                HandoffFix::CutFee => {
-                    let _ = self.invoke(Request::new(A::EditCutFee));
-                }
-            }
-        }
-        if ready
-            && self.current_reviewed_packet().is_none()
-            && ui
-                .button(self.localizer.text("export-review-action"))
-                .clicked()
-        {
-            self.export_preparation = self.export_candidate.as_ref().map(|(key, result)| {
-                (
-                    key.clone(),
-                    result
-                        .as_ref()
-                        .map(Arc::clone)
-                        .map_err(|_| unreachable!("ready packet")),
+    }
+
+    /// Pinned footer: explicit review step, the export action and its status.
+    fn show_export_footer(&mut self, ui: &mut egui::Ui) {
+        ui.set_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 8.0;
+        let width = ui.available_width();
+        if let Some(message) = &self.export_message {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(message)
+                        .size(11.5)
+                        .color(theme_widgets::MUTED),
                 )
-            });
-        }
-        if ui
-            .add_enabled(
-                self.current_reviewed_packet().is_some()
-                    && self.export_activity.is_none()
-                    && !self.modal_open(),
-                egui::Button::new(self.localizer.text("export-choose")),
-            )
-            .clicked()
-        {
-            let _ = self.invoke(Request::new(A::ExportPdf));
+                .wrap(),
+            );
         }
         if let Some(activity) = &self.export_activity {
-            ui.label(self.localizer.text(match activity {
+            let writing = matches!(activity, ExportActivity::Writing);
+            let text = self.localizer.text(match activity {
                 ExportActivity::Choosing(..) => "export-choosing",
                 _ => "export-working",
-            }));
-            if matches!(activity, ExportActivity::Writing)
-                && ui.button(self.localizer.text("cancel")).clicked()
-                && let Some(cancel) = &self.export_cancel
+            });
+            let mut cancel = false;
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(12.0).color(theme_widgets::FAINT));
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(text)
+                            .size(12.0)
+                            .color(theme_widgets::MUTED),
+                    )
+                    .wrap(),
+                );
+                if writing {
+                    cancel = theme_widgets::text_button(
+                        ui,
+                        &self.localizer.text("cancel"),
+                        theme_widgets::DANGER,
+                        true,
+                    )
+                    .clicked();
+                }
+            });
+            if cancel
+                && let Some(flag) = &self.export_cancel
                 && self
                     .invoke_contextual(Request::new(A::CancelExport))
                     .is_ok()
             {
-                cancel.store(true, Ordering::Relaxed);
+                flag.store(true, Ordering::Relaxed);
             }
         }
-        if let Some(message) = &self.export_message {
-            ui.label(message);
+        let ready = self
+            .export_candidate
+            .as_ref()
+            .is_some_and(|(key, result)| key == &self.export_key() && result.is_ok());
+        let reviewed = self.current_reviewed_packet().is_some();
+        if ready && !reviewed {
+            let response = ui
+                .add_sized(
+                    [width, 30.0],
+                    egui::Button::image_and_text(
+                        icons::icon(icons::Icon::Check, theme_widgets::OK, 14.0),
+                        theme_widgets::medium(
+                            ui,
+                            &self.localizer.text("handoff-mark-reviewed"),
+                            13.0,
+                        )
+                        .color(theme_widgets::TEXT),
+                    )
+                    .fill(theme_widgets::VIEWPORT)
+                    .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
+                    .corner_radius(7),
+                )
+                .on_hover_text(self.localizer.text("export-review-stale"));
+            if response.clicked() {
+                self.export_preparation = self.export_candidate.as_ref().map(|(key, result)| {
+                    (
+                        key.clone(),
+                        result
+                            .as_ref()
+                            .map(Arc::clone)
+                            .map_err(|_| unreachable!("ready packet")),
+                    )
+                });
+            }
         }
-        ui.small(
-            self.localizer
-                .text(if self.current_reviewed_packet().is_some() {
-                    "export-review-current"
-                } else {
-                    "export-review-stale"
-                }),
+        let label = self.localizer.text(match self.export_mode {
+            ExportMode::Draft => "handoff-export-draft",
+            ExportMode::ShopReady => "handoff-export-shop",
+        });
+        let enabled = reviewed && self.export_activity.is_none() && !self.modal_open();
+        let response = ui.add_enabled(
+            enabled,
+            egui::Button::image_and_text(
+                icons::icon(icons::Icon::Export, theme_widgets::PANEL, 16.0),
+                theme_widgets::semibold(ui, &label, 13.0).color(theme_widgets::PANEL),
+            )
+            .fill(theme_widgets::TEXT)
+            .stroke(egui::Stroke::NONE)
+            .corner_radius(8)
+            .min_size(egui::vec2(width, 38.0)),
         );
+        let response = if reviewed {
+            response.on_hover_text(self.localizer.text("export-review-current"))
+        } else {
+            response.on_disabled_hover_text(self.localizer.text("handoff-review-needed"))
+        };
+        if response.clicked() {
+            let _ = self.invoke(Request::new(A::ExportPdf));
+        }
+        ui.vertical_centered(|ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(self.localizer.text("handoff-export-hint"))
+                        .size(11.0)
+                        .color(theme_widgets::FAINT),
+                )
+                .wrap(),
+            );
+        });
     }
 
     fn show_allocation_issues(&mut self, ui: &mut egui::Ui) {
@@ -4771,6 +4967,11 @@ impl DesktopApp {
     fn show_scrolled_workspace_inspector(&mut self, ui: &mut egui::Ui, width: f32, height: f32) {
         let index = (self.session.active.number() - 1) as usize;
         let width = width.min(ui.available_width());
+        if self.session.active == Workspace::Handoff {
+            // History scrolls; the save reminder stays pinned to the bottom.
+            receipt_ui::show_panel(ui, self.editor.project(), &self.localizer, width, height);
+            return;
+        }
         let scroll = egui::ScrollArea::vertical()
             .id_salt(("workspace-inspector", self.session.active.number()))
             .max_height(height)
@@ -4787,6 +4988,11 @@ impl DesktopApp {
     /// Left pane: one scroll area per workspace; content lives with its workspace.
     fn show_controls_pane(&mut self, ui: &mut egui::Ui) {
         let active = self.session.active;
+        if active == Workspace::Handoff {
+            // Options scroll above a pinned export footer.
+            self.show_export_preparation(ui);
+            return;
+        }
         let scroll = egui::ScrollArea::vertical()
             .id_salt((
                 "workspace-controls-scroll",
@@ -4837,11 +5043,8 @@ impl DesktopApp {
                                 self.show_hardware_list(ui);
                             });
                     }
-                    Workspace::Handoff => {
-                        egui::Frame::new()
-                            .inner_margin(egui::Margin::symmetric(14, 8))
-                            .show(ui, |ui| self.show_export_preparation(ui));
-                    }
+                    // Laid out by `show_export_preparation` above.
+                    Workspace::Handoff => {}
                 }
             });
         self.session.view_mut(active).scroll = scroll.state.offset.y;
@@ -4931,42 +5134,52 @@ impl DesktopApp {
                     });
             }
             Workspace::Handoff => {
-                egui::ScrollArea::vertical()
-                    .id_salt(("handoff-content", self.editor.project().id))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        egui::Frame::new()
-                            .inner_margin(egui::Margin::symmetric(16, 12))
-                            .show(ui, |ui| {
-                                let packet = self.export_candidate.as_ref().and_then(|(key, result)| {
-                                    (key == &self.export_key())
-                                        .then(|| result.as_ref().ok())
-                                        .flatten()
-                                        .cloned()
-                                });
-                                if let Some(packet) = packet {
-                                    let labels = DocumentPreviewLabels {
-                                        previous: &self.localizer.text("export-preview-previous"),
-                                        next: &self.localizer.text("export-preview-next"),
-                                        page: &self.localizer.text("export-preview-page"),
-                                        zoom: &self.localizer.text("export-preview-zoom"),
-                                        fit: &self.localizer.text("export-preview-fit"),
-                                    };
-                                    if show_document_preview(
-                                        ui,
-                                        packet.document(),
-                                        &mut self.export_preview,
-                                        &labels,
-                                    )
-                                    .is_err()
-                                    {
-                                        ui.label(self.localizer.text("export-render-failed"));
-                                    }
-                                } else {
-                                    ui.label(self.localizer.text("export-review-stale"));
-                                }
-                            });
+                let packet = self.export_candidate.as_ref().and_then(|(key, result)| {
+                    (key == &self.export_key())
+                        .then(|| result.as_ref().ok())
+                        .flatten()
+                        .cloned()
+                });
+                let centered_note = |ui: &mut egui::Ui, text: String, spinner: bool| {
+                    ui.centered_and_justified(|ui| {
+                        ui.horizontal_centered(|ui| {
+                            if spinner {
+                                ui.add(egui::Spinner::new().size(14.0).color(theme_widgets::FAINT));
+                            }
+                            ui.label(
+                                egui::RichText::new(text)
+                                    .size(12.5)
+                                    .color(theme_widgets::MUTED),
+                            );
+                        });
                     });
+                };
+                if let Some(packet) = packet {
+                    let pages = self.localizer.count(
+                        "handoff-preview-pages",
+                        packet.document().pages.len() as u64,
+                    );
+                    let labels = DocumentPreviewLabels {
+                        title: &self.localizer.text("handoff-preview"),
+                        pages: &pages,
+                        page: &self.localizer.text("export-preview-page"),
+                        zoom_in: &self.localizer.text("handoff-zoom-in"),
+                        zoom_out: &self.localizer.text("handoff-zoom-out"),
+                        fit: &self.localizer.text("export-preview-fit"),
+                    };
+                    if show_document_preview(
+                        ui,
+                        packet.document(),
+                        &mut self.export_preview,
+                        &labels,
+                    )
+                    .is_err()
+                    {
+                        centered_note(ui, self.localizer.text("export-render-failed"), false);
+                    }
+                } else {
+                    centered_note(ui, self.localizer.text("handoff-preparing"), true);
+                }
             }
             Workspace::CutPlan => {
                 let other_modal = drawer_modal
@@ -5903,63 +6116,6 @@ mod tests {
     }
 
     #[test]
-    fn handoff_count_cards_keep_localized_words_readable_in_narrow_panes() {
-        for language in [Language::En, Language::PtBr] {
-            for width in [180.0, 240.0, 288.0, 320.0] {
-                let ctx = egui::Context::default();
-                theme::install_fonts(&ctx);
-                let mut app = navigation_app();
-                app.localizer.set_language(language);
-                let before = app.editor.project().clone();
-                let output = ctx.run_ui(
-                    RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(
-                            egui::Pos2::ZERO,
-                            egui::vec2(width, 600.0),
-                        )),
-                        ..Default::default()
-                    },
-                    |ui| app.show_export_counts(ui),
-                );
-                for key in [
-                    "handoff-packet-parts",
-                    "handoff-packet-sheets",
-                    "handoff-packet-hinges",
-                ] {
-                    let label = app.localizer.text(key);
-                    let (clip, text) = output
-                        .shapes
-                        .iter()
-                        .find_map(|shape| match &shape.shape {
-                            egui::Shape::Text(text) if text.galley.text() == label => {
-                                Some((shape.clip_rect, text))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| panic!("missing {label}"));
-                    assert!(
-                        !text.galley.job.justify,
-                        "count labels must not stretch letter spacing"
-                    );
-                    assert!(
-                        text.galley.rows.len() <= label.split_whitespace().count(),
-                        "{language:?} at {width}: word broken in {label}: {:?}",
-                        text.galley.rows
-                    );
-                    let bounds = text.galley.rect.translate(text.pos.to_vec2());
-                    assert!(
-                        clip.expand(1.0).contains_rect(bounds),
-                        "{label}: {bounds:?} outside {clip:?}"
-                    );
-                    assert!(bounds.right() <= width + 1.0);
-                }
-                assert_eq!(app.editor.project(), &before);
-                output.drop_without_applying_deltas();
-            }
-        }
-    }
-
-    #[test]
     fn cut_plan_inspector_wraps_optimizer_heading_inside_scroll_viewport() {
         for language in [Language::En, Language::PtBr] {
             for width in [240.0, 292.0, 320.0] {
@@ -6280,7 +6436,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         assert!(
-            labels.contains(&app.localizer.text("welcome-empty")),
+            labels.contains(&app.localizer.text("welcome-empty-title")),
             "{labels}"
         );
         assert!(
@@ -7810,6 +7966,41 @@ mod tests {
         assert!(app.export_preparation.is_none());
         assert!(!path.exists());
         assert!(app.editor.project().export_records.is_empty());
+    }
+
+    #[test]
+    fn handoff_export_stays_disabled_until_the_preview_is_marked_reviewed() {
+        let mut app = navigation_app();
+        app.session.active = Workspace::Handoff;
+        await_handoff_packet(&mut app);
+        assert!(app.current_reviewed_packet().is_none());
+        let before = app.editor.project().clone();
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        theme::install_fonts(&ctx);
+        let size = egui::vec2(1440.0, 900.0);
+        let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
+        let export = app.localizer.text("handoff-export-draft");
+        assert!(
+            !buttons.iter().any(|(label, _)| label == &export),
+            "export enabled before review: {buttons:?}"
+        );
+        let review = app.localizer.text("handoff-mark-reviewed");
+        let (_, rect) = buttons
+            .iter()
+            .find(|(label, _)| label == &review)
+            .unwrap_or_else(|| panic!("review step missing: {buttons:?}"))
+            .clone();
+        responsive_click(&mut app, &ctx, size, rect.center());
+        assert!(app.current_reviewed_packet().is_some());
+        let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
+        assert!(
+            buttons.iter().any(|(label, _)| label == &export),
+            "export not enabled after review: {buttons:?}"
+        );
+        assert!(!buttons.iter().any(|(label, _)| label == &review));
+        assert_eq!(app.editor.project(), &before);
+        assert!(app.export_activity.is_none());
     }
 
     #[test]

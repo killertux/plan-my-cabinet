@@ -4,51 +4,365 @@
 use std::collections::BTreeSet;
 
 use eframe::egui::{self, Color32, RichText};
+use fluent_bundle::FluentArgs;
 use plan_my_cabinet::domain::Project;
 use plan_my_cabinet::export::{ComparisonChange, ComparisonKind, ExportMode};
 use plan_my_cabinet::i18n::{Language, Localizer};
+use plan_my_cabinet::icons::{Icon, icon};
 use plan_my_cabinet::receipt_read_models::{
     ReceiptCard, ReceiptFreshness, SinceThen, receipt_cards,
 };
+use plan_my_cabinet::theme_widgets as tw;
 use plan_my_cabinet::units::Unit;
 
-/// Draws the entire history in recorded newest-first order. The host should
-/// call this inside Handoff using its current project and UI-language localizer.
+/// Ink for "Since then" text on a stale receipt (`#5C3E10`).
+const STALE_INK: Color32 = Color32::from_rgb(92, 62, 16);
+/// Ink for the "out of date" chip (`#8A520A`).
+const OUTDATED_CHIP_INK: Color32 = Color32::from_rgb(138, 82, 10);
+
+/// The Handoff right pane: scrolling history and guidance above a pinned
+/// save reminder. `height` is the pane height the host can give us.
+pub fn show_panel(ui: &mut egui::Ui, project: &Project, l: &Localizer, width: f32, height: f32) {
+    let height = if height.is_finite() {
+        height.max(1.0)
+    } else {
+        600.0
+    };
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(width.max(1.0), height), egui::Sense::hover());
+    let mut pane = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::bottom_up(egui::Align::Min)),
+    );
+    egui::Frame::new().inner_margin(14).show(&mut pane, |ui| {
+        egui::Frame::new()
+            .fill(tw::APP)
+            .corner_radius(9)
+            .inner_margin(12)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    ui.add(icon(Icon::Folder, tw::MUTED, 16.0));
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(l.text("handoff-save-note"))
+                                .size(12.0)
+                                .color(tw::SECONDARY),
+                        )
+                        .wrap(),
+                    );
+                });
+            });
+    });
+    pane.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt("handoff-receipt-panel")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                show_receipts(ui, project, l);
+            });
+    });
+}
+
+/// Draws the entire history in recorded newest-first order, followed by the
+/// shop-review guidance. The host should call this inside Handoff using its
+/// current project and UI-language localizer.
 pub fn show_receipts(ui: &mut egui::Ui, project: &Project, l: &Localizer) {
-    ui.heading(l.text("export-history"));
-    ui.label(l.text("receipt-history-note"));
     let cards = receipt_cards(project);
-    if cards.is_empty() {
-        ui.label(l.text("receipt-empty"));
-        return;
-    }
-    egui::ScrollArea::vertical()
-        .id_salt("handoff-receipt-history")
-        .max_height(420.0)
+    egui::Frame::new()
+        .inner_margin(egui::Margin {
+            left: 12,
+            right: 12,
+            top: 4,
+            bottom: 0,
+        })
         .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                ui.vertical(|ui| tw::inspector_heading(ui, &l.text("export-history"), |_| ()));
+            })
+            .response
+            .on_hover_text(l.text("receipt-history-note"));
+            if cards.is_empty() {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(l.text("handoff-history-empty"))
+                            .size(12.0)
+                            .color(tw::FAINT),
+                    );
+                });
+            }
             for card in &cards {
-                egui::Frame::new()
-                    .fill(Color32::from_rgb(251, 250, 247))
-                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(221, 215, 205)))
-                    .corner_radius(8)
-                    .inner_margin(12)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.heading(&card.filename)
-                            .on_hover_text(card.path.display().to_string());
-                        for line in card_lines(card, l) {
-                            ui.add(egui::Label::new(line).wrap().selectable(true));
-                        }
-                        ui.separator();
-                        ui.label(RichText::new(l.text("receipt-since-then")).strong());
-                        for line in since_then_lines(&card.since_then, l) {
-                            ui.add(egui::Label::new(line).wrap().selectable(true));
-                        }
-                    });
+                receipt_card(ui, card, l);
                 ui.add_space(8.0);
             }
         });
-    ui.label(l.text("receipt-save-reminder"));
+    ui.add_space(8.0);
+    let (line, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        line.x_range(),
+        line.center().y,
+        egui::Stroke::new(1.0, tw::BORDER_SOFT),
+    );
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(16, 4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            tw::inspector_heading(ui, &l.text("handoff-before-send"), |_| ());
+            for key in [
+                "handoff-send-kerf",
+                "handoff-send-order",
+                "handoff-send-ids",
+            ] {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let (dot, _) =
+                        ui.allocate_exact_size(egui::vec2(4.0, 16.0), egui::Sense::hover());
+                    ui.painter()
+                        .circle_filled(dot.center() + egui::vec2(0.0, 1.0), 2.0, tw::FAINT);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(l.text(key)).size(12.0).color(tw::SECONDARY),
+                        )
+                        .wrap(),
+                    );
+                });
+                ui.add_space(2.0);
+            }
+        });
+}
+
+fn receipt_card(ui: &mut egui::Ui, card: &ReceiptCard, l: &Localizer) {
+    let muted = card.superseded;
+    let outdated = card.packet == ReceiptFreshness::Outdated;
+    let frame = if muted {
+        egui::Frame::new()
+            .fill(tw::APP)
+            .corner_radius(9)
+            .inner_margin(12)
+    } else {
+        egui::Frame::new()
+            .fill(tw::CARD)
+            .stroke(egui::Stroke::new(
+                1.0,
+                if outdated {
+                    tw::WARN_STROKE
+                } else {
+                    tw::BORDER_SOFT
+                },
+            ))
+            .corner_radius(9)
+            .inner_margin(12)
+    };
+    let shown = frame.show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if muted {
+                    ui.label(
+                        RichText::new(l.text("handoff-superseded"))
+                            .size(10.5)
+                            .color(tw::FAINT),
+                    );
+                } else {
+                    let (key, fill, ink) = match card.packet {
+                        ReceiptFreshness::Current => {
+                            ("handoff-chip-current", tw::OK_BG, tw::OK_INK)
+                        }
+                        ReceiptFreshness::Outdated => {
+                            ("handoff-chip-outdated", tw::WARN_BG, OUTDATED_CHIP_INK)
+                        }
+                        ReceiptFreshness::Unavailable | ReceiptFreshness::NotIncluded => {
+                            ("handoff-chip-unknown", tw::VIEWPORT, tw::SECONDARY)
+                        }
+                    };
+                    tw::chip(ui, &l.text(key), fill, ink);
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let name = if muted {
+                        tw::medium(ui, &card.filename, 13.0).color(tw::TEXT_2)
+                    } else {
+                        tw::semibold(ui, &card.filename, 13.0).color(tw::TEXT)
+                    };
+                    ui.add(egui::Label::new(name).truncate())
+                        .on_hover_text(card.path.display().to_string());
+                });
+            });
+        });
+        ui.label(
+            RichText::new(meta_line(card, l))
+                .size(11.5)
+                .color(tw::MUTED),
+        );
+        if !muted {
+            let (text, color) = since_then_summary(card, l);
+            ui.add(egui::Label::new(RichText::new(text).size(12.0).color(color)).wrap());
+            ui.label(
+                tw::mono(format!("sha256 {}", short_hash(&card.file_sha256)), 10.0)
+                    .color(tw::FAINT),
+            );
+        }
+    });
+    shown.response.on_hover_ui(|ui| {
+        ui.set_max_width(420.0);
+        for line in card_lines(card, l) {
+            ui.label(RichText::new(line).size(11.5));
+        }
+        ui.separator();
+        ui.label(
+            RichText::new(l.text("receipt-since-then"))
+                .size(11.5)
+                .strong(),
+        );
+        for line in since_then_lines(&card.since_then, l) {
+            ui.label(RichText::new(line).size(11.5));
+        }
+    });
+}
+
+fn short_hash(hash: &str) -> String {
+    if hash.len() >= 12 && hash.is_ascii() {
+        format!("{}…{}", &hash[..4], &hash[hash.len() - 4..])
+    } else {
+        hash.to_owned()
+    }
+}
+
+fn short_date(ms: Option<u64>) -> Option<String> {
+    ms.and_then(|ms| i64::try_from(ms / 1000).ok())
+        .and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok())
+        .map(|date| {
+            format!(
+                "{:02}/{:02} {:02}:{:02} UTC",
+                date.day(),
+                u8::from(date.month()),
+                date.hour(),
+                date.minute()
+            )
+        })
+}
+
+/// "Shop-ready · pt-BR · mm · 24/09 18:12 UTC"
+fn meta_line(card: &ReceiptCard, l: &Localizer) -> String {
+    let mode = card.mode.map_or_else(
+        || l.text("receipt-unknown"),
+        |mode| {
+            l.text(match mode {
+                ExportMode::Draft => "export-draft",
+                ExportMode::ShopReady => "export-shop-ready",
+            })
+        },
+    );
+    let mut parts = vec![
+        mode,
+        card.settings.language.tag().to_owned(),
+        l.text(unit_key(card.settings.units)),
+    ];
+    if let Some(date) = short_date(card.completed_unix_ms) {
+        parts.push(date);
+    }
+    parts.join(" · ")
+}
+
+fn unit_key(unit: Unit) -> &'static str {
+    match unit {
+        Unit::Mm => "unit-mm",
+        Unit::Cm => "unit-cm",
+        Unit::M => "unit-m",
+        Unit::Inch => "unit-in",
+        Unit::Foot => "unit-ft",
+    }
+}
+
+/// One short line, never a UUID; the tooltip keeps the complete comparison.
+fn since_then_summary(card: &ReceiptCard, l: &Localizer) -> (String, Color32) {
+    let since = l.text("receipt-since-then");
+    match &card.since_then {
+        SinceThen::DetailsUnavailable => (
+            format!("{since}: {}", l.text("handoff-since-unavailable")),
+            tw::MUTED,
+        ),
+        SinceThen::NoRecordedChanges => (
+            format!("{since}: {}", l.text("handoff-since-none")),
+            tw::MUTED,
+        ),
+        SinceThen::RecordedChanges(changes) => {
+            let mut parts: Vec<String> = changes
+                .iter()
+                .take(2)
+                .map(|change| change_summary(change, l))
+                .collect();
+            if changes.len() > 2 {
+                parts.push(l.count("handoff-change-more", (changes.len() - 2) as u64));
+            }
+            (format!("{since}: {}", parts.join(", ")), STALE_INK)
+        }
+    }
+}
+
+fn change_summary(change: &ComparisonChange, l: &Localizer) -> String {
+    let before = change.previous.as_ref();
+    let after = change.current.as_ref();
+    let name = after
+        .or(before)
+        .map(|entry| entry.name.trim())
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| l.text(kind_key(change.kind)), str::to_owned);
+    let with_name = |key: &str| {
+        let mut args = FluentArgs::new();
+        args.set("name", name.clone());
+        l.format(key, Some(&args))
+    };
+    match (before, after) {
+        (None, Some(_)) => with_name("handoff-change-added"),
+        (Some(_), None) => with_name("handoff-change-removed"),
+        (Some(old), Some(new)) => {
+            if old.name != new.name && !old.name.is_empty() && !new.name.is_empty() {
+                return format!("{} → {}", old.name, new.name);
+            }
+            for (fact, key) in [
+                ("length_um", "handoff-fact-length"),
+                ("width_um", "handoff-fact-width"),
+                ("thickness_um", "handoff-fact-thickness"),
+                ("kerf_um", "handoff-fact-kerf"),
+            ] {
+                let (Some(a), Some(b)) = (old.facts.get(fact), new.facts.get(fact)) else {
+                    continue;
+                };
+                let (Ok(a), Ok(b)) = (a.parse::<i64>(), b.parse::<i64>()) else {
+                    continue;
+                };
+                if a == b {
+                    continue;
+                }
+                let mut args = FluentArgs::new();
+                args.set("name", name.clone());
+                args.set("fact", l.text(key));
+                args.set(
+                    "values",
+                    format!("{} → {}", micrometres_mm(a), micrometres_mm(b)),
+                );
+                return l.format("handoff-change-value", Some(&args));
+            }
+            with_name("handoff-change-edited")
+        }
+        (None, None) => with_name("handoff-change-edited"),
+    }
+}
+
+/// Millimetres with needless zeros trimmed (537, 18.5).
+fn micrometres_mm(um: i64) -> String {
+    let text = format!("{:.3}", um as f64 / 1000.0);
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 fn labelled(l: &Localizer, key: &str, value: impl std::fmt::Display) -> String {
@@ -105,13 +419,7 @@ fn card_lines(card: &ReceiptCard, l: &Localizer) -> Vec<String> {
             .join(" · ")
         },
     );
-    let unit = l.text(match card.settings.units {
-        Unit::Mm => "unit-mm",
-        Unit::Cm => "unit-cm",
-        Unit::M => "unit-m",
-        Unit::Inch => "unit-in",
-        Unit::Foot => "unit-ft",
-    });
+    let unit = l.text(unit_key(card.settings.units));
     let language = l.text(match card.settings.language {
         Language::En => "language-en",
         Language::PtBr => "language-pt-br",
@@ -362,6 +670,58 @@ mod tests {
         );
         output.drop_without_applying_deltas();
         assert_eq!(project, original);
+    }
+
+    #[test]
+    fn panel_shows_short_cards_without_ids_and_pins_save_note() {
+        let mut project = project();
+        add_receipt(&mut project, "older.pdf", ReceiptSections::default());
+        add_receipt(&mut project, "newer.pdf", ReceiptSections::default());
+        project.boards[0].name = "Renamed shelf".into();
+        project.revision += 1;
+        for language in [Language::En, Language::PtBr] {
+            let l = Localizer::new(language);
+            let ctx = egui::Context::default();
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(300.0, 800.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| show_panel(ui, &project, &l, 300.0, 800.0),
+            );
+            let texts: Vec<(String, egui::Pos2)> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some((text.galley.text().to_owned(), text.pos)),
+                    _ => None,
+                })
+                .collect();
+            let all = texts
+                .iter()
+                .map(|(t, _)| t.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                all.contains("newer.pdf") && all.contains("older.pdf"),
+                "{all}"
+            );
+            assert!(all.contains(&l.text("handoff-superseded")), "{all}");
+            assert!(!all.contains(&project.id.to_string()), "{all}");
+            assert!(!all.contains(&"a".repeat(64)), "full hash leaked: {all}");
+            let note = texts
+                .iter()
+                .find(|(t, _)| {
+                    let prefix: String = l.text("handoff-save-note").chars().take(10).collect();
+                    t.starts_with(&prefix)
+                })
+                .unwrap_or_else(|| panic!("save note missing: {all}"));
+            assert!(note.1.y > 700.0, "save note not pinned: {note:?}");
+            output.drop_without_applying_deltas();
+        }
     }
 
     #[test]

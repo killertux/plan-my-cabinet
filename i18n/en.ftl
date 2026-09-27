@@ -1149,3 +1149,89 @@ material-used-by = Used by
 material-edit-ellipsis = Edit material…
 material-edit-note = Editing asks whether to preserve or update existing boards.
 stock-grain-short-unknown = Unknown
+
+# handoff rework
+handoff-packet-type = Packet type
+handoff-pdf-output = PDF output
+handoff-language = Language
+handoff-units = Units
+handoff-include = Include
+handoff-lang-en = English
+handoff-lang-pt = Português (BR)
+handoff-output-note = Only the PDF changes language. Names and IDs are never translated; currency stays { $currency }.
+handoff-export-draft = Export draft PDF…
+handoff-export-shop = Export shop-ready PDF…
+handoff-export-hint = Use a new file name for every revision you send
+handoff-mark-reviewed = Mark preview as reviewed
+handoff-review-needed = Check the preview, then mark it as reviewed to export.
+handoff-preparing = Preparing preview…
+handoff-kerf-ok = Kerf confirmed · { $kerf } mm
+handoff-kerf-unconfirmed = Kerf not confirmed · { $kerf } mm
+handoff-cuts-ok = Cut sequence verified · { $count ->
+    [one] 1 sheet
+   *[other] { $count } sheets
+}
+handoff-checking = Checking the cut plan…
+handoff-fix-short = Fix
+handoff-more-issues = and { $count } more
+handoff-fewer-issues = Show fewer
+handoff-price-unknown = { $item } price unknown
+handoff-cut-fee-unknown = Cut fee unknown
+handoff-hardware-issue = references unresolved
+handoff-preview = Preview
+handoff-preview-pages = { $count ->
+    [one] 1 page
+   *[other] { $count } pages
+}
+handoff-zoom-in = Zoom in
+handoff-zoom-out = Zoom out
+handoff-before-send = Before you send
+handoff-send-kerf = Confirm blade kerf and edge trimming with the shop.
+handoff-send-order = Agree on cut order and no stacking.
+handoff-send-ids = Match part IDs between the list and each sheet.
+handoff-save-note = Save the project after exporting to keep the receipt.
+handoff-history-empty = No exports yet.
+handoff-chip-outdated = out of date
+handoff-chip-current = current
+handoff-chip-unknown = unverified
+handoff-superseded = superseded
+handoff-since-unavailable = details unavailable
+handoff-since-none = no recorded changes
+handoff-change-added = { $name } added
+handoff-change-removed = { $name } removed
+handoff-change-edited = { $name } changed
+handoff-change-value = { $name } { $fact } { $values }
+handoff-change-more = +{ $count } more
+handoff-fact-length = length
+handoff-fact-width = width
+handoff-fact-thickness = thickness
+handoff-fact-kerf = kerf
+
+# welcome rework
+welcome-language = Language
+welcome-template-hint = Sets width, height, depth and material, then creates the boards as normal editable parts.
+welcome-recovery-title = Unsaved work found for { $name }
+welcome-recovery-body = The app closed before these edits were saved. The saved file hasn't been touched.
+welcome-recovery-body-untitled = This project was never saved. Recover it, then use Save As to keep it.
+welcome-recovery-snapshot-tile = Recovery snapshot
+welcome-recovery-no-file = no saved file
+welcome-recovery-note = Recovered work stays unsaved until you save
+welcome-recovery-skipped = { $count ->
+    [one] 1 recovery snapshot can't be used
+   *[other] { $count } recovery snapshots can't be used
+}
+welcome-sheets-count = { $count ->
+    [one] 1 sheet
+   *[other] { $count } sheets
+}
+welcome-no-stock = no stock
+welcome-chip-recovery = Recovery available
+welcome-chip-current = Export current
+welcome-chip-stale = Export out of date
+welcome-chip-never = Not exported
+welcome-file-missing = file not found
+welcome-file-unreadable = can't read file
+welcome-remove-short = Remove
+welcome-more = More actions
+welcome-empty-title = No recent projects yet
+welcome-empty-hint = Create a new project, start from a template or open a file.

@@ -1152,3 +1152,89 @@ material-used-by = Usado por
 material-edit-ellipsis = Editar material…
 material-edit-note = Ao editar, você escolhe se mantém ou atualiza as peças existentes.
 stock-grain-short-unknown = Indefinido
+
+# handoff rework
+handoff-packet-type = Tipo de pacote
+handoff-pdf-output = Saída do PDF
+handoff-language = Idioma
+handoff-units = Unidades
+handoff-include = Incluir
+handoff-lang-en = English
+handoff-lang-pt = Português (BR)
+handoff-output-note = Só o PDF muda de idioma. Nomes e IDs nunca são traduzidos; a moeda continua { $currency }.
+handoff-export-draft = Exportar PDF rascunho…
+handoff-export-shop = Exportar PDF para a oficina…
+handoff-export-hint = Use um novo nome de arquivo a cada revisão enviada
+handoff-mark-reviewed = Marcar prévia como revisada
+handoff-review-needed = Confira a prévia e marque como revisada para exportar.
+handoff-preparing = Preparando a prévia…
+handoff-kerf-ok = Kerf confirmado · { $kerf } mm
+handoff-kerf-unconfirmed = Kerf não confirmado · { $kerf } mm
+handoff-cuts-ok = Sequência de corte verificada · { $count ->
+    [one] 1 chapa
+   *[other] { $count } chapas
+}
+handoff-checking = Verificando o plano de corte…
+handoff-fix-short = Corrigir
+handoff-more-issues = e mais { $count }
+handoff-fewer-issues = Mostrar menos
+handoff-price-unknown = Preço de { $item } desconhecido
+handoff-cut-fee-unknown = Taxa de corte desconhecida
+handoff-hardware-issue = referências não resolvidas
+handoff-preview = Prévia
+handoff-preview-pages = { $count ->
+    [one] 1 página
+   *[other] { $count } páginas
+}
+handoff-zoom-in = Aproximar
+handoff-zoom-out = Afastar
+handoff-before-send = Antes de enviar
+handoff-send-kerf = Confirme o kerf da serra e o refilo com a oficina.
+handoff-send-order = Combine a ordem de corte e o corte sem empilhar.
+handoff-send-ids = Confira os IDs das peças entre a lista e cada chapa.
+handoff-save-note = Salve o projeto depois de exportar para manter o recibo.
+handoff-history-empty = Nenhuma exportação ainda.
+handoff-chip-outdated = desatualizado
+handoff-chip-current = atual
+handoff-chip-unknown = não verificado
+handoff-superseded = substituído
+handoff-since-unavailable = detalhes indisponíveis
+handoff-since-none = nenhuma alteração registrada
+handoff-change-added = { $name } adicionado
+handoff-change-removed = { $name } removido
+handoff-change-edited = { $name } alterado
+handoff-change-value = { $name }: { $fact } { $values }
+handoff-change-more = +{ $count }
+handoff-fact-length = comprimento
+handoff-fact-width = largura
+handoff-fact-thickness = espessura
+handoff-fact-kerf = kerf
+
+# welcome rework
+welcome-language = Idioma
+welcome-template-hint = Define largura, altura, profundidade e material e cria as peças como placas editáveis.
+welcome-recovery-title = Trabalho não salvo em { $name }
+welcome-recovery-body = O app fechou antes de salvar estas alterações. O arquivo salvo não foi modificado.
+welcome-recovery-body-untitled = Este projeto nunca foi salvo. Recupere-o e use Salvar como para mantê-lo.
+welcome-recovery-snapshot-tile = Cópia de recuperação
+welcome-recovery-no-file = sem arquivo salvo
+welcome-recovery-note = O trabalho recuperado fica sem salvar até você salvar
+welcome-recovery-skipped = { $count ->
+    [one] 1 cópia de recuperação não pode ser usada
+   *[other] { $count } cópias de recuperação não podem ser usadas
+}
+welcome-sheets-count = { $count ->
+    [one] 1 chapa
+   *[other] { $count } chapas
+}
+welcome-no-stock = sem estoque
+welcome-chip-recovery = Recuperação disponível
+welcome-chip-current = Exportação atual
+welcome-chip-stale = Exportação desatualizada
+welcome-chip-never = Não exportado
+welcome-file-missing = arquivo não encontrado
+welcome-file-unreadable = não foi possível ler
+welcome-remove-short = Remover
+welcome-more = Mais ações
+welcome-empty-title = Nenhum projeto recente
+welcome-empty-hint = Crie um projeto, comece de um modelo ou abra um arquivo.

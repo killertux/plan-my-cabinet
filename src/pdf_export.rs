@@ -509,10 +509,14 @@ impl DocumentPreviewState {
 
 /// Labels are supplied by the Handoff workspace in its UI language.
 pub struct DocumentPreviewLabels<'a> {
-    pub previous: &'a str,
-    pub next: &'a str,
+    /// Toolbar title, e.g. "Preview".
+    pub title: &'a str,
+    /// Localized page count, e.g. "6 pages".
+    pub pages: &'a str,
+    /// Accessible prefix for page thumbnails, e.g. "Page" ("Page 2").
     pub page: &'a str,
-    pub zoom: &'a str,
+    pub zoom_in: &'a str,
+    pub zoom_out: &'a str,
     pub fit: &'a str,
 }
 
@@ -537,12 +541,77 @@ struct PreviewAreas {
     thumbnails: Vec<eframe::egui::Rect>,
 }
 
+const PREVIEW_TOOLBAR_HEIGHT: f32 = 48.0;
+const PREVIEW_PADDING: f32 = 18.0;
+const PREVIEW_RAIL_WIDTH: f32 = 74.0;
+const PREVIEW_THUMB_WIDTH: f32 = 62.0;
+const PREVIEW_PAGE_MARGIN: f32 = 12.0;
+/// Zoom presets in percent of physical paper size (100% = 72 pt per inch).
+const PREVIEW_ZOOM_STEPS: [f32; 13] = [
+    30.0, 40.0, 50.0, 67.0, 75.0, 90.0, 100.0, 110.0, 125.0, 150.0, 175.0, 200.0, 250.0,
+];
+
+fn zoom_percent(points_per_mm: f32) -> f32 {
+    points_per_mm / MM_TO_PT * 100.0
+}
+
+fn paper_label(page: &Page) -> String {
+    let is = |w: f32, h: f32| {
+        (page.width_mm - w).abs() < 0.5 && (page.height_mm - h).abs() < 0.5
+            || (page.width_mm - h).abs() < 0.5 && (page.height_mm - w).abs() < 0.5
+    };
+    if is(document_layout::A4_WIDTH_MM, document_layout::A4_HEIGHT_MM) {
+        "A4".into()
+    } else {
+        format!("{:.0} × {:.0} mm", page.width_mm, page.height_mm)
+    }
+}
+
+/// A 26×24 zoom step button with a painted − or + glyph (no text glyphs).
+fn zoom_step_button(
+    ui: &mut eframe::egui::Ui,
+    plus: bool,
+    label: &str,
+    enabled: bool,
+) -> eframe::egui::Response {
+    use crate::theme_widgets as tw;
+    use eframe::egui;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(26.0, 24.0),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    let response = response.on_hover_text(label);
+    if enabled && (response.hovered() || response.has_focus()) {
+        ui.painter().rect_filled(rect, 6.0, tw::VIEWPORT);
+    }
+    let color = if enabled {
+        tw::SECONDARY
+    } else {
+        tw::SECONDARY.gamma_multiply(0.4)
+    };
+    let stroke = egui::Stroke::new(1.5, color);
+    let c = rect.center();
+    ui.painter()
+        .line_segment([c - egui::vec2(4.5, 0.0), c + egui::vec2(4.5, 0.0)], stroke);
+    if plus {
+        ui.painter()
+            .line_segment([c - egui::vec2(0.0, 4.5), c + egui::vec2(0.0, 4.5)], stroke);
+    }
+    response
+}
+
 fn show_document_preview_layout(
     ui: &mut eframe::egui::Ui,
     document: &Document,
     state: &mut DocumentPreviewState,
     labels: &DocumentPreviewLabels<'_>,
 ) -> Result<(Option<String>, PreviewAreas), PdfExportError> {
+    use crate::theme_widgets as tw;
     use eframe::egui::{self, Color32, Sense, StrokeKind};
 
     if document.pages.is_empty() {
@@ -553,172 +622,317 @@ fn show_document_preview_layout(
     }
     state.select(state.page, document);
     let mut external = None;
-    ui.horizontal_wrapped(|ui| {
-        if ui
-            .add_enabled(state.page > 0, egui::Button::new(labels.previous))
-            .clicked()
-        {
-            state.page -= 1;
-        }
-        ui.label(format!(
-            "{} {} / {}",
-            labels.page,
-            state.page + 1,
-            document.pages.len()
-        ));
-        if ui
-            .add_enabled(
-                state.page + 1 < document.pages.len(),
-                egui::Button::new(labels.next),
-            )
-            .clicked()
-        {
-            state.page += 1;
-        }
-        ui.label(labels.zoom);
-        if ui
-            .add(egui::Slider::new(&mut state.points_per_mm, 0.8..=8.0).show_value(false))
-            .changed()
-        {
-            state.fit_page = false;
-        }
-        if ui.selectable_label(state.fit_page, labels.fit).clicked() {
-            state.fit_page = true;
-        }
+
+    // Claim the whole canvas once, then place explicit children in it.
+    let mut available = ui.available_size_before_wrap();
+    if !available.y.is_finite() {
+        available.y = 800.0;
+    }
+    if !available.x.is_finite() {
+        available.x = 1000.0;
+    }
+    let (full, _) = ui.allocate_exact_size(available.max(egui::vec2(1.0, 1.0)), Sense::hover());
+    let toolbar = egui::Rect::from_min_size(
+        full.min,
+        egui::vec2(full.width(), PREVIEW_TOOLBAR_HEIGHT.min(full.height())),
+    );
+    let body = egui::Rect::from_min_max(
+        egui::pos2(full.left() + PREVIEW_PADDING, toolbar.bottom() + 4.0),
+        egui::pos2(
+            full.right() - PREVIEW_PADDING,
+            (full.bottom() - PREVIEW_PADDING).max(toolbar.bottom() + 5.0),
+        ),
+    );
+    let rail_width = PREVIEW_RAIL_WIDTH.min((body.width() - PREVIEW_PADDING).max(1.0) * 0.28);
+    let rail = egui::Rect::from_min_size(body.min, egui::vec2(rail_width, body.height()));
+    let center = egui::Rect::from_min_max(
+        egui::pos2(
+            (rail.right() + PREVIEW_PADDING).min(body.right() - 1.0),
+            body.top(),
+        ),
+        body.max,
+    );
+
+    let page = &document.pages[state.page];
+    let fit_scale = ((center.width() - 2.0 * PREVIEW_PAGE_MARGIN).max(1.0) / page.width_mm)
+        .min((center.height() - 2.0 * PREVIEW_PAGE_MARGIN).max(1.0) / page.height_mm)
+        * 0.999;
+
+    // Toolbar: title and page count on the left, zoom pill on the right.
+    let mut bar = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(toolbar.shrink2(egui::vec2(16.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    bar.spacing_mut().item_spacing.x = 8.0;
+    bar.add(
+        egui::Label::new(tw::semibold(&bar, labels.title, 13.0).color(tw::TEXT)).selectable(false),
+    );
+    bar.add(
+        egui::Label::new(
+            egui::RichText::new(format!("{} · {}", labels.pages, paper_label(page)))
+                .size(13.0)
+                .color(tw::MUTED),
+        )
+        .selectable(false),
+    );
+    bar.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        egui::Frame::new()
+            .fill(tw::PANEL)
+            .stroke(egui::Stroke::new(1.0, tw::BORDER))
+            .corner_radius(9)
+            .inner_margin(3)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let shown = if state.fit_page {
+                    fit_scale
+                } else {
+                    state.points_per_mm
+                };
+                let percent = zoom_percent(shown);
+                let to_ppm = |pct: f32| (pct / 100.0 * MM_TO_PT).clamp(0.8, 8.0);
+                let lower = PREVIEW_ZOOM_STEPS
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|step| *step < percent - 0.5 && to_ppm(*step) < shown - 0.001);
+                let higher = PREVIEW_ZOOM_STEPS
+                    .iter()
+                    .copied()
+                    .find(|step| *step > percent + 0.5 && to_ppm(*step) > shown + 0.001);
+                // Right-to-left: the first widget is the rightmost.
+                let fit_bg = ui.painter().add(egui::Shape::Noop);
+                let fit = tw::ghost_icon_sized(
+                    ui,
+                    crate::icons::Icon::Frame,
+                    labels.fit,
+                    if state.fit_page {
+                        tw::ACCENT_DARK
+                    } else {
+                        tw::SECONDARY
+                    },
+                    14.0,
+                    24.0,
+                    true,
+                    false,
+                );
+                if state.fit_page {
+                    ui.painter().set(
+                        fit_bg,
+                        egui::Shape::rect_filled(fit.rect, 6.0, tw::ACCENT_BG),
+                    );
+                }
+                if fit.clicked() {
+                    state.fit_page = true;
+                }
+                let (sep, _) = ui.allocate_exact_size(egui::vec2(5.0, 18.0), Sense::hover());
+                ui.painter().vline(
+                    sep.center().x,
+                    sep.y_range(),
+                    egui::Stroke::new(1.0, tw::BORDER_SOFT),
+                );
+                if zoom_step_button(ui, true, labels.zoom_in, higher.is_some()).clicked()
+                    && let Some(step) = higher
+                {
+                    let _ = state.set_zoom(to_ppm(step));
+                }
+                ui.add(
+                    egui::Label::new(tw::mono(format!("{percent:.0}%"), 12.0).color(tw::TEXT))
+                        .selectable(false),
+                );
+                if zoom_step_button(ui, false, labels.zoom_out, lower.is_some()).clicked()
+                    && let Some(step) = lower
+                {
+                    let _ = state.set_zoom(to_ppm(step));
+                }
+            });
     });
-    let available = ui.available_size_before_wrap();
-    // Leave the history heading reachable below the preview at the reference
-    // window size, while smaller canvases use their entire available height.
-    let height = available.y.clamp(1.0, 690.0);
-    let gap = ui.spacing().item_spacing.x;
-    // A scroll area's max_width constrains its contents, not its share of an
-    // unconstrained horizontal row. Allocate two explicit, clipped viewports.
-    let rail_width = 112.0_f32.min((available.x - gap).max(1.0) * 0.28);
-    let center_width = (available.x - rail_width - gap).max(1.0);
-    let areas = ui
-        .horizontal(|ui| -> Result<PreviewAreas, PdfExportError> {
-            let rail = ui.allocate_ui_with_layout(
-                egui::vec2(rail_width, height),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("document-preview-thumbnails")
-                        .max_height(height)
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| -> Result<Vec<egui::Rect>, PdfExportError> {
-                            let mut thumbnails = Vec::with_capacity(document.pages.len());
-                            for (index, page) in document.pages.iter().enumerate() {
-                                let scale = (rail_width - 16.0).max(1.0) / page.width_mm;
-                                let size =
-                                    egui::vec2(page.width_mm * scale, page.height_mm * scale);
-                                let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-                                response.widget_info(|| {
-                                    egui::WidgetInfo::selected(
-                                        egui::WidgetType::Button,
-                                        response.enabled(),
-                                        index == state.page,
-                                        format!("{} {}", labels.page, index + 1),
-                                    )
-                                });
-                                thumbnails.push(rect);
-                                ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
-                                paint_document_page(
-                                    &ui.painter().with_clip_rect(rect),
-                                    page,
-                                    rect.min,
-                                    scale,
-                                )?;
-                                if index == state.page || response.has_focus() {
-                                    ui.painter().rect_stroke(
-                                        rect,
-                                        0.0,
-                                        egui::Stroke::new(2.0, Color32::DARK_BLUE),
-                                        StrokeKind::Inside,
-                                    );
-                                }
-                                if response.clicked() {
-                                    state.page = index;
-                                }
-                                ui.label(format!("{} {}", labels.page, index + 1));
+
+    // Thumbnail rail.
+    let mut rail_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rail)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    let thumbnails = egui::ScrollArea::vertical()
+        .id_salt("document-preview-thumbnails")
+        .max_height(rail.height())
+        .auto_shrink([false, false])
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(
+            &mut rail_ui,
+            |ui| -> Result<Vec<egui::Rect>, PdfExportError> {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let mut thumbnails = Vec::with_capacity(document.pages.len());
+                let thumb_width = PREVIEW_THUMB_WIDTH.min(rail_width - 4.0).max(1.0);
+                for (index, page) in document.pages.iter().enumerate() {
+                    let scale = thumb_width / page.width_mm;
+                    let size = egui::vec2(thumb_width, page.height_mm * scale);
+                    let (slot, _) = ui
+                        .allocate_exact_size(egui::vec2(rail_width, size.y + 34.0), Sense::hover());
+                    let rect = egui::Rect::from_min_size(
+                        egui::pos2(slot.center().x - size.x / 2.0, slot.top() + 2.0),
+                        size,
+                    );
+                    let response = ui.interact(
+                        rect,
+                        ui.id().with(("document-preview-thumb", index)),
+                        Sense::click(),
+                    );
+                    let selected = index == state.page;
+                    response.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Button,
+                            response.enabled(),
+                            selected,
+                            format!("{} {}", labels.page, index + 1),
+                        )
+                    });
+                    thumbnails.push(rect);
+                    if !selected {
+                        ui.painter().add(
+                            egui::Shadow {
+                                offset: [0, 1],
+                                blur: 3,
+                                spread: 0,
+                                color: Color32::from_black_alpha(38),
                             }
-                            Ok(thumbnails)
-                        })
-                        .inner
-                },
+                            .as_shape(rect, 0),
+                        );
+                    }
+                    ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+                    paint_document_page(
+                        &ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())),
+                        page,
+                        rect.min,
+                        scale,
+                    )?;
+                    if selected {
+                        ui.painter().rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(2.0, tw::TEXT),
+                            StrokeKind::Outside,
+                        );
+                    } else if response.hovered() || response.has_focus() {
+                        ui.painter().rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(1.0, tw::BORDER_STRONG),
+                            StrokeKind::Outside,
+                        );
+                    }
+                    let number = (index + 1).to_string();
+                    let font = if selected {
+                        tw::weighted_font(ui, 11.0, crate::theme::Typeface::SansSemibold)
+                    } else {
+                        egui::FontId::proportional(11.0)
+                    };
+                    ui.painter().text(
+                        egui::pos2(slot.center().x, rect.bottom() + 6.0),
+                        egui::Align2::CENTER_TOP,
+                        number,
+                        font,
+                        if selected { tw::TEXT } else { tw::MUTED },
+                    );
+                    if response.clicked() {
+                        state.page = index;
+                    }
+                }
+                Ok(thumbnails)
+            },
+        )
+        .inner?;
+
+    // Current page, centred on the canvas with a paper shadow.
+    let mut center_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(center)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    let page_index = state.page;
+    let page_rect = egui::ScrollArea::both()
+        .id_salt("document-preview-page")
+        .max_height(center.height())
+        .max_width(center.width())
+        .auto_shrink([false, false])
+        .show(&mut center_ui, |ui| -> Result<egui::Rect, PdfExportError> {
+            let page = &document.pages[page_index];
+            let scale = if state.fit_page {
+                fit_scale
+            } else {
+                state.points_per_mm
+            };
+            let size = egui::vec2(page.width_mm * scale, page.height_mm * scale);
+            let viewport = center.size();
+            let content = egui::vec2(
+                (size.x + 2.0 * PREVIEW_PAGE_MARGIN).max(viewport.x),
+                (size.y + 2.0 * PREVIEW_PAGE_MARGIN).max(viewport.y),
             );
-            let thumbnails = rail.inner?;
-            let center = ui.allocate_ui_with_layout(
-                egui::vec2(center_width, height),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    egui::ScrollArea::both()
-                        .id_salt("document-preview-page")
-                        .max_height(height)
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| -> Result<egui::Rect, PdfExportError> {
-                            let page = &document.pages[state.page];
-                            let scale = if state.fit_page {
-                                ((center_width - 16.0).max(1.0) / page.width_mm)
-                                    .min((height - 16.0).max(1.0) / page.height_mm)
+            let (area, _) = ui.allocate_exact_size(content, Sense::hover());
+            let rect = egui::Rect::from_center_size(area.center(), size);
+            let response =
+                ui.interact(rect, ui.id().with("document-preview-sheet"), Sense::click());
+            ui.painter().add(
+                egui::Shadow {
+                    offset: [0, 4],
+                    blur: 18,
+                    spread: 0,
+                    color: Color32::from_rgba_unmultiplied(40, 30, 15, 46),
+                }
+                .as_shape(rect, 0),
+            );
+            ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+            paint_document_page(
+                &ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())),
+                page,
+                rect.min,
+                scale,
+            )?;
+            if response.clicked()
+                && let Some(pointer) = response.interact_pointer_pos()
+            {
+                for primitive in &page.primitives {
+                    if let Primitive::Link {
+                        bounds,
+                        destination,
+                    } = primitive
+                    {
+                        let hit = egui::Rect::from_min_size(
+                            rect.min + egui::vec2(bounds.x * scale, bounds.y * scale),
+                            egui::vec2(bounds.width * scale, bounds.height * scale),
+                        );
+                        if hit.contains(pointer) {
+                            if let Some(index) = destination.strip_prefix("page:") {
+                                let index = index
+                                    .parse::<usize>()
+                                    .map_err(|_| PdfExportError::UnsupportedLink)?;
+                                if index == 0 || index > document.pages.len() {
+                                    return Err(PdfExportError::UnsupportedLink);
+                                }
+                                state.page = index - 1;
+                            } else if destination.starts_with("https://") {
+                                external = Some(destination.clone());
                             } else {
-                                state.points_per_mm
-                            };
-                            let size = egui::vec2(page.width_mm * scale, page.height_mm * scale);
-                            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-                            ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
-                            paint_document_page(
-                                &ui.painter().with_clip_rect(rect),
-                                page,
-                                rect.min,
-                                scale,
-                            )?;
-                            if response.clicked()
-                                && let Some(pointer) = response.interact_pointer_pos()
-                            {
-                                for primitive in &page.primitives {
-                                    if let Primitive::Link {
-                                        bounds,
-                                        destination,
-                                    } = primitive
-                                    {
-                                        let hit = egui::Rect::from_min_size(
-                                            rect.min
-                                                + egui::vec2(bounds.x * scale, bounds.y * scale),
-                                            egui::vec2(bounds.width * scale, bounds.height * scale),
-                                        );
-                                        if hit.contains(pointer) {
-                                            if let Some(index) = destination.strip_prefix("page:") {
-                                                let index = index
-                                                    .parse::<usize>()
-                                                    .map_err(|_| PdfExportError::UnsupportedLink)?;
-                                                if index == 0 || index > document.pages.len() {
-                                                    return Err(PdfExportError::UnsupportedLink);
-                                                }
-                                                state.page = index - 1;
-                                            } else if destination.starts_with("https://") {
-                                                external = Some(destination.clone());
-                                            } else {
-                                                return Err(PdfExportError::UnsupportedLink);
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
+                                return Err(PdfExportError::UnsupportedLink);
                             }
-                            Ok(rect)
-                        })
-                        .inner
-                },
-            );
-            Ok(PreviewAreas {
-                rail: rail.response.rect,
-                center: center.response.rect,
-                page: center.inner?,
-                thumbnails,
-            })
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(rect)
         })
         .inner?;
-    Ok((external, areas))
+    Ok((
+        external,
+        PreviewAreas {
+            rail,
+            center,
+            page: page_rect,
+            thumbnails,
+        },
+    ))
 }
 
 fn label(loc: &Localizer, key: &str) -> String {
@@ -1647,10 +1861,11 @@ mod tests {
                     document,
                     state,
                     &DocumentPreviewLabels {
-                        previous: "Previous",
-                        next: "Next",
+                        title: "Preview",
+                        pages: "6 pages",
                         page: "Page",
-                        zoom: "Zoom",
+                        zoom_in: "Zoom in",
+                        zoom_out: "Zoom out",
                         fit: "Fit page",
                     },
                 )
