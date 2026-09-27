@@ -4847,7 +4847,7 @@ impl DesktopApp {
                     Workspace::Design => self.show_design_controls(ui),
                     Workspace::Stock => {
                         egui::Frame::new()
-                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .inner_margin(egui::Margin::symmetric(8, 0))
                             .show(ui, |ui| self.show_stock_materials(ui));
                     }
                     Workspace::CutPlan => {

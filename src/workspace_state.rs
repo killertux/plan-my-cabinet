@@ -79,8 +79,6 @@ pub(crate) struct WorkspaceSession {
     pub stock_global_order: bool,
     pub stock_piece: Option<Uuid>,
     pub stock_drag: Option<Uuid>,
-    /// One-based rank proposed by the accessible global-position control.
-    pub stock_global_target: usize,
     pub cut_plan: ViewState,
     pub hardware: ViewState,
     pub handoff: ViewState,
@@ -106,7 +104,6 @@ impl WorkspaceSession {
             stock_global_order: false,
             stock_piece: None,
             stock_drag: None,
-            stock_global_target: 1,
             cut_plan: ViewState::default(),
             hardware: ViewState::default(),
             handoff: ViewState::default(),
