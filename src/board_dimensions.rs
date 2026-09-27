@@ -239,22 +239,19 @@ impl ProjectEditor {
     ) -> Result<SelectedBoards, BatchDimensionError> {
         let project = self.project();
         let board_ids = selected_ids(project, selection)?;
-        let dimensions = [0, 1, 2].map(|axis| {
-            let first = project
-                .boards
-                .iter()
-                .find(|b| b.id == board_ids[0])
-                .unwrap()
-                .blank_dimensions()[axis];
-            if board_ids.iter().all(|id| {
+        let blanks = board_ids
+            .iter()
+            .map(|&id| {
                 project
-                    .boards
-                    .iter()
-                    .find(|b| b.id == *id)
-                    .unwrap()
-                    .blank_dimensions()[axis]
-                    == first
-            }) {
+                    .board(id)
+                    .map(|board| board.blank_dimensions())
+                    .ok_or(BatchDimensionError::MissingSelection(id))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let &first_blank = blanks.first().ok_or(BatchDimensionError::EmptySelection)?;
+        let dimensions = [0, 1, 2].map(|axis| {
+            let first = first_blank[axis];
+            if blanks.iter().all(|blank| blank[axis] == first) {
                 SelectionValue::Uniform(first)
             } else {
                 SelectionValue::Mixed
@@ -285,7 +282,11 @@ impl ProjectEditor {
                 .find(|(target, _)| *target == id)
                 .map(|(_, anchor)| *anchor)
                 .ok_or(BatchDimensionError::MissingAnchor(id))?;
-            let index = candidate.boards.iter().position(|b| b.id == id).unwrap();
+            let index = candidate
+                .boards
+                .iter()
+                .position(|b| b.id == id)
+                .ok_or(BatchDimensionError::MissingSelection(id))?;
             candidate.boards[index] =
                 resized_board(project, &project.boards[index], dimension, value, anchor).map_err(
                     |reason| BatchDimensionError::Target {
@@ -355,10 +356,8 @@ impl ProjectEditor {
         let pose = changed.pose;
         let mut candidate = project.clone();
         *candidate
-            .boards
-            .iter_mut()
-            .find(|b| b.id == board_id)
-            .unwrap() = changed;
+            .board_mut(board_id)
+            .ok_or(DimensionEditError::MissingBoard(board_id))? = changed;
         let conflicts = allocation_conflicts(&candidate)
             .into_iter()
             .filter(|issue| issue.board_id == board_id)

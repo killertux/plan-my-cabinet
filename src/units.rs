@@ -280,6 +280,12 @@ pub struct Pose {
 }
 
 impl Pose {
+    /// No translation and no rotation: the world frame.
+    pub const IDENTITY: Self = Self {
+        translation_mm: [0.0; 3],
+        rotation: Quaternion::IDENTITY,
+    };
+
     pub fn new(translation_mm: [f64; 3], rotation: Quaternion) -> Result<Self, UnitError> {
         validate_position(translation_mm)?;
         let rotation = Quaternion::normalized(rotation.w, rotation.x, rotation.y, rotation.z)?;

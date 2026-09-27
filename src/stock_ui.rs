@@ -1604,13 +1604,13 @@ impl DesktopApp {
     fn apply_stock_action(&mut self, action: StockUiAction) {
         match action {
             StockUiAction::Request(request) => {
-                let _ = self.invoke(request);
+                self.invoke_or_report(request);
             }
             StockUiAction::Duplicate(id) => {
-                let _ = self.invoke(Request::with(A::DuplicateStock, Target::Stock(id)));
+                self.invoke_or_report(Request::with(A::DuplicateStock, Target::Stock(id)));
             }
             StockUiAction::Delete(id) => {
-                let _ = self.invoke(Request::with(A::DeleteStock, Target::Stock(id)));
+                self.invoke_or_report(Request::with(A::DeleteStock, Target::Stock(id)));
             }
             StockUiAction::Grain(id, grain) => {
                 self.commit_stock_field(id, |input| input.grain = grain)
@@ -1687,7 +1687,7 @@ impl DesktopApp {
                     )
                     .clicked()
                     {
-                        let _ = self.invoke(request);
+                        self.invoke_or_report(request);
                     }
                 });
             });
@@ -1847,7 +1847,7 @@ impl DesktopApp {
             });
         }
         if let Some(request) = pending {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
         if !model.materials.is_empty()
             && !model
@@ -1958,7 +1958,7 @@ impl DesktopApp {
                     .inner
                     .clicked()
                 {
-                    let _ = self.invoke(request);
+                    self.invoke_or_report(request);
                 }
                 ui.add_space(6.0);
                 ui.label(
@@ -2029,7 +2029,7 @@ impl DesktopApp {
             );
         }
         if let Some(request) = action {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 

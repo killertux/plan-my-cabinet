@@ -12,7 +12,10 @@ use plan_my_cabinet::domain::Project;
 use plan_my_cabinet::money::Currency;
 use plan_my_cabinet::persistence::{self, SaveError};
 use plan_my_cabinet::recent_projects::RecentProjects;
-use plan_my_cabinet::recovery::{RecoveryCandidate, RecoveryChoice, RecoveryIndex, RecoveryStore};
+use plan_my_cabinet::recovery::{
+    AUTOSAVE_DELAY, RecoveryCandidate, RecoveryChoice, RecoveryError, RecoveryIndex, RecoveryStore,
+    discard_untitled_snapshot, write_untitled_snapshot,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -72,6 +75,10 @@ pub(super) struct ProjectFiles {
     pub(super) pending_recovery: Option<(Option<PathBuf>, ProjectEditor)>,
     pub(super) message: Option<String>,
     observed: Option<(Uuid, u64)>,
+    /// Untitled autosave: the revision waiting for the inactivity delay, and
+    /// the last revision written.
+    untitled_pending: Option<(u64, Instant)>,
+    untitled_written: Option<u64>,
     pub(super) allow_close: bool,
     pub(super) welcome: WelcomeHost,
 }
@@ -198,6 +205,9 @@ impl DesktopApp {
                 }
             }
             NextAction::Close => {
+                if self.project_files.path.is_none() {
+                    self.discard_untitled_recovery(self.editor.project().id);
+                }
                 self.project_files.allow_close = true;
                 // A window close may originate from the OS rather than a button.
                 // Send a fresh close after resolving the prompt.
@@ -307,6 +317,7 @@ impl DesktopApp {
     }
 
     fn save_to_confirmed(&mut self, path: &Path, replacing: bool, after: Option<NextAction>) {
+        let was_untitled = self.project_files.path.is_none();
         let result = if replacing {
             persistence::save(&mut self.editor, path)
         } else {
@@ -314,6 +325,9 @@ impl DesktopApp {
         };
         match result {
             Ok(()) => {
+                if was_untitled {
+                    self.discard_untitled_recovery(self.editor.project().id);
+                }
                 self.project_files.path = Some(path.to_path_buf());
                 self.project_files.store = None;
                 self.project_files.observed = None;
@@ -390,6 +404,11 @@ impl DesktopApp {
     }
 
     fn replace_project(&mut self, editor: ProjectEditor, path: Option<PathBuf>) {
+        // Replacing is only reached after a save or an explicit discard, so an
+        // untitled snapshot of the outgoing project is obsolete.
+        if self.project_files.path.is_none() {
+            self.discard_untitled_recovery(self.editor.project().id);
+        }
         // Packet preparation is read-only and tied to the old document. Cancel
         // its worker instead of letting a preview block New/Open indefinitely.
         self.invalidate_export_review();
@@ -533,7 +552,11 @@ impl DesktopApp {
         if let Some(picker) = &self.project_files.picker {
             let result = picker.result.try_recv();
             if let Ok(path) = result {
-                let picker = self.project_files.picker.take().unwrap();
+                let picker = self
+                    .project_files
+                    .picker
+                    .take()
+                    .expect("the enclosing if-let saw the picker");
                 if picker.project_id == self.editor.project().id
                     && picker.revision == self.editor.project().revision
                 {
@@ -598,6 +621,89 @@ impl DesktopApp {
                 ctx.request_repaint_after(Duration::from_secs(1));
             }
         }
+        self.tick_untitled_recovery(ctx, key.1);
+    }
+
+    /// Never-saved projects get the same inactivity autosave as saved ones,
+    /// through the recovery index that Welcome reads.
+    fn tick_untitled_recovery(&mut self, ctx: &egui::Context, revision: u64) {
+        if self.project_files.path.is_some() || !self.editor.is_dirty() {
+            self.project_files.untitled_pending = None;
+            return;
+        }
+        if self.project_files.untitled_written == Some(revision) {
+            return;
+        }
+        let now = Instant::now();
+        let since = match self.project_files.untitled_pending {
+            Some((pending, since)) if pending == revision => since,
+            _ => {
+                self.project_files.untitled_pending = Some((revision, now));
+                now
+            }
+        };
+        if now.saturating_duration_since(since) < AUTOSAVE_DELAY {
+            ctx.request_repaint_after(Duration::from_secs(1));
+            return;
+        }
+        // One attempt per revision: a failing disk must not retry every frame.
+        self.project_files.untitled_written = Some(revision);
+        self.project_files.untitled_pending = None;
+        if let Err(error) = self.write_untitled_recovery() {
+            self.append_project_message(format!(
+                "{}: {error}",
+                self.localizer.text("project-recovery-unavailable")
+            ));
+        }
+    }
+
+    /// The recovery location, or none in tests and captures that did not
+    /// provide one: those must never write into the real user profile.
+    fn recovery_dir(&self) -> Option<PathBuf> {
+        self.project_files.user_data_dir.clone().or_else(|| {
+            (!cfg!(test) && self.capture.is_none())
+                .then(user_data_dir)
+                .flatten()
+        })
+    }
+
+    fn write_untitled_recovery(&mut self) -> Result<(), RecoveryError> {
+        let Some(dir) = self.recovery_dir() else {
+            return Ok(());
+        };
+        let mut index = RecoveryIndex::open(&dir)?;
+        index.register_untitled(self.editor.project().id)?;
+        write_untitled_snapshot(&index, &self.editor)
+    }
+
+    /// Called when the untitled project is saved or deliberately left.
+    fn discard_untitled_recovery(&mut self, project_id: Uuid) {
+        self.project_files.untitled_pending = None;
+        self.project_files.untitled_written = None;
+        let Some(dir) = self.recovery_dir() else {
+            return;
+        };
+        if let Err(error) = discard_untitled_snapshot(&dir, project_id) {
+            self.append_project_message(format!(
+                "{}: {error}",
+                self.localizer.text("project-recovery-unavailable")
+            ));
+        }
+    }
+
+    /// Last chance before an abnormal exit: write the committed project now
+    /// instead of waiting for the inactivity delay.
+    pub(super) fn flush_recovery_after_panic(&mut self) {
+        let result = match &mut self.project_files.store {
+            Some(store) => store.write_now(&self.editor),
+            None if self.project_files.path.is_none() && self.editor.is_dirty() => {
+                self.write_untitled_recovery()
+            }
+            None => Ok(()),
+        };
+        if let Err(error) = result {
+            eprintln!("could not write recovery before exiting: {error}");
+        }
     }
 
     pub(super) fn show_project_controls(&mut self, ui: &mut egui::Ui) {
@@ -625,7 +731,7 @@ impl DesktopApp {
                 )
                 .clicked()
                 {
-                    let _ = self.invoke(Request::new(action));
+                    self.invoke_or_report(Request::new(action));
                 }
             }
             if actions::button(
@@ -636,7 +742,7 @@ impl DesktopApp {
             )
             .clicked()
             {
-                let _ = self.invoke(Request::new(A::SaveProject));
+                self.invoke_or_report(Request::new(A::SaveProject));
             }
             if actions::button(
                 ui,
@@ -646,7 +752,7 @@ impl DesktopApp {
             )
             .clicked()
             {
-                let _ = self.invoke(Request::new(A::SaveProjectAs));
+                self.invoke_or_report(Request::new(A::SaveProjectAs));
             }
         });
         ui.separator();
@@ -658,7 +764,7 @@ impl DesktopApp {
         )
         .clicked()
         {
-            let _ = self.invoke(Request::new(A::OpenSettings));
+            self.invoke_or_report(Request::new(A::OpenSettings));
         }
         if let Some(message) = &self.project_files.message {
             ui.label(message);
@@ -982,6 +1088,65 @@ mod tests {
                 .source_version(),
             2
         );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn untitled_snapshots(dir: &Path) -> usize {
+        RecoveryIndex::open(dir)
+            .unwrap()
+            .discover()
+            .iter()
+            .filter(|row| matches!(row.status, plan_my_cabinet::recovery::DiscoveryStatus::Untitled))
+            .count()
+    }
+
+    #[test]
+    fn untitled_projects_autosave_after_inactivity_and_saving_discards_the_snapshot() {
+        let dir = std::env::temp_dir().join(format!("pmcab-untitled-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let mut app = DesktopApp::default();
+        app.project_files.user_data_dir = Some(dir.join("user"));
+        app.editor
+            .transact(|p| {
+                p.name = "Kitchen".into();
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        let revision = app.editor.project().revision;
+        let ctx = egui::Context::default();
+        app.tick_untitled_recovery(&ctx, revision);
+        assert!(!dir.join("user").exists(), "nothing is written before the delay");
+        app.project_files.untitled_pending =
+            Some((revision, Instant::now() - AUTOSAVE_DELAY - Duration::from_secs(1)));
+        app.tick_untitled_recovery(&ctx, revision);
+        assert_eq!(untitled_snapshots(&dir.join("user")), 1);
+
+        let path = dir.join("kitchen.pmcab");
+        app.save_to(&path, false, None);
+        assert_eq!(app.project_files.path.as_deref(), Some(path.as_path()));
+        assert_eq!(untitled_snapshots(&dir.join("user")), 0);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_panic_flush_writes_recovery_without_waiting_and_discarding_removes_it() {
+        let dir = std::env::temp_dir().join(format!("pmcab-panic-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let mut app = DesktopApp::default();
+        app.project_files.user_data_dir = Some(dir.join("user"));
+        app.flush_recovery_after_panic();
+        assert!(!dir.join("user").exists(), "a clean project has nothing to recover");
+        app.editor
+            .transact(|p| {
+                p.name = "Wardrobe".into();
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        app.flush_recovery_after_panic();
+        assert_eq!(untitled_snapshots(&dir.join("user")), 1);
+        // Leaving the untitled project on purpose (after Discard) drops it.
+        app.proceed(NextAction::New);
+        assert_eq!(untitled_snapshots(&dir.join("user")), 0);
         fs::remove_dir_all(dir).unwrap();
     }
 

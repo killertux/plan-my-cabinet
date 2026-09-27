@@ -765,7 +765,7 @@ impl DesktopApp {
                                     )
                                 });
                                 if response.clicked() {
-                                    let _ = self.invoke(request);
+                                    self.invoke_or_report(request);
                                 }
                             }
                         });
@@ -1040,7 +1040,7 @@ impl DesktopApp {
         }
         if let Some(request) = run {
             ui.close();
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 
@@ -1105,7 +1105,7 @@ impl DesktopApp {
                 )
                 .clicked()
                 {
-                    let _ = self.invoke(Request::new(A::NewBoard));
+                    self.invoke_or_report(Request::new(A::NewBoard));
                 }
             }
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -1245,7 +1245,7 @@ impl DesktopApp {
                         self.session.design_expanded.insert(row.id);
                     }
                 } else if toggle_visibility {
-                    let _ = self.invoke(Request::with(A::ToggleVisibility, Target::Object(row.id)));
+                    self.invoke_or_report(Request::with(A::ToggleVisibility, Target::Object(row.id)));
                 } else if response.clicked() {
                     let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
                     let request = if row.kind == ObjectKind::Board {
@@ -1253,12 +1253,12 @@ impl DesktopApp {
                     } else {
                         Request::with(A::SelectObject, Target::Object(row.id))
                     };
-                    let _ = self.invoke(request.argument(Argument::Additive(additive)));
+                    self.invoke_or_report(request.argument(Argument::Additive(additive)));
                 } else if response.double_clicked() {
-                    let _ = self.invoke(Request::new(A::ViewFrame));
+                    self.invoke_or_report(Request::new(A::ViewFrame));
                 }
                 if response.secondary_clicked() && !self.selection.ids.contains(&row.id) {
-                    let _ = self.invoke(
+                    self.invoke_or_report(
                         Request::with(A::SelectObject, Target::Object(row.id))
                             .argument(Argument::Additive(false)),
                     );
@@ -1282,7 +1282,7 @@ impl DesktopApp {
                                 .clicked()
                             {
                                 ui.close();
-                                let _ = self.invoke(request);
+                                self.invoke_or_report(request);
                             }
                         }
                         ui.separator();
@@ -1311,7 +1311,7 @@ impl DesktopApp {
                 )
                 .clicked()
                 {
-                    let _ = self.invoke(Request::new(A::NewMaterial));
+                    self.invoke_or_report(Request::new(A::NewMaterial));
                 }
             });
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -1373,7 +1373,7 @@ impl DesktopApp {
                     }
                 ));
                 if response.clicked() {
-                    let _ = self.invoke(Request::with(
+                    self.invoke_or_report(Request::with(
                         A::EditMaterial,
                         Target::Material(material.id),
                     ));
@@ -1403,7 +1403,7 @@ impl DesktopApp {
                 )
                 .clicked()
                 {
-                    let _ = self.invoke(Request::new(A::NewStock));
+                    self.invoke_or_report(Request::new(A::NewStock));
                 }
             });
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -1534,7 +1534,7 @@ impl DesktopApp {
                 )
                 .clicked()
                 {
-                    let _ = self.invoke(request);
+                    self.invoke_or_report(request);
                 }
             }
         });
@@ -1583,7 +1583,7 @@ impl DesktopApp {
                         )
                         .clicked()
                         {
-                            let _ = self.invoke(Request::new(A::NewBoard));
+                            self.invoke_or_report(Request::new(A::NewBoard));
                         }
                     });
                 });
@@ -1668,7 +1668,7 @@ impl DesktopApp {
                             .on_hover_text(self.localizer.text("board-assign-material"))
                             .clicked()
                         {
-                            let _ = self.invoke(request);
+                            self.invoke_or_report(request);
                         }
                     });
                     let mut grain = source.grain_override;
@@ -1701,7 +1701,7 @@ impl DesktopApp {
                         });
                     });
                     if grain != source.grain_override {
-                        let _ = self.invoke(
+                        self.invoke_or_report(
                             Request::with(A::SetGrain, Target::Board(board.id))
                                 .argument(Argument::Grain(grain)),
                         );
@@ -2412,9 +2412,15 @@ impl DesktopApp {
                         .each_ref()
                         .map(|v| coordinate(v).unwrap_or(0.0));
                     let angles = draft.rotation.each_ref().map(|v| angle(v).unwrap_or(0.0));
-                    self.editor
-                        .transform_selection(&draft.ids, delta, rotation(angles).unwrap(), pivot)
-                        .map(|_| ())
+                    match rotation(angles) {
+                        Some(rotation) => self
+                            .editor
+                            .transform_selection(&draft.ids, delta, rotation, pivot)
+                            .map(|_| ()),
+                        None => Err(plan_my_cabinet::commands::EditError::Command(
+                            AssemblyEditError::InvalidPose(UnitError::InvalidNumber),
+                        )),
+                    }
                 }
                 Operation::Duplicate => {
                     let offset = draft

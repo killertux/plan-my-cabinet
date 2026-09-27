@@ -156,8 +156,11 @@ fn axes(face: BoardFace) -> Result<[usize; 2], PlacementError> {
     if face.axis >= 3 {
         return Err(PlacementError::InvalidFace);
     }
-    let mut rest = (0..3).filter(|axis| *axis != face.axis);
-    Ok([rest.next().unwrap(), rest.next().unwrap()])
+    Ok(match face.axis {
+        0 => [1, 2],
+        1 => [0, 2],
+        _ => [0, 1],
+    })
 }
 
 fn board(project: &Project, id: Uuid) -> Result<&Board, PlacementError> {
@@ -344,7 +347,7 @@ fn facing_rotation(
     } else {
         let i = (0..3)
             .max_by(|a, b| m[*a][*a].total_cmp(&m[*b][*b]))
-            .unwrap();
+            .expect("a 3x3 matrix has a diagonal");
         let j = (i + 1) % 3;
         let k = (i + 2) % 3;
         let s = (1.0 + m[i][i] - m[j][j] - m[k][k]).max(0.0).sqrt() * 2.0;
@@ -527,8 +530,10 @@ impl<'a> PlacementSession<'a> {
         let id = self.board_id;
         self.editor
             .update_preview(|project| {
-                board(project, id)?;
-                project.boards.iter_mut().find(|b| b.id == id).unwrap().pose = local;
+                project
+                    .board_mut(id)
+                    .ok_or(PlacementError::MissingBoard(id))?
+                    .pose = local;
                 Ok::<_, PlacementError>(())
             })
             .map_err(|error| match error {
@@ -658,8 +663,10 @@ impl<'a> PlacementSession<'a> {
         let id = self.board_id;
         self.editor
             .update_preview(|project| {
-                board(project, id)?;
-                project.boards.iter_mut().find(|b| b.id == id).unwrap().pose = local;
+                project
+                    .board_mut(id)
+                    .ok_or(PlacementError::MissingBoard(id))?
+                    .pose = local;
                 Ok::<_, PlacementError>(())
             })
             .map_err(|error| match error {

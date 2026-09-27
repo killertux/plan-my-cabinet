@@ -1,5 +1,9 @@
 //! Headless woodworking project core. The desktop executable owns the UI and GPU.
 
+// Production code states its invariants with `expect("why")` or handles the
+// failure; a bare `unwrap` is reserved for tests.
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 /// Application title shared by desktop integration and core metadata.
 pub const APPLICATION_NAME: &str = "Plan My Cabinet";
 

@@ -343,6 +343,29 @@ pub enum DomainError {
 }
 
 impl Project {
+    /// Lookups by identity. After `validate`, every reference held by another
+    /// record resolves; callers holding an ID from UI state must still handle
+    /// `None`, because that ID may be stale.
+    pub fn board(&self, id: Uuid) -> Option<&Board> {
+        self.boards.iter().find(|board| board.id == id)
+    }
+
+    pub fn board_mut(&mut self, id: Uuid) -> Option<&mut Board> {
+        self.boards.iter_mut().find(|board| board.id == id)
+    }
+
+    pub fn material(&self, id: Uuid) -> Option<&Material> {
+        self.materials.iter().find(|material| material.id == id)
+    }
+
+    pub fn stock_piece(&self, id: Uuid) -> Option<&Stock> {
+        self.stock.iter().find(|piece| piece.id == id)
+    }
+
+    pub fn stock_piece_mut(&mut self, id: Uuid) -> Option<&mut Stock> {
+        self.stock.iter_mut().find(|piece| piece.id == id)
+    }
+
     pub fn stock_alias(&self, id: Uuid) -> Option<&str> {
         self.stock_aliases.get(&id).map(String::as_str)
     }

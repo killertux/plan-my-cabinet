@@ -401,7 +401,7 @@ impl DesktopApp {
                 }
             });
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 

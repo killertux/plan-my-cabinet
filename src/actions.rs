@@ -807,6 +807,28 @@ impl DesktopApp {
         }
     }
 
+    /// UI entry point for clicks and shortcuts: a refused action becomes a
+    /// toast with its reason instead of silently doing nothing.
+    pub(crate) fn invoke_or_report(&mut self, request: Request) {
+        if let Err(reason) = self.invoke(request) {
+            self.report_unavailable(reason);
+        }
+    }
+
+    pub(crate) fn report_unavailable(&mut self, reason: Unavailable) {
+        // An empty history is the expected no-op of Cmd+Z, not a failure.
+        if !matches!(reason, Unavailable::NoUndo | Unavailable::NoRedo) {
+            self.toasts.error(reason.reason(self.localizer.language()));
+        }
+    }
+
+    /// Edits are atomic, so a rejected one changed nothing; say so.
+    pub(crate) fn report_edit<T, E>(&mut self, result: Result<T, plan_my_cabinet::commands::EditError<E>>) {
+        if result.is_err() {
+            self.toasts.error(self.localizer.text("toast-edit-rejected"));
+        }
+    }
+
     /// Revalidate after a UI click or palette selection, never trust stale IDs.
     pub(crate) fn invoke(&mut self, request: Request) -> Result<(), Unavailable> {
         use ActionId as A;
@@ -849,11 +871,13 @@ impl DesktopApp {
             (A::SaveProject, _) => self.request_save(false),
             (A::SaveProjectAs, _) => self.request_save(true),
             (A::Undo, _) => {
-                let _ = self.editor.undo();
+                let result = self.editor.undo();
+                self.report_edit(result);
                 self.material_conflicts = allocation_conflicts(self.editor.project());
             }
             (A::Redo, _) => {
-                let _ = self.editor.redo();
+                let result = self.editor.redo();
+                self.report_edit(result);
                 self.material_conflicts = allocation_conflicts(self.editor.project());
             }
             (A::StartOptimization, _) => {
@@ -905,7 +929,8 @@ impl DesktopApp {
                 self.grid_dialog = Some(GridDialog::cutting_kerf(self.editor.project(), locale))
             }
             (A::AddCatalog, _) => {
-                let _ = hardware_catalog::add_builtin(&mut self.editor);
+                let result = hardware_catalog::add_builtin(&mut self.editor);
+                self.report_edit(result);
             }
             (A::UpdateCatalog, T::Catalog(id)) => self.update_catalog_action(id),
             (A::EditMaterial, T::Material(id)) => self.open_material_action(id, locale),
@@ -941,13 +966,9 @@ impl DesktopApp {
                 self.assembly_dialog = Some(assembly_ui::AssemblyDialog::new(self, operation));
             }
             (A::AssignMaterial, T::Board(id)) => {
-                let board = self
-                    .editor
-                    .project()
-                    .boards
-                    .iter()
-                    .find(|b| b.id == id)
-                    .unwrap();
+                let Some(board) = self.editor.project().board(id) else {
+                    return Err(Unavailable::MissingTarget);
+                };
                 self.board_material = Some(BoardMaterialDialog {
                     focus_on_open: true,
                     board_id: id,
@@ -961,14 +982,9 @@ impl DesktopApp {
             (A::PositionBoard, T::Board(id)) => self.placement = PlacementDialog::numeric(self, id),
             (A::PlaceFace, T::Board(id)) => self.placement = PlacementDialog::face(self, id),
             (A::DuplicateBoard, T::Board(id)) => {
-                let mut pose = self
-                    .editor
-                    .project()
-                    .boards
-                    .iter()
-                    .find(|b| b.id == id)
-                    .unwrap()
-                    .pose;
+                let Some(mut pose) = self.editor.project().board(id).map(|b| b.pose) else {
+                    return Err(Unavailable::MissingTarget);
+                };
                 pose.translation_mm[0] += 25.0;
                 match self.editor.duplicate_board_with_fit(id, pose) {
                     Ok((_, fit)) => {
@@ -979,13 +995,9 @@ impl DesktopApp {
                 }
             }
             (A::EditDimensions, T::Board(id)) => {
-                let board = self
-                    .editor
-                    .project()
-                    .boards
-                    .iter()
-                    .find(|b| b.id == id)
-                    .unwrap();
+                let Some(board) = self.editor.project().board(id) else {
+                    return Err(Unavailable::MissingTarget);
+                };
                 self.board_dimension = Some(BoardDimensionDialog {
                     focus_on_open: true,
                     board_id: id,
@@ -1033,13 +1045,9 @@ impl DesktopApp {
                 }
             }
             (A::EditStock, T::Stock(id)) => {
-                let stock = self
-                    .editor
-                    .project()
-                    .stock
-                    .iter()
-                    .find(|s| s.id == id)
-                    .unwrap();
+                let Some(stock) = self.editor.project().stock_piece(id) else {
+                    return Err(Unavailable::MissingTarget);
+                };
                 self.stock_dialog = Some(stock_ui::StockDialog::edit(
                     self.editor.project(),
                     stock,
@@ -1064,10 +1072,12 @@ impl DesktopApp {
                                 .filter(|row| row.material_id == piece.material_id)
                                 .map(|row| row.id)
                                 .collect();
-                            let _ = self.editor.reorder_stock_subset(id, target, &visible);
+                            let result = self.editor.reorder_stock_subset(id, target, &visible);
+                            self.report_edit(result);
                         }
                     } else {
-                        let _ = self.editor.reorder_stock(id, target);
+                        let result = self.editor.reorder_stock(id, target);
+                        self.report_edit(result);
                     }
                 }
             }
@@ -1103,7 +1113,8 @@ impl DesktopApp {
                 self.hinge_dialog = Some(hinge_ui::HingeDialog::new(self, Some(id)))
             }
             (A::DeleteHinge, T::Hinge(id)) => {
-                let _ = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
+                let result = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
+                self.report_edit(result);
             }
             (A::NewDoor, _) => self.door_dialog = Some(door_joint_ui::DoorDialog::new(self, None)),
             (A::EditDoor, T::Door(id)) => {
@@ -1244,13 +1255,9 @@ impl DesktopApp {
     }
 
     fn open_material_action(&mut self, id: Uuid, locale: Locale) {
-        let material = self
-            .editor
-            .project()
-            .materials
-            .iter()
-            .find(|m| m.id == id)
-            .unwrap();
+        let Some(material) = self.editor.project().material(id) else {
+            return;
+        };
         self.material_edit = Some(MaterialEditDialog {
             focus_on_open: true,
             id,
@@ -1646,6 +1653,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn refused_ui_actions_are_reported_but_an_empty_history_stays_quiet() {
+        let mut app = DesktopApp::default();
+        app.invoke_or_report(Request::new(ActionId::Undo));
+        assert!(app.toasts.texts().is_empty());
+        let stale = Request::with(ActionId::EditDimensions, Target::Board(Uuid::new_v4()));
+        app.invoke_or_report(stale);
+        assert_eq!(app.toasts.texts(), ["The target no longer exists"]);
     }
 
     #[test]

@@ -181,7 +181,7 @@ impl<'a> SheetEditSession<'a> {
                 p.allocations
                     .iter_mut()
                     .find(|a| a.board_id == board_id)
-                    .unwrap()
+                    .ok_or(())?
                     .locked = locked;
                 Ok(())
             })

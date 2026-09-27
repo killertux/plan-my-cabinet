@@ -159,10 +159,10 @@ fn identity() -> Quaternion {
     Quaternion::IDENTITY
 }
 fn upright_side() -> Quaternion {
-    Quaternion::normalized(1.0, 0.0, -1.0, 0.0).unwrap()
+    Quaternion::normalized(1.0, 0.0, -1.0, 0.0).expect("constant quaternion")
 }
 fn upright_face() -> Quaternion {
-    Quaternion::normalized(1.0, 1.0, 0.0, 0.0).unwrap()
+    Quaternion::normalized(1.0, 1.0, 0.0, 0.0).expect("constant quaternion")
 }
 
 impl RecipeCandidate {

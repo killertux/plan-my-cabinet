@@ -428,14 +428,13 @@ impl DimensionInput {
 
     pub fn edit(&mut self, text: impl Into<String>) -> &Result<ParsedDimension, InputError> {
         let (entry_unit, _) = *self.entry.get_or_insert((self.field_unit, self.locale));
-        self.draft = Some(text.into());
-        self.preview = Some(
-            parse_length(self.draft.as_deref().unwrap(), entry_unit).and_then(|parsed| {
-                dimension(parsed.conversion).map_err(InputError::Unit)?;
-                Ok(parsed)
-            }),
-        );
-        self.preview.as_ref().unwrap()
+        let text = text.into();
+        let parsed = parse_length(&text, entry_unit).and_then(|parsed| {
+            dimension(parsed.conversion).map_err(InputError::Unit)?;
+            Ok(parsed)
+        });
+        self.draft = Some(text);
+        self.preview.insert(parsed)
     }
 
     pub fn preview(&self) -> Option<&Result<ParsedDimension, InputError>> {

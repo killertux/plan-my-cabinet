@@ -154,7 +154,9 @@ impl TemplateSetupUi {
         ] {
             if kind.fields().contains(&field) {
                 let mut entry = LengthEntry::new_mm(mm, unit);
-                setup.dimensions.insert(field, entry.parse().unwrap());
+                setup
+                    .dimensions
+                    .insert(field, entry.parse().expect("built-in defaults are exact millimetres"));
                 fields.insert(field, entry);
             }
         }
@@ -318,7 +320,9 @@ impl TemplateSetupUi {
     }
 
     fn show_material(&mut self, ctx: &egui::Context, l: &Localizer) {
-        let material = self.material.as_mut().expect("nested material");
+        let Some(material) = self.material.as_mut() else {
+            return;
+        };
         let result = self.child.show(
             ctx,
             &l.text("template-setup-material-title"),
@@ -385,13 +389,17 @@ impl TemplateSetupUi {
                 self.material = None; // parent setup is untouched
             }
             ModalAction::Confirm if material.valid() => {
-                let material = self.material.take().unwrap();
-                self.setup.add_material(
-                    material.name,
-                    material.proposal.unwrap(),
-                    material.grain,
-                    material.color,
-                );
+                // `valid` implies a proposal; the pattern states it for the compiler.
+                if let Some(MaterialEntry {
+                    name,
+                    proposal: Some(proposal),
+                    grain,
+                    color,
+                    ..
+                }) = self.material.take()
+                {
+                    self.setup.add_material(name, proposal, grain, color);
+                }
                 self.child.close(ctx);
                 self.parent.body_replaced(ctx);
                 self.restore_material_button = true;
@@ -703,7 +711,7 @@ fn review_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, review:
 fn axis(vector: [f64; 3]) -> &'static str {
     let index = (0..3)
         .max_by(|&a, &b| vector[a].abs().total_cmp(&vector[b].abs()))
-        .unwrap();
+        .expect("three axes");
     match (index, vector[index].is_sign_negative()) {
         (0, false) => "+X",
         (0, true) => "−X",

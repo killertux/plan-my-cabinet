@@ -145,6 +145,18 @@ impl RecoveryStore {
         if pending_revision != revision || now.saturating_duration_since(since) < AUTOSAVE_DELAY {
             return Ok(false);
         }
+        self.write_now(editor)?;
+        Ok(true)
+    }
+
+    /// Write the committed project immediately, skipping the inactivity delay.
+    /// Used when the app is about to terminate abnormally. A clean editor has
+    /// nothing to recover and writes nothing.
+    pub fn write_now(&mut self, editor: &ProjectEditor) -> Result<(), RecoveryError> {
+        self.check_editor(editor)?;
+        if !editor.is_dirty() {
+            return Ok(());
+        }
         // Serialize only the committed model; a preview is never inspected.
         let project = editor.project().clone();
         let record = Record {
@@ -160,7 +172,7 @@ impl RecoveryStore {
         // from caller-controlled filename components.
         persistence::atomic_write(&self.file, &bytes).map_err(RecoveryError::Save)?;
         self.pending = None;
-        Ok(true)
+        Ok(())
     }
 
     /// Inspect a recovery without changing either file or the active editor.
@@ -834,6 +846,21 @@ pub fn write_untitled_snapshot(
         .join(format!("{}.json", untitled_key(project.id)));
     fs::create_dir_all(file.parent().expect("recovery has a parent")).map_err(RecoveryError::Io)?;
     persistence::atomic_write(&file, &bytes).map_err(RecoveryError::Save)
+}
+
+/// Remove an untitled snapshot once its project was saved or knowingly
+/// discarded, so Welcome stops offering it. A missing snapshot is not an error.
+pub fn discard_untitled_snapshot(
+    user_data_dir: &Path,
+    project_id: Uuid,
+) -> Result<(), RecoveryError> {
+    let file = user_data_dir
+        .join("recovery")
+        .join(format!("{}.json", untitled_key(project_id)));
+    match fs::remove_file(file) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(RecoveryError::Io(e)),
+        _ => Ok(()),
+    }
 }
 
 fn read_snapshot(

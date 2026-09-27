@@ -226,14 +226,7 @@ impl ProjectEditor {
         self.transact(|project| {
             // Normalize earlier priorities too, preserving their visible order.
             let ordered: Vec<_> = project.ordered_stock().iter().map(|s| s.id).collect();
-            for (index, id) in ordered.iter().enumerate() {
-                project
-                    .stock
-                    .iter_mut()
-                    .find(|s| s.id == *id)
-                    .unwrap()
-                    .priority = index as u32;
-            }
+            reprioritize(project, &ordered);
             for (offset, id) in ids.iter().enumerate() {
                 project
                     .stock
@@ -255,7 +248,9 @@ impl ProjectEditor {
         }
         validate(self.project(), &input).map_err(EditError::Command)?;
         self.transact(|project| {
-            let piece = project.stock.iter_mut().find(|s| s.id == id).unwrap();
+            let piece = project
+                .stock_piece_mut(id)
+                .ok_or(StockError::MissingStock(id))?;
             *piece = from_input(id, piece.priority, input);
             Ok(())
         })
@@ -317,14 +312,7 @@ impl ProjectEditor {
         order.remove(position);
         order.insert(target, id);
         self.transact(|project| {
-            for (index, id) in order.iter().enumerate() {
-                project
-                    .stock
-                    .iter_mut()
-                    .find(|piece| piece.id == *id)
-                    .unwrap()
-                    .priority = index as u32;
-            }
+            reprioritize(project, &order);
             Ok(())
         })
     }
@@ -398,6 +386,16 @@ impl ProjectEditor {
             }
             Ok(())
         })
+    }
+}
+
+
+/// Priority follows the position in `order`; pieces not listed keep theirs.
+fn reprioritize(project: &mut Project, order: &[Uuid]) {
+    for piece in &mut project.stock {
+        if let Some(index) = order.iter().position(|id| *id == piece.id) {
+            piece.priority = index as u32;
+        }
     }
 }
 

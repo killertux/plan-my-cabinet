@@ -1,3 +1,7 @@
+// Production code states its invariants with `expect("why")` or handles the
+// failure; a bare `unwrap` is reserved for tests.
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 use eframe::{egui, egui_wgpu::WgpuSetup, wgpu};
 use fluent_bundle::FluentArgs;
 use plan_my_cabinet::allocation_diagnostics::{
@@ -70,6 +74,7 @@ mod stock_ui;
 mod template_setup_ui;
 mod theme;
 mod theme_widgets;
+mod toasts;
 mod viewport;
 mod welcome_host;
 mod widget_gallery;
@@ -512,6 +517,7 @@ struct DesktopApp {
     export_cancel: Option<Arc<AtomicBool>>,
     export_message: Option<String>,
     project_files: project_ui::ProjectFiles,
+    toasts: toasts::Toasts,
 }
 
 impl Default for DesktopApp {
@@ -634,6 +640,7 @@ impl Default for DesktopApp {
             export_cancel: None,
             export_message: None,
             project_files: project_ui::ProjectFiles::default(),
+            toasts: toasts::Toasts::default(),
         }
     }
 }
@@ -1492,7 +1499,7 @@ impl DesktopApp {
             if let Some(id) = self.palette_relationship_pending.take()
                 && self.session.active == Workspace::Hardware
             {
-                let _ = self.invoke(Request::with(A::EditDoor, Target::Door(id)));
+                self.invoke_or_report(Request::with(A::EditDoor, Target::Door(id)));
             }
         } else if self.navigation.pending().is_none() {
             self.palette_relationship_pending = None;
@@ -1874,12 +1881,12 @@ impl DesktopApp {
                 });
         });
         if scope_choice != self.measurement_scope {
-            let _ = self.invoke(
+            self.invoke_or_report(
                 Request::new(A::SetMeasurementScope).argument(Argument::Scope(scope_choice)),
             );
         }
         if frame_choice != self.measurement_frame {
-            let _ = self.invoke(
+            self.invoke_or_report(
                 Request::new(A::SetMeasurementFrame).argument(Argument::Frame(frame_choice)),
             );
         }
@@ -3767,7 +3774,7 @@ impl DesktopApp {
         }
         if create_material {
             self.suspended_board = Some(draft);
-            let _ = self.invoke(Request::new(A::NewMaterial));
+            self.invoke_or_report(Request::new(A::NewMaterial));
             return;
         }
         if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm) {
@@ -4307,10 +4314,10 @@ impl DesktopApp {
                 }
             }
             HandoffFix::Kerf => {
-                let _ = self.invoke(Request::new(A::EditKerf));
+                self.invoke_or_report(Request::new(A::EditKerf));
             }
             HandoffFix::CutFee => {
-                let _ = self.invoke(Request::new(A::EditCutFee));
+                self.invoke_or_report(Request::new(A::EditCutFee));
             }
         }
     }
@@ -4581,7 +4588,7 @@ impl DesktopApp {
                     },
                 );
                 if language_choice != self.export_language {
-                    let _ = self.invoke(
+                    self.invoke_or_report(
                         Request::new(A::SetExportLanguage)
                             .argument(Argument::Language(language_choice)),
                     );
@@ -4604,7 +4611,7 @@ impl DesktopApp {
                     },
                 );
                 if units_choice != self.export_units {
-                    let _ = self.invoke(
+                    self.invoke_or_report(
                         Request::new(A::SetExportUnits).argument(Argument::Unit(units_choice)),
                     );
                 }
@@ -4716,7 +4723,7 @@ impl DesktopApp {
                         icons::icon(icons::Icon::Check, theme_widgets::OK, 14.0),
                         theme_widgets::medium(
                             ui,
-                            &self.localizer.text("handoff-mark-reviewed"),
+                            self.localizer.text("handoff-mark-reviewed"),
                             13.0,
                         )
                         .color(theme_widgets::TEXT),
@@ -4760,7 +4767,7 @@ impl DesktopApp {
             response.on_disabled_hover_text(self.localizer.text("handoff-review-needed"))
         };
         if response.clicked() {
-            let _ = self.invoke(Request::new(A::ExportPdf));
+            self.invoke_or_report(Request::new(A::ExportPdf));
         }
         ui.vertical_centered(|ui| {
             ui.add(
@@ -4940,7 +4947,7 @@ impl DesktopApp {
                         )
                         .clicked()
                     {
-                        let _ = self.invoke(Request::new(A::OpenWelcome));
+                        self.invoke_or_report(Request::new(A::OpenWelcome));
                     }
                     ui.label(egui::RichText::new("/").color(theme_widgets::DISABLED));
                     let name = self.editor.project().name.clone();
@@ -5025,7 +5032,7 @@ impl DesktopApp {
                         )
                         .clicked()
                         {
-                            let _ = self.invoke(export);
+                            self.invoke_or_report(export);
                         }
                         let save = Request::new(A::SaveProject);
                         if theme_widgets::secondary_button_enabled(
@@ -5036,7 +5043,7 @@ impl DesktopApp {
                         .on_hover_text(A::SaveProject.label(&self.localizer))
                         .clicked()
                         {
-                            let _ = self.invoke(save);
+                            self.invoke_or_report(save);
                         }
                         ui.add_space(4.0);
                         for (action, icon) in [(A::Redo, icons::Icon::Redo), (A::Undo, icons::Icon::Undo)] {
@@ -5053,7 +5060,7 @@ impl DesktopApp {
                             )
                             .clicked()
                             {
-                                let _ = self.invoke(request);
+                                self.invoke_or_report(request);
                             }
                         }
                         let next = match self.session.active {
@@ -5579,7 +5586,7 @@ impl DesktopApp {
                 })
                 .inner;
             if let Some(request) = footer {
-                let _ = self.invoke(request);
+                self.invoke_or_report(request);
             }
         }
         let scroll = egui::ScrollArea::vertical()
@@ -5614,7 +5621,7 @@ impl DesktopApp {
                                 scroll_to_target: self.session.pending_cut_focus,
                             },
                         ) {
-                            let _ = self.invoke(request);
+                            self.invoke_or_report(request);
                         }
                     }
                     Workspace::Hardware => {
@@ -5778,7 +5785,7 @@ impl DesktopApp {
                     },
                     inspector_visible,
                 ) {
-                    let _ = self.invoke(request);
+                    self.invoke_or_report(request);
                 }
                 self.session.pending_cut_focus = false;
             }
@@ -5848,7 +5855,7 @@ impl DesktopApp {
             capture.set_snap_evidence(self.move_tool.capture_evidence());
         }
         if self.move_tool.take_grid_edit_request() {
-            let _ = self.invoke(Request::new(A::EditGrid));
+            self.invoke_or_report(Request::new(A::EditGrid));
         }
         if let Some(proposal) = action.selection {
             self.request_scene_selection(proposal.picked, proposal.additive);
@@ -5899,7 +5906,7 @@ impl DesktopApp {
         self.optimizer.poll(ui.ctx());
         self.sync_scene_inspector();
         if let Some(action) = actions::project_shortcut(ui.ctx(), self.modal_open()) {
-            let _ = self.invoke(Request::new(action));
+            self.invoke_or_report(Request::new(action));
         }
         let (issues, total, invalid_estimate) = self.shell_facts();
         if command_palette::shortcut(
@@ -5940,12 +5947,12 @@ impl DesktopApp {
                     self.request_navigation(NavigationRoute::Workspace(workspace));
                 }
                 workspace_shell::RailAction::Language(language) => {
-                    let _ = self.invoke(
+                    self.invoke_or_report(
                         Request::new(A::SetUiLanguage).argument(Argument::Language(language)),
                     );
                 }
                 workspace_shell::RailAction::Settings => {
-                    let _ = self.invoke(Request::new(A::OpenSettings));
+                    self.invoke_or_report(Request::new(A::OpenSettings));
                 }
             }
         }
@@ -6103,6 +6110,30 @@ impl eframe::App for DesktopApp {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        // A panic must not lose committed work: write recovery now, then let
+        // the panic continue to its normal report and exit.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.show_frame(ui)));
+        if let Err(payload) = result {
+            self.flush_recovery_after_panic();
+            std::panic::resume_unwind(payload);
+        }
+        let area = ui
+            .ctx()
+            .content_rect()
+            .with_max_y(ui.ctx().content_rect().bottom() - workspace_shell::STATUS_HEIGHT);
+        self.toasts
+            .show(ui.ctx(), area, &self.localizer.text("toast-close"));
+        if let Some(capture) = &mut self.capture
+            && capture.tick(ui.ctx())
+        {
+            self.project_files.allow_close = true;
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+}
+
+impl DesktopApp {
+    fn show_frame(&mut self, ui: &mut egui::Ui) {
         if self.capture.as_ref().is_some_and(capture::Capture::gallery) {
             widget_gallery::show(ui);
         } else if (self.capture.is_none()
@@ -6120,16 +6151,8 @@ impl eframe::App for DesktopApp {
         } else {
             self.show_workspace(ui);
         }
-        if let Some(capture) = &mut self.capture
-            && capture.tick(ui.ctx())
-        {
-            self.project_files.allow_close = true;
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-        }
     }
-}
 
-impl DesktopApp {
     fn handle_close_request(&mut self, ctx: &egui::Context) {
         if !self.project_files.allow_close && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);

@@ -55,7 +55,7 @@ pub fn measure(
         return Err(MeasurementError::EmptySelection);
     }
     let frame_pose = match frame {
-        Frame::World => Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+        Frame::World => Pose::IDENTITY,
         Frame::Object(id) => world_pose(project, id)?,
     };
     let inverse_rotation = Quaternion {

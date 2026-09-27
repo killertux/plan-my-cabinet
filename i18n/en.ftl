@@ -1400,3 +1400,7 @@ project-unsaved-body = Autosave keeps a recovery copy, but it isn't a replacemen
 project-unsaved-next = Then: { $action }
 kerf-confirm-context = Records today's confirmation for this exact value
 kerf-confirm-hint = One undoable project edit
+
+# Error handling
+toast-close = Dismiss
+toast-edit-rejected = The change could not be applied. The project is unchanged.

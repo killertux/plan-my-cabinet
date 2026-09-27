@@ -301,6 +301,13 @@ impl RepairUi {
         }
     }
 
+    /// Empty until the first `refresh`.
+    fn board_diagnostics(&self) -> &[BoardDiagnostic] {
+        self.board_diagnostics_cache
+            .as_ref()
+            .map_or(&[], |(_, diagnostics)| diagnostics.as_slice())
+    }
+
     fn model(&self) -> Option<&StockReadModel> {
         self.stock_model_cache
             .as_ref()
@@ -495,11 +502,11 @@ fn kerf_geometry(
     origin: egui::Pos2,
     scale: f32,
 ) -> egui::Rect {
-    let input = tree_rect(origin, scale, tree.node(operation.input).unwrap().rectangle);
+    let input = tree_rect(origin, scale, tree.node(operation.input).expect("operations reference their own tree").rectangle);
     let first = tree_rect(
         origin,
         scale,
-        tree.node(operation.outputs.first).unwrap().rectangle,
+        tree.node(operation.outputs.first).expect("operations reference their own tree").rectangle,
     );
     let width = (tree.kerf().micrometres() as f64 / 1000.0 * f64::from(scale)) as f32;
     match operation.axis {
@@ -1508,7 +1515,7 @@ fn sheet_inspector(
             let budget = reserve
                 .map(|reserve| ui.clip_rect().bottom() - ui.cursor().top() - reserve)
                 .filter(|budget| *budget >= 140.0);
-            let hovered = match budget {
+            match budget {
                 Some(budget) => {
                     egui::ScrollArea::vertical()
                         .id_salt(("sheet-sequence-rows", piece.id))
@@ -1518,8 +1525,7 @@ fn sheet_inspector(
                         .inner
                 }
                 None => rows(ui),
-            };
-            hovered
+            }
         }
         SheetProof::Unused => {
             egui::Frame::new()
@@ -2353,7 +2359,7 @@ pub fn show_sheet_list(
     let repairing = repair.active();
     let focused_sheet = repair.focused_sheet;
     let model = repair.model();
-    let diagnostics = &repair.board_diagnostics_cache.as_ref().unwrap().1;
+    let diagnostics = repair.board_diagnostics();
     let mut request = None;
     let mut chosen = None;
     egui::Frame::new()
@@ -3123,6 +3129,19 @@ fn show_repair_strip(
                             }
                         }
                     }
+                    // The staged placement exists only when every input parses,
+                    // so the button's state and its action share one source.
+                    let staged = valid
+                        .then(|| {
+                            Some((
+                                repair.stock?,
+                                [
+                                    coordinate(&repair.origin[0], unit, repair.consent[0])?,
+                                    coordinate(&repair.origin[1], unit, repair.consent[1])?,
+                                ],
+                            ))
+                        })
+                        .flatten();
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         if small_button(
@@ -3130,20 +3149,15 @@ fn show_repair_strip(
                             Some(Icon::Place),
                             &localizer.text("sheet-stage"),
                             true,
-                            !modal
-                                && valid
-                                && repair.stock.is_some()
-                                && !allocated.is_some_and(|a| a.locked),
+                            !modal && staged.is_some() && !allocated.is_some_and(|a| a.locked),
                         )
                         .clicked()
+                            && let Some((stock, origin)) = staged
                         {
                             action = Some(RepairAction::Place(
                                 id,
-                                repair.stock.unwrap(),
-                                [
-                                    coordinate(&repair.origin[0], unit, repair.consent[0]).unwrap(),
-                                    coordinate(&repair.origin[1], unit, repair.consent[1]).unwrap(),
-                                ],
+                                stock,
+                                origin,
                                 repair.quarter_turn,
                             ));
                         }
@@ -3211,8 +3225,11 @@ fn show_affected_statuses(
     if repair
         .affected_cache
         .as_ref()
-        .is_none_or(|(cached, ids, _)| *cached != key || *ids != stocks)
+        .is_some_and(|(cached, ids, _)| *cached != key || *ids != stocks)
     {
+        repair.affected_cache = None;
+    }
+    let (_, _, statuses) = repair.affected_cache.get_or_insert_with(|| {
         let statuses = stocks
             .iter()
             .copied()
@@ -3242,11 +3259,12 @@ fn show_affected_statuses(
                 (stock_id, message)
             })
             .collect();
-        repair.affected_cache = Some((key, stocks, statuses));
-    }
+        (key, stocks, statuses)
+    });
+    let statuses = statuses.clone();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
-        for &(stock_id, message) in &repair.affected_cache.as_ref().unwrap().2 {
+        for &(stock_id, message) in &statuses {
             let verified = message == "sheet-verified";
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -3293,8 +3311,8 @@ pub fn show_with_layout(
     let mut action = None;
     let mut selection_request = None;
     repair.refresh(project, preview);
-    let model = repair.stock_model_cache.as_ref().unwrap().1.clone();
-    let board_diagnostics = repair.board_diagnostics_cache.as_ref().unwrap().1.clone();
+    let model = repair.model().cloned();
+    let board_diagnostics = repair.board_diagnostics().to_vec();
     let ordered = project.ordered_stock();
     if focus.scroll_to_target && focus.sheet.is_some() {
         repair.focused_sheet = focus.sheet;

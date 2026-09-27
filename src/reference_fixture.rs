@@ -85,8 +85,8 @@ pub fn project() -> Project {
     }
     // Side local X is depth, Y is height, Z is thickness, so mounting Y
     // references use the same vertical axis as the doors.
-    let side = Quaternion::normalized(0.5, 0.5, 0.5, 0.5).unwrap();
-    let vertical = Quaternion::normalized(1., 1., 0., 0.).unwrap();
+    let side = Quaternion::normalized(0.5, 0.5, 0.5, 0.5).expect("constant unit quaternion");
+    let vertical = Quaternion::normalized(1., 1., 0., 0.).expect("constant quaternion");
     for (id, name, material_id, size, at, rotation, grain_override) in [
         (
             LEFT_SIDE_ID,
@@ -233,7 +233,7 @@ pub fn project() -> Project {
             grain,
             source,
             price: (source == StockSource::ToPurchase)
-                .then(|| Money::new(Currency::Brl, 28990).unwrap()),
+                .then(|| Money::new(Currency::Brl, 28990).expect("constant price")),
             priority: priority as u32,
             trim: [Length::ZERO; 4],
         });

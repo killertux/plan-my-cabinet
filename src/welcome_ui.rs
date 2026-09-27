@@ -1192,7 +1192,7 @@ fn name_cell(
         let name = tw::medium(ui, name, 13.0).color(if muted { tw::FAINT } else { tw::TEXT });
         let response = ui.add(egui::Label::new(name).truncate().selectable(false));
         ui.add(
-            egui::Label::new(tw::mono(path, 11.0).color(if muted { tw::FAINT } else { tw::FAINT }))
+            egui::Label::new(tw::mono(path, 11.0).color(tw::FAINT))
                 .truncate()
                 .selectable(false),
         )

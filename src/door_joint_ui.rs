@@ -183,7 +183,7 @@ impl DesktopApp {
                                     self.localizer.text("door-motion-disclosure")
                                 });
                             if response.clicked() && !selected {
-                                let _ = self.invoke(request);
+                                self.invoke_or_report(request);
                             }
                         }
                     });
@@ -265,7 +265,7 @@ impl DesktopApp {
                 let label = A::SetDoorAngle.label(&self.localizer);
                 let (slider, travel) = angle_slider(ui, &mut angle, limit, &label, true);
                 if slider.changed() {
-                    let _ = self.invoke(
+                    self.invoke_or_report(
                         Request::with(A::SetDoorAngle, Target::Door(id))
                             .argument(Argument::Angle(angle)),
                     );

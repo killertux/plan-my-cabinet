@@ -778,7 +778,7 @@ fn status_ui(
                 .color(tw::WARN_INK),
         )
         .on_hover_text(localizer.text("hardware-fasteners-detail"));
-        if catalog.is_some_and(|entry| hardware_catalog::is_verified(entry)) {
+        if catalog.is_some_and(hardware_catalog::is_verified) {
             ui.hyperlink_to(
                 egui::RichText::new(localizer.text("hinge-source-review"))
                     .size(11.5)
@@ -1008,7 +1008,7 @@ impl DesktopApp {
         tw::divider(ui);
         ui.data_mut(|d| d.insert_temp(browse_id, browse));
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 
@@ -1038,7 +1038,7 @@ impl DesktopApp {
         }
         if let Some(request) = run {
             ui.close();
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 
@@ -1175,7 +1175,7 @@ impl DesktopApp {
         }
         ui.data_mut(|d| d.insert_temp(collapsed_id, collapsed));
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
         !collapsed
     }
@@ -1322,7 +1322,7 @@ impl DesktopApp {
             }
         }
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 
@@ -1467,7 +1467,7 @@ impl DesktopApp {
             }
         });
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         }
     }
 
@@ -1956,7 +1956,7 @@ impl DesktopApp {
             });
 
         if let Some(request) = run {
-            let _ = self.invoke(request);
+            self.invoke_or_report(request);
         } else if let Some((k, r)) = commit_pair {
             self.apply_installation_edit(id, |i| {
                 i.cup_edge_setback = k;

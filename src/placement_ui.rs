@@ -613,7 +613,7 @@ impl DesktopApp {
                         if *frame != old_frame {
                             let old_source =
                                 framed_pose(self.editor.project(), dialog.board_id, old_frame)
-                                    .unwrap();
+                                    .expect("the modal's board cannot be removed while it is open");
                             let unedited = if let Some(state) = preset.as_ref() {
                                 !state.pending_change
                                     && position
@@ -676,7 +676,8 @@ impl DesktopApp {
                             }
                         }
                         let source =
-                            framed_pose(self.editor.project(), dialog.board_id, *frame).unwrap();
+                            framed_pose(self.editor.project(), dialog.board_id, *frame)
+                            .expect("the modal's board cannot be removed while it is open");
                         form::gap(ui);
                         let third = ((width - 16.0) / 3.0).max(50.0);
                         form::label(
@@ -794,7 +795,7 @@ impl DesktopApp {
                                         dialog.board_id,
                                         *frame,
                                     )
-                                    .unwrap();
+                                    .expect("the modal's board cannot be removed while it is open");
                                     dialog.error = apply_numeric_preset(
                                         current, choice, position, rotation, preset,
                                     )
@@ -834,17 +835,18 @@ impl DesktopApp {
                         {
                             *preset = None;
                         }
-                        if valid {
+                        let proposed_position: [Option<f64>; 3] = std::array::from_fn(|i| {
+                            if position_edited[i] {
+                                coordinate(&position[i])
+                            } else {
+                                Some(preset.as_ref().map_or(source.translation_mm[i], |state| {
+                                    state.pose.translation_mm[i]
+                                }))
+                            }
+                        });
+                        if valid && let [Some(x), Some(y), Some(z)] = proposed_position {
                             let angles = angles.unwrap_or_default();
-                            let proposed_position = std::array::from_fn(|i| {
-                                if position_edited[i] {
-                                    coordinate(&position[i]).unwrap()
-                                } else {
-                                    preset.as_ref().map_or(source.translation_mm[i], |state| {
-                                        state.pose.translation_mm[i]
-                                    })
-                                }
-                            });
+                            let proposed_position = [x, y, z];
                             if let Some(state) = preset.as_ref() {
                                 match Pose::new(proposed_position, state.pose.rotation) {
                                     Ok(exact) => {
@@ -1063,7 +1065,7 @@ impl DesktopApp {
                             ui.spacing_mut().item_spacing.x = 14.0;
                             for i in 0..2 {
                                 let target_axis =
-                                    (0..3).filter(|a| *a != target_face.axis).nth(i).unwrap();
+                                    (0..3).filter(|a| *a != target_face.axis).nth(i).expect("two axes lie in a face");
                                 let (ok, needs) = align_axis(
                                     ui,
                                     &self.localizer,
@@ -1104,15 +1106,22 @@ impl DesktopApp {
                         )
                         .0;
                         pose_messages(ui, &self.localizer, &mut [("", gap)]);
-                        if valid {
+                        // Parse once: the proposal exists only when every field does.
+                        let parsed = valid
+                            .then(|| {
+                                let [first, second] = offset.each_ref().map(coordinate);
+                                Some(([first?, second?], coordinate(gap)?))
+                            })
+                            .flatten();
+                        if let Some((offset_mm, gap_mm)) = parsed {
                             let face = FacePlacement {
                                 source_face: *source_face,
                                 target_id: *target,
                                 target_face: *target_face,
                                 source_align: *source_align,
                                 target_align: *target_align,
-                                offset_mm: offset.each_ref().map(|p| coordinate(p).unwrap()),
-                                gap_mm: coordinate(gap).unwrap(),
+                                offset_mm,
+                                gap_mm,
                             };
                             let mut shadow = ProjectEditor::new(self.editor.project().clone())
                                 .expect("validated committed project");

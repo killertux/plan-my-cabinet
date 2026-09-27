@@ -2,6 +2,7 @@
 //! A draft is keyed by physical project/board identity; widgets borrow it, never copy it.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use uuid::Uuid;
 
@@ -193,10 +194,8 @@ impl BoardDraft {
         let values = self.values()?;
         let original = editor
             .project()
-            .boards
-            .iter()
-            .find(|b| b.id == self.board_id)
-            .unwrap();
+            .board(self.board_id)
+            .ok_or(DraftError::MissingBoard(self.board_id))?;
         if values == [original.length, original.width] {
             return Ok(original.clone());
         }
@@ -216,13 +215,11 @@ impl BoardDraft {
                 .edit_board_dimension(preview)
                 .map_err(|e| edit_error(e, DraftError::Dimension))?;
         }
-        Ok(candidate
+        candidate
             .project()
-            .boards
-            .iter()
-            .find(|b| b.id == self.board_id)
-            .unwrap()
-            .clone())
+            .board(self.board_id)
+            .cloned()
+            .ok_or(DraftError::MissingBoard(self.board_id))
     }
 
     /// A valid two-axis proposal creates at most one undo record. Failure retains the draft.
@@ -240,20 +237,12 @@ impl BoardDraft {
             })
             .map_err(|e| edit_error(e, |e| e))?;
         self.revision = editor.project().revision;
-        self.length.committed = editor
+        let committed = editor
             .project()
-            .boards
-            .iter()
-            .find(|b| b.id == id)
-            .unwrap()
-            .length;
-        self.width.committed = editor
-            .project()
-            .boards
-            .iter()
-            .find(|b| b.id == id)
-            .unwrap()
-            .width;
+            .board(id)
+            .ok_or(DraftError::MissingBoard(id))?;
+        self.length.committed = committed.length;
+        self.width.committed = committed.width;
         self.cancel();
         Ok(changed)
     }
@@ -300,10 +289,10 @@ impl EditDrafts {
         {
             self.boards.remove(&key);
         }
-        if let std::collections::hash_map::Entry::Vacant(entry) = self.boards.entry(key) {
-            entry.insert(BoardDraft::new(editor, id, unit, locale)?);
-        }
-        let draft = self.boards.get_mut(&key).unwrap();
+        let draft = match self.boards.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(BoardDraft::new(editor, id, unit, locale)?),
+        };
         draft.check(editor)?;
         draft.length.set_presentation(unit, locale);
         draft.width.set_presentation(unit, locale);
@@ -328,10 +317,10 @@ impl EditDrafts {
         }) {
             self.poses.remove(&key);
         }
-        if let std::collections::hash_map::Entry::Vacant(entry) = self.poses.entry(key) {
-            entry.insert(PoseDraft::new(editor, id, frame, unit, locale)?);
-        }
-        let draft = self.poses.get_mut(&key).unwrap();
+        let draft = match self.poses.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(PoseDraft::new(editor, id, frame, unit, locale)?),
+        };
         // Frame changes require a new proposal rather than reinterpreting pending text.
         if draft.frame != frame {
             return Err(DraftError::Stale);
@@ -426,20 +415,17 @@ impl BatchDraft {
     ) -> Result<Vec<(Uuid, Length, Length, Anchor)>, DraftError> {
         self.check(editor)?;
         let value = self.value()?;
-        Ok(self
-            .anchors
+        self.anchors
             .iter()
             .map(|(id, anchor)| {
                 let old = editor
                     .project()
-                    .boards
-                    .iter()
-                    .find(|b| b.id == *id)
-                    .unwrap()
+                    .board(*id)
+                    .ok_or(DraftError::MissingBoard(*id))?
                     .blank_dimensions()[self.dimension.axis()];
-                (*id, old, value.unwrap_or(old), *anchor)
+                Ok((*id, old, value.unwrap_or(old), *anchor))
             })
-            .collect())
+            .collect()
     }
 
     fn check(&self, editor: &ProjectEditor) -> Result<(), DraftError> {

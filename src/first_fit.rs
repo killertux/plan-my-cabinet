@@ -69,7 +69,9 @@ fn allocate_with_budget(
     let mut exhausted = false;
     let mut attempts = 0;
     for stock_id in ordered {
-        let stock = project.stock.iter().find(|s| s.id == stock_id).unwrap();
+        let Some(stock) = project.stock_piece(stock_id) else {
+            continue;
+        };
         if stock.material_id != material_id || stock.thickness != thickness {
             continue;
         }

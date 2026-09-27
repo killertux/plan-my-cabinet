@@ -1403,3 +1403,7 @@ project-unsaved-body = A cópia automática guarda uma versão de recuperação,
 project-unsaved-next = Em seguida: { $action }
 kerf-confirm-context = Registra a confirmação de hoje para este valor exato
 kerf-confirm-hint = Uma edição do projeto que pode ser desfeita
+
+# Error handling
+toast-close = Dispensar
+toast-edit-rejected = Não foi possível aplicar a alteração. O projeto não foi modificado.
