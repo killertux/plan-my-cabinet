@@ -659,6 +659,10 @@ fn main() -> std::process::ExitCode {
                     plan_my_cabinet::reference_fixture::HDF_ID,
                     SrgbColor([122, 98, 70]),
                 );
+                if config.empty_project {
+                    fixture = Project::new("New cabinet", Currency::Brl);
+                    plan_my_cabinet::material_presets::seed_defaults(&mut fixture, config.language);
+                }
                 app.editor = ProjectEditor::new(fixture).expect("validated reference fixture");
                 app.session = WorkspaceSession::new(app.editor.project());
                 app.session.active = config.workspace;
@@ -666,7 +670,7 @@ fn main() -> std::process::ExitCode {
                     app.settings.state.section = section;
                     app.settings.open = true;
                 }
-                if config.workspace == Workspace::Stock {
+                if config.workspace == Workspace::Stock && !config.empty_project {
                     app.session.stock_piece =
                         Some(plan_my_cabinet::reference_fixture::WHITE_STOCK_ID);
                 }

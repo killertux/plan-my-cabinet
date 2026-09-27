@@ -1404,3 +1404,13 @@ kerf-confirm-hint = One undoable project edit
 # Error handling
 toast-close = Dismiss
 toast-edit-rejected = The change could not be applied. The project is unchanged.
+
+# Empty states
+empty-cut-title = Nothing to cut yet
+empty-cut-detail = Boards you design are laid out on your sheets here.
+empty-sheets-title = No sheets yet
+empty-sheets-detail = Add the sheets or offcuts you will cut the boards from.
+empty-handoff-title = Nothing to hand off yet
+empty-handoff-detail = The workshop packet is built from your boards, sheets and hardware.
+empty-hardware-title = No doors to hang yet
+empty-hardware-detail = Design the cabinet and its doors first, then add hinges here.

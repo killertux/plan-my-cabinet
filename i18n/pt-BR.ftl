@@ -1407,3 +1407,13 @@ kerf-confirm-hint = Uma edição do projeto que pode ser desfeita
 # Error handling
 toast-close = Dispensar
 toast-edit-rejected = Não foi possível aplicar a alteração. O projeto não foi modificado.
+
+# Empty states
+empty-cut-title = Nada para cortar ainda
+empty-cut-detail = As peças que você projetar aparecem distribuídas nas chapas aqui.
+empty-sheets-title = Nenhuma chapa ainda
+empty-sheets-detail = Adicione as chapas ou sobras de onde as peças serão cortadas.
+empty-handoff-title = Nada para entregar ainda
+empty-handoff-detail = O pacote da marcenaria é montado a partir das peças, chapas e ferragens.
+empty-hardware-title = Nenhuma porta para instalar ainda
+empty-hardware-detail = Projete o móvel e as portas primeiro; depois adicione as dobradiças aqui.

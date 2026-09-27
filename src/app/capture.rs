@@ -103,6 +103,8 @@ pub struct Config {
     pub page: Option<usize>,
     pub snap: Option<crate::viewport::CaptureSnap>,
     pub dialog: Option<Dialog>,
+    /// Start from a new project (default materials only) instead of the fixture.
+    pub empty_project: bool,
 }
 
 impl Config {
@@ -127,6 +129,7 @@ impl Config {
             page: None,
             snap: None,
             dialog: None,
+            empty_project: false,
         };
         let mut seen = std::collections::HashSet::new();
         while let Some(flag) = args.next() {
@@ -200,6 +203,12 @@ impl Config {
                         return Err("Capture page must be a positive number".into());
                     }
                     config.page = Some(page);
+                }
+                "--capture-project" => {
+                    if value != "empty" {
+                        return Err("Capture project currently supports only empty".into());
+                    }
+                    config.empty_project = true;
                 }
                 "--capture-snap" => {
                     if config.gallery || config.size != [1440, 900] || config.scale != 100 {

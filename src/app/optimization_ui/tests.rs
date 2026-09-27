@@ -621,7 +621,7 @@ fn visible_cut_plan_searches_once_per_revision_after_a_quiet_moment() {
     let ctx = egui::Context::default();
     let mut editor = fixture();
     let mut state = OptimizeUi::default();
-    let mut settle = |state: &mut OptimizeUi, editor: &ProjectEditor, visible, blocked| {
+    let settle = |state: &mut OptimizeUi, editor: &ProjectEditor, visible, blocked| {
         state.auto_run(&ctx, editor, visible, blocked);
         if let Some((key, _)) = state.waiting {
             state.waiting = Some((key, Instant::now() - AUTO_DELAY));

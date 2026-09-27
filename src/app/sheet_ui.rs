@@ -1388,15 +1388,7 @@ fn sheet_inspector(
     reserve: Option<f32>,
 ) -> Option<usize> {
     let Some(piece) = piece else {
-        egui::Frame::new()
-            .inner_margin(Margin::same(14))
-            .show(ui, |ui| {
-                ui.label(
-                    RichText::new(localizer.text("sheet-no-pieces"))
-                        .size(12.0)
-                        .color(tw::MUTED),
-                );
-            });
+        // Only reached without any sheet; the canvas empty state explains it.
         return None;
     };
     inspector_header(ui, piece, localizer);
@@ -2381,7 +2373,7 @@ pub fn show_sheet_list(
             if ordered.is_empty() {
                 ui.add(
                     egui::Label::new(
-                        RichText::new(localizer.text("sheet-no-pieces"))
+                        RichText::new(localizer.text("design-no-stock"))
                             .size(12.0)
                             .color(tw::MUTED),
                     )
@@ -3351,15 +3343,23 @@ pub fn show_with_layout(
         .id_salt("sheet-workspace-scroll")
         .show(ui, |ui| {
             let Some(stock) = ordered.iter().find(|s| Some(s.id) == canvas_sheet).copied() else {
-                egui::Frame::new()
-                    .inner_margin(Margin::same(24))
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(localizer.text("sheet-no-pieces"))
-                                .size(13.0)
-                                .color(tw::MUTED),
-                        );
-                    });
+                // Offer the missing prerequisite: boards to cut, then sheets to cut them from.
+                let (icon, title, detail, label, next) = if project.boards.is_empty() {
+                    (Icon::Board, "empty-cut-title", "empty-cut-detail", "board-new", A::NewBoard)
+                } else {
+                    (Icon::Sheet, "empty-sheets-title", "empty-sheets-detail", "stock-new", A::NewStock)
+                };
+                ui.set_min_height(ui.clip_rect().height() - 40.0);
+                if tw::empty_state(
+                    ui,
+                    icon,
+                    &localizer.text(title),
+                    &localizer.text(detail),
+                    Some((Icon::Plus, &localizer.text(label))),
+                ) && !modal
+                {
+                    selection_request = Some(Request::new(next));
+                }
                 return;
             };
             let width = ui.available_width();

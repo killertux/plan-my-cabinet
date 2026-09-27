@@ -218,6 +218,43 @@ pub fn icon_text_button(
     )
 }
 
+/// Centered empty state: an icon tile, one title, one short line and the
+/// primary next step. Returns true when the action was clicked.
+pub fn empty_state(
+    ui: &mut Ui,
+    symbol: crate::icons::Icon,
+    title: &str,
+    detail: &str,
+    action: Option<(crate::icons::Icon, &str)>,
+) -> bool {
+    let mut clicked = false;
+    let height = 44.0 + 14.0 + 22.0 + 40.0 + if action.is_some() { 46.0 } else { 0.0 };
+    let top = ((ui.available_height() - height) / 2.0).max(24.0);
+    ui.vertical_centered(|ui| {
+        ui.add_space(top);
+        let (tile, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
+        ui.painter().rect_filled(tile, 10.0, ACCENT_BG);
+        crate::icons::icon(symbol, ACCENT_DARK, 22.0)
+            .paint_at(ui, egui::Rect::from_center_size(tile.center(), egui::vec2(22.0, 22.0)));
+        ui.add_space(14.0);
+        ui.label(semibold(ui, title, 15.0).color(TEXT));
+        ui.add_space(4.0);
+        ui.scope(|ui| {
+            ui.set_max_width(340.0);
+            ui.add(
+                egui::Label::new(RichText::new(detail).size(12.5).color(MUTED))
+                    .wrap()
+                    .halign(egui::Align::Center),
+            );
+        });
+        if let Some((icon, label)) = action {
+            ui.add_space(16.0);
+            clicked = icon_text_button(ui, icon, label, true, true).clicked();
+        }
+    });
+    clicked
+}
+
 /// Plain text link-style button (no frame), e.g. "Discard" in danger colour.
 pub fn text_button(ui: &mut Ui, text: &str, color: Color32, enabled: bool) -> Response {
     ui.add_enabled(

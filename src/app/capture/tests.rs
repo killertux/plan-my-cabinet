@@ -212,6 +212,7 @@ fn screenshot_output_is_exact_and_never_overwrites() {
         page: None,
         snap: None,
         dialog: None,
+        empty_project: false,
     };
     config.prepare_directory().unwrap();
     assert!(config.prepare_directory().is_err());

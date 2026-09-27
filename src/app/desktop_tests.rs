@@ -520,6 +520,7 @@ fn capture_preference_override_never_uses_the_platform_store() {
             capture::Config {
                 snap: None,
                 dialog: None,
+                empty_project: false,
                 directory: root.0.join("capture"),
                 gallery: false,
                 size: [1440, 900],
@@ -555,6 +556,7 @@ fn empty_welcome_capture_uses_only_isolated_recents_and_no_fixture_board() {
         page: None,
         snap: None,
         dialog: None,
+        empty_project: false,
     };
     config.prepare_directory().unwrap();
     let mut app = DesktopApp::default();

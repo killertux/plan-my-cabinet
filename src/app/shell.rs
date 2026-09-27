@@ -942,6 +942,24 @@ impl DesktopApp {
                             .show(ui, |ui| self.show_stock_list(ui));
                     });
             }
+            Workspace::Handoff | Workspace::Hardware if self.editor.project().boards.is_empty() => {
+                // Nothing to hand off or put hinges on yet: point back to the first step.
+                let (icon, title, detail) = if self.session.active == Workspace::Handoff {
+                    (icons::Icon::Export, "empty-handoff-title", "empty-handoff-detail")
+                } else {
+                    (icons::Icon::Hinge, "empty-hardware-title", "empty-hardware-detail")
+                };
+                if theme_widgets::empty_state(
+                    ui,
+                    icon,
+                    &self.localizer.text(title),
+                    &self.localizer.text(detail),
+                    Some((icons::Icon::Plus, &self.localizer.text("board-new"))),
+                ) && !drawer_modal
+                {
+                    self.invoke_or_report(Request::new(A::NewBoard));
+                }
+            }
             Workspace::Handoff => {
                 let packet = self.handoff.candidate.as_ref().and_then(|(key, result)| {
                     (key == &self.export_key())
