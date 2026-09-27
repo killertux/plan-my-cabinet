@@ -1162,7 +1162,7 @@ mod tests {
     fn legacy_payload_migrates_without_writes_and_future_or_invalid_payloads_are_retained() {
         let directory = Directory::new();
         let path = directory.0.join("legacy.pmcab");
-        let golden = include_bytes!("../tests/fixtures/schema-v1-cabinet.pmcab");
+        let golden = include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab");
         fs::write(&path, golden).unwrap();
         let saved = persistence::prepare_bytes(golden)
             .unwrap()

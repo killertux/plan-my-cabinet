@@ -1,5 +1,5 @@
 // Keep this target independently runnable while the parent integrates the module.
-#[path = "../src/icons.rs"]
+#[path = "../src/ui/icons.rs"]
 mod icons;
 
 use eframe::egui::{

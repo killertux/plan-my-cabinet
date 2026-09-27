@@ -17,7 +17,7 @@ use crate::i18n::{Language, Localizer};
 use crate::money::{Money, MoneyLocale};
 use crate::units::{Length, Unit};
 
-const FONT: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
+const FONT: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
 
 #[derive(Debug)]
 pub enum PdfExportError {

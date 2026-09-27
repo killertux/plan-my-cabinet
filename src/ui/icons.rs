@@ -20,7 +20,7 @@ macro_rules! icons {
             /// Embedded SVG source; URI and raster cache are shared across tints.
             pub fn source(self) -> ImageSource<'static> {
                 match self {
-                    $(Self::$variant => egui::include_image!(concat!("../assets/icons/", $name, ".svg"))),+
+                    $(Self::$variant => egui::include_image!(concat!("../../assets/icons/", $name, ".svg"))),+
                 }
             }
         }

@@ -7,53 +7,26 @@
 /// Application title shared by desktop integration and core metadata.
 pub const APPLICATION_NAME: &str = "Plan My Cabinet";
 
-pub mod allocation_diagnostics;
-pub mod assembly_edit;
-pub mod board_commands;
-pub mod board_dimensions;
-pub mod candidate_generation;
-pub mod candidate_ranking;
-pub mod color_commands;
-pub mod commands;
-pub mod cost_estimate;
-pub mod cut_tree;
-pub mod design_read_models;
-pub mod dimension_input;
-pub mod document_layout;
-pub mod domain;
-pub mod door_joint;
-pub mod edit_drafts;
-pub mod export;
-pub mod first_fit;
-pub mod hardware_catalog;
-pub mod hinge_installation;
 pub mod i18n;
-pub mod icons;
-pub mod kerf_date;
-pub mod local_preferences;
-pub mod material_changes;
-pub mod material_presets;
-pub mod measurements;
-pub mod money;
-pub mod optimization_worker;
-pub mod pdf_export;
-pub mod persistence;
-pub mod placement;
-pub mod receipt_read_models;
-pub mod recent_projects;
-pub mod recovery;
 pub mod reference_fixture;
-pub mod settings_ui;
-pub mod sheet_edit;
-pub mod stock_commands;
-pub mod stock_read_models;
-pub mod template_recipes;
-pub mod template_setup;
-pub mod theme;
-pub mod theme_widgets;
-pub mod units;
-pub mod welcome_ui;
-pub mod workshop_document;
+pub mod model;
+pub mod editing;
+pub mod optimize;
+pub mod read_models;
+pub mod output;
+pub mod storage;
+pub mod catalog;
+pub mod ui;
+
+// Flat paths (`plan_my_cabinet::commands`, `crate::domain`) stay valid.
+pub use model::{domain, units, money, measurements, kerf_date, dimension_input, material_presets};
+pub use editing::{commands, board_commands, color_commands, stock_commands, assembly_edit, sheet_edit, edit_drafts, material_changes, board_dimensions, placement};
+pub use optimize::{candidate_generation, candidate_ranking, cut_tree, first_fit, optimization_worker, allocation_diagnostics};
+pub use read_models::{design_read_models, stock_read_models, receipt_read_models, cost_estimate};
+pub use output::{export, pdf_export, document_layout, workshop_document};
+pub use storage::{persistence, recovery, recent_projects, local_preferences};
+pub use catalog::{hardware_catalog, hinge_installation, door_joint, template_recipes, template_setup};
+pub use ui::{theme, theme_widgets, icons, settings_ui, welcome_ui};
 
 #[cfg(test)]
 mod tests {

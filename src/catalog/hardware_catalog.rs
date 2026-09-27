@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn source_fixture_and_supported_geometry_are_exact() {
-        let review = include_str!("../docs/hinge-source-review.md");
+        let review = include_str!("../../docs/hinge-source-review.md");
         for evidence in [
             KIT_ID,
             PLATE_ID,
@@ -207,8 +207,8 @@ mod tests {
         let entry = builtin_hinge();
         let facts = entry.verified_hinge.as_ref().unwrap();
         let guides = [
-            include_str!("../docs/hardware-en.md"),
-            include_str!("../docs/hardware-pt-BR.md"),
+            include_str!("../../docs/hardware-en.md"),
+            include_str!("../../docs/hardware-pt-BR.md"),
         ];
         for (guide, language) in guides.into_iter().zip([Language::En, Language::PtBr]) {
             for expected in [

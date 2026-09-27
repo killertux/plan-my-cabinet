@@ -89,32 +89,32 @@ const FACES: &[(Typeface, &str, &[u8])] = &[
     (
         Typeface::Sans,
         "NotoSans-Regular",
-        include_bytes!("../assets/fonts/NotoSans-Regular.ttf"),
+        include_bytes!("../../assets/fonts/NotoSans-Regular.ttf"),
     ),
     (
         Typeface::SansMedium,
         "NotoSans-Medium",
-        include_bytes!("../assets/fonts/NotoSans-Medium.ttf"),
+        include_bytes!("../../assets/fonts/NotoSans-Medium.ttf"),
     ),
     (
         Typeface::SansSemibold,
         "NotoSans-SemiBold",
-        include_bytes!("../assets/fonts/NotoSans-SemiBold.ttf"),
+        include_bytes!("../../assets/fonts/NotoSans-SemiBold.ttf"),
     ),
     (
         Typeface::Mono,
         "JetBrainsMono-Regular",
-        include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
+        include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf"),
     ),
     (
         Typeface::MonoMedium,
         "JetBrainsMono-Medium",
-        include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
+        include_bytes!("../../assets/fonts/JetBrainsMono-Medium.ttf"),
     ),
     (
         Typeface::MonoSemibold,
         "JetBrainsMono-SemiBold",
-        include_bytes!("../assets/fonts/JetBrainsMono-SemiBold.ttf"),
+        include_bytes!("../../assets/fonts/JetBrainsMono-SemiBold.ttf"),
     ),
 ];
 

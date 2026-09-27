@@ -31,12 +31,12 @@ pub enum Face {
 impl Face {
     pub const fn bytes(self) -> &'static [u8] {
         match self {
-            Self::Sans => include_bytes!("../assets/fonts/NotoSans-Regular.ttf"),
-            Self::SansMedium => include_bytes!("../assets/fonts/NotoSans-Medium.ttf"),
-            Self::SansSemibold => include_bytes!("../assets/fonts/NotoSans-SemiBold.ttf"),
-            Self::Mono => include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
-            Self::MonoMedium => include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
-            Self::MonoSemibold => include_bytes!("../assets/fonts/JetBrainsMono-SemiBold.ttf"),
+            Self::Sans => include_bytes!("../../assets/fonts/NotoSans-Regular.ttf"),
+            Self::SansMedium => include_bytes!("../../assets/fonts/NotoSans-Medium.ttf"),
+            Self::SansSemibold => include_bytes!("../../assets/fonts/NotoSans-SemiBold.ttf"),
+            Self::Mono => include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf"),
+            Self::MonoMedium => include_bytes!("../../assets/fonts/JetBrainsMono-Medium.ttf"),
+            Self::MonoSemibold => include_bytes!("../../assets/fonts/JetBrainsMono-SemiBold.ttf"),
         }
     }
 
