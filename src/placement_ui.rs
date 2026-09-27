@@ -43,8 +43,27 @@ pub(super) struct PlacementDialog {
     presented_frame: CoordinateFrame,
 }
 
+/// Fixed-precision readout without needless zeros (`18`, `0.5`, `-90`).
+/// Lossless relative to the fixed-precision text, so equality checks that
+/// detect edits keep working on the trimmed form.
+fn trim_fixed(mut text: String) -> String {
+    if text.contains('.') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    if text == "-0" { "0".into() } else { text }
+}
+
 fn mm_text(value: f64) -> String {
-    format!("{value:.3}")
+    trim_fixed(format!("{value:.3}"))
+}
+
+fn angle_text(value: f64) -> String {
+    trim_fixed(format!("{value:.6}"))
 }
 
 fn length_draft(value: f64) -> DimensionDraft {
@@ -80,7 +99,7 @@ fn framed_pose(project: &Project, board_id: Uuid, frame: CoordinateFrame) -> Opt
 }
 
 fn rotation_text(pose: Pose) -> [String; 3] {
-    euler(pose).map(|v| format!("{v:.6}"))
+    euler(pose).map(angle_text)
 }
 
 fn apply_numeric_preset(
@@ -197,7 +216,7 @@ impl PlacementDialog {
         PlacementDraft::Numeric {
             frame,
             position: pose.translation_mm.map(length_draft),
-            rotation: euler(pose).map(|v| format!("{v:.6}")),
+            rotation: euler(pose).map(angle_text),
             preset: None,
         }
     }
@@ -268,46 +287,66 @@ impl PlacementDialog {
     }
 }
 
-fn position_field(
+const SOURCE_COLOR: egui::Color32 = egui::Color32::from_rgb(79, 184, 214);
+const TARGET_COLOR: egui::Color32 = egui::Color32::from_rgb(224, 85, 159);
+
+/// `18`, `-0.5`, `539.75`: millimetres without needless zeros.
+fn trim_mm_value(value: f64) -> String {
+    mm_text(value)
+}
+
+/// A compact pose input (mm) built by the caller (axis letter, prefix,
+/// suffix). Returns (accepted, rounding needed) without drawing messages.
+fn pose_input(
     ui: &mut egui::Ui,
-    localizer: &Localizer,
-    label: String,
+    input: modal_chrome::form::Input<'_>,
     draft: &mut DimensionDraft,
-    id: egui::Id,
-) -> bool {
-    ui.label(&label);
-    if theme_widgets::unit_field(ui, id, &label, &mut draft.text, "mm", None).changed() {
+) -> (bool, bool) {
+    let parsed = parse_length(&draft.text, Unit::Mm);
+    let input = input.invalid(parsed.is_err() && !draft.text.trim().is_empty());
+    if input.show(ui, &mut draft.text).changed() {
         draft.consent = false;
     }
     match parse_length(&draft.text, Unit::Mm) {
         Ok(parsed) => {
-            let value = parsed.conversion.suggested();
-            if let Conversion::NeedsConfirmation(_) = parsed.conversion {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("entered", draft.text.as_str());
-                args.set(
-                    "rounded",
-                    format_length(
-                        value,
-                        Unit::Mm,
-                        if localizer.language() == Language::En {
-                            Locale::En
-                        } else {
-                            Locale::PtBr
-                        },
-                        3,
-                    ),
-                );
-                ui.checkbox(
-                    &mut draft.consent,
-                    localizer.format("rounding-confirmation", Some(&args)),
-                );
-            }
-            draft.consent || parsed.conversion.exact().is_some()
+            let needs = matches!(parsed.conversion, Conversion::NeedsConfirmation(_));
+            (draft.consent || parsed.conversion.exact().is_some(), needs)
         }
-        Err(error) => {
-            ui.colored_label(egui::Color32::LIGHT_RED, localizer.text(error_key(error)));
-            false
+        Err(_) => (false, false),
+    }
+}
+
+/// Explicit rounding consent (and validation messages) under a group of
+/// pose inputs. Editing a field clears its consent.
+fn pose_messages(ui: &mut egui::Ui, localizer: &Localizer, fields: &mut [(&str, &mut DimensionDraft)]) {
+    let locale = if localizer.language() == Language::En {
+        Locale::En
+    } else {
+        Locale::PtBr
+    };
+    for (axis, draft) in fields.iter_mut() {
+        match parse_length(&draft.text, Unit::Mm) {
+            Ok(parsed) => {
+                if let Conversion::NeedsConfirmation(value) = parsed.conversion {
+                    let mut args = fluent_bundle::FluentArgs::new();
+                    args.set("entered", format!("{axis} {}", draft.text.trim()));
+                    args.set("rounded", format_length(value, Unit::Mm, locale, 3));
+                    ui.checkbox(
+                        &mut draft.consent,
+                        egui::RichText::new(localizer.format("rounding-confirmation", Some(&args)))
+                            .size(11.5)
+                            .color(theme_widgets::WARN_INK),
+                    );
+                }
+            }
+            Err(error) => {
+                if !draft.text.trim().is_empty() {
+                    modal_chrome::form::error(
+                        ui,
+                        &format!("{axis}: {}", localizer.text(error_key(error))),
+                    );
+                }
+            }
         }
     }
 }
@@ -331,37 +370,133 @@ fn face_key(face: BoardFace) -> &'static str {
     }
 }
 
-fn face_selector(ui: &mut egui::Ui, localizer: &Localizer, id: &'static str, face: &mut BoardFace) {
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(localizer.text(face_key(*face)))
-        .show_ui(ui, |ui| {
+fn face_selector(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    id: &'static str,
+    face: &mut BoardFace,
+    width: f32,
+) -> egui::Response {
+    use modal_chrome::form;
+    let popup = egui::Id::new(id).with("popup");
+    let current = localizer.text(face_key(*face));
+    let response = form::select_box(ui, popup, &current, width, |ui| {
+        ui.add(
+            egui::Label::new(egui::RichText::new(&current).size(13.0).color(theme_widgets::TEXT))
+                .truncate()
+                .selectable(false),
+        );
+    });
+    egui::Popup::menu(&response)
+        .id(popup)
+        .width(width)
+        .show(|ui| {
+            ui.set_min_width(width - 12.0);
             for axis in 0..3 {
                 for side in [Side::Negative, Side::Positive] {
                     let candidate = BoardFace { axis, side };
-                    combo_option(ui, face, candidate, localizer.text(face_key(candidate)));
+                    let label = localizer.text(face_key(candidate));
+                    if form::option(ui, *face == candidate, &label, |ui| {
+                        ui.label(egui::RichText::new(&label).size(13.0));
+                    })
+                    .clicked()
+                    {
+                        *face = candidate;
+                    }
                 }
             }
         });
+    response
 }
 
-fn align_selector(
+fn align_key(value: Align) -> &'static str {
+    match value {
+        Align::Start => "anchor-start-short",
+        Align::Centre => "anchor-centre-short",
+        Align::End => "anchor-end-short",
+    }
+}
+
+/// One in-plane axis: a shared Start | Centre | End choice (source and
+/// target aligned alike), an optional split into source → target, and the
+/// target offset field.
+#[allow(clippy::too_many_arguments)]
+fn align_axis(
     ui: &mut egui::Ui,
     localizer: &Localizer,
-    id: (&'static str, usize),
-    align: &mut Align,
-) {
-    let key = |value| match value {
-        Align::Start => "anchor-start",
-        Align::Centre => "anchor-centre",
-        Align::End => "anchor-end",
-    };
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(localizer.text(key(*align)))
-        .show_ui(ui, |ui| {
-            for value in [Align::Start, Align::Centre, Align::End] {
-                combo_option(ui, align, value, localizer.text(key(value)));
-            }
+    index: usize,
+    target_axis: usize,
+    source_align: &mut Align,
+    target_align: &mut Align,
+    offset: &mut DimensionDraft,
+    width: f32,
+) -> (bool, bool) {
+    use modal_chrome::form;
+    let split_id = egui::Id::new(("placement-align-split", index));
+    let mut split = ui.data(|d| d.get_temp::<bool>(split_id)).unwrap_or(false) || source_align != target_align;
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.horizontal(|ui| {
+            form::label(
+                ui,
+                &format!(
+                    "{} {}",
+                    localizer.text("placement-align-along"),
+                    ["X", "Y", "Z"][target_axis]
+                ),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let toggle = theme_widgets::ghost_icon_sized(
+                    ui,
+                    icons::Icon::Sliders,
+                    &localizer.text("placement-align-separately"),
+                    if split { theme_widgets::ACCENT_DARK } else { theme_widgets::FAINT },
+                    12.0,
+                    18.0,
+                    true,
+                    false,
+                );
+                if toggle.clicked() {
+                    split = !split;
+                    if !split {
+                        *source_align = *target_align;
+                    }
+                }
+            });
         });
+        ui.data_mut(|d| d.insert_temp(split_id, split));
+        let options = [Align::Start, Align::Centre, Align::End]
+            .map(|value| (value, localizer.text(align_key(value))));
+        let options: Vec<(Align, &str)> =
+            options.iter().map(|(value, text)| (*value, text.as_str())).collect();
+        if split {
+            let half = ((width - 18.0) / 2.0).max(40.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                form::segmented_sized(ui, ("source-align", index), source_align, &options, half, 30.0, false)
+                    .on_hover_text(localizer.text("placement-source-face"));
+                ui.label(egui::RichText::new("→").color(theme_widgets::FAINT));
+                form::segmented_sized(ui, ("target-align", index), target_align, &options, half, 30.0, false)
+                    .on_hover_text(localizer.text("placement-target-face"));
+            });
+        } else {
+            let before = *target_align;
+            form::segmented(ui, ("align", index), target_align, &options, width);
+            if *target_align != before || *source_align != *target_align {
+                *source_align = *target_align;
+            }
+        }
+        let offset_label = localizer.text("placement-offset-short");
+        pose_input(
+            ui,
+            form::Input::new(egui::Id::new(("placement-offset", index)), &offset_label, width)
+                .prefix(&offset_label, theme_widgets::FAINT)
+                .suffix("mm"),
+            offset,
+        )
+    })
+    .inner
 }
 
 fn placement_error_key(error: PlacementError) -> &'static str {
@@ -382,20 +517,51 @@ impl DesktopApp {
         let Some(mut dialog) = self.placement.take() else {
             return;
         };
-        let mut destination = None;
         let mut request = None;
         let mut numeric_noop = false;
         let mut first_focus = None;
         let numeric = matches!(dialog.draft, PlacementDraft::Numeric { .. });
-        let title = self.localizer.text(match dialog.draft {
-            PlacementDraft::Numeric { .. } => "placement-numeric",
-            PlacementDraft::Face { .. } => "placement-face",
-        });
+        let project = self.editor.project();
+        let board_name = project
+            .boards
+            .iter()
+            .find(|b| b.id == dialog.board_id)
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| "—".into());
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("name", board_name.as_str());
+        let title = if numeric {
+            self.localizer.format("placement-position-title", Some(&args))
+        } else {
+            self.localizer.text("placement-face")
+        };
         let confirm_label = self.localizer.text(if numeric {
             "navigation-apply"
         } else {
             "placement-place-action"
         });
+        self.placement_chrome.set_icon(if numeric {
+            icons::Icon::Axes
+        } else {
+            icons::Icon::Place
+        });
+        self.placement_chrome.set_context(Some(if numeric {
+            self.localizer.text("placement-live")
+        } else {
+            self.localizer.format("placement-face-context", Some(&args))
+        }));
+        self.placement_chrome.set_hint(Some(self.localizer.text(if numeric {
+            "placement-numeric-hint"
+        } else {
+            "placement-face-hint"
+        })));
+        let parent_name = project
+            .boards
+            .iter()
+            .find(|b| b.id == dialog.board_id)
+            .and_then(|b| b.parent_id)
+            .and_then(|parent| project.assemblies.iter().find(|a| a.id == parent))
+            .map(|a| a.name.clone());
         let result = self.placement_chrome.show(
             ctx,
             &title,
@@ -404,18 +570,8 @@ impl DesktopApp {
                 confirm: &confirm_label,
             },
             |ui| {
-                let board_name = self
-                    .editor
-                    .project()
-                    .boards
-                    .iter()
-                    .find(|b| b.id == dialog.board_id)
-                    .map(|b| b.name.as_str())
-                    .unwrap_or("—");
-                ui.label(format!(
-                    "{}: {board_name}",
-                    self.localizer.text("placement-source")
-                ));
+                use modal_chrome::form;
+                let width = ui.available_width();
                 let mut valid = true;
                 match &mut dialog.draft {
                     PlacementDraft::Numeric {
@@ -425,21 +581,35 @@ impl DesktopApp {
                         preset,
                     } => {
                         let old_frame = dialog.presented_frame;
-                        ui.label(self.localizer.text("placement-frame"));
-                        theme_widgets::segmented(
-                            ui,
-                            frame,
-                            &[
-                                (
-                                    CoordinateFrame::World,
-                                    &self.localizer.text("placement-world"),
-                                ),
-                                (
-                                    CoordinateFrame::LocalParent,
-                                    &self.localizer.text("placement-local"),
-                                ),
-                            ],
+                        let local_label = parent_name.as_ref().map_or_else(
+                            || self.localizer.text("placement-local"),
+                            |name| {
+                                let mut args = fluent_bundle::FluentArgs::new();
+                                args.set("name", name.as_str());
+                                self.localizer.format("placement-local-named", Some(&args))
+                            },
                         );
+                        ui.horizontal(|ui| {
+                            form::label(ui, &self.localizer.text("placement-frame"));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    form::segmented(
+                                        ui,
+                                        "placement-frame",
+                                        frame,
+                                        &[
+                                            (
+                                                CoordinateFrame::World,
+                                                &self.localizer.text("placement-world"),
+                                            ),
+                                            (CoordinateFrame::LocalParent, &local_label),
+                                        ],
+                                        (width * 0.52).max(150.0),
+                                    );
+                                },
+                            );
+                        });
                         if *frame != old_frame {
                             let old_source =
                                 framed_pose(self.editor.project(), dialog.board_id, old_frame)
@@ -498,72 +668,57 @@ impl DesktopApp {
                                 Err(error) => {
                                     *frame = old_frame;
                                     dialog.error = Some(error);
-                                    ui.colored_label(
-                                        egui::Color32::LIGHT_RED,
-                                        self.localizer.text("placement-frame-pending"),
+                                    form::error(
+                                        ui,
+                                        &self.localizer.text("placement-frame-pending"),
                                     );
                                 }
                             }
                         }
                         let source =
                             framed_pose(self.editor.project(), dialog.board_id, *frame).unwrap();
-                        ui.horizontal_wrapped(|ui| {
-                            for (choice, key) in [
-                                (PosePreset::StandUp, "placement-stand-up"),
-                                (PosePreset::LayFlat, "placement-lay-flat"),
-                                (PosePreset::Turn90Z, "placement-turn-z"),
-                            ] {
-                                if ui.button(self.localizer.text(key)).clicked() {
-                                    let current = framed_pose(
-                                        self.editor.preview().unwrap_or(self.editor.project()),
-                                        dialog.board_id,
-                                        *frame,
-                                    )
-                                    .unwrap();
-                                    dialog.error = apply_numeric_preset(
-                                        current, choice, position, rotation, preset,
-                                    )
-                                    .err();
-                                }
-                            }
-                        });
-                        ui.small(format!(
-                            "{} · {}: {}",
-                            self.localizer.text(if *frame == CoordinateFrame::World {
-                                "placement-world"
-                            } else {
-                                "placement-local"
-                            }),
+                        form::gap(ui);
+                        let third = ((width - 16.0) / 3.0).max(50.0);
+                        form::label(
+                            ui,
+                            &format!("{} (mm)", self.localizer.text("placement-position")),
+                        )
+                        .on_hover_text(format!(
+                            "{}: {}",
                             self.localizer.text("placement-pivot"),
                             self.localizer.text("placement-origin")
                         ));
-                        if let Some(choice) = preset.as_ref().and_then(|state| state.kind) {
-                            let key = match choice {
-                                PosePreset::StandUp => "placement-stand-disclosure",
-                                PosePreset::LayFlat => "placement-flat-disclosure",
-                                PosePreset::Turn90Z => "placement-turn-disclosure",
-                            };
-                            ui.small(self.localizer.text(key));
-                        }
-                        ui.label(format!(
-                            "{} (mm)",
-                            self.localizer.text("placement-position")
-                        ));
+                        ui.add_space(2.0);
                         let mut field_valid = [false; 3];
                         ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
                             for i in 0..3 {
-                                ui.vertical(|ui| {
-                                    ui.set_max_width(115.0);
-                                    field_valid[i] = position_field(
-                                        ui,
-                                        &self.localizer,
-                                        ["X", "Y", "Z"][i].into(),
-                                        &mut position[i],
+                                let label = format!(
+                                    "{} {}",
+                                    self.localizer.text("placement-position"),
+                                    ["X", "Y", "Z"][i]
+                                );
+                                field_valid[i] = pose_input(
+                                    ui,
+                                    form::Input::new(
                                         egui::Id::new(("placement-position", i)),
-                                    );
-                                });
+                                        &label,
+                                        third,
+                                    )
+                                    .axis(i),
+                                    &mut position[i],
+                                )
+                                .0;
                             }
                         });
+                        {
+                            let [x, y, z] = position;
+                            pose_messages(
+                                ui,
+                                &self.localizer,
+                                &mut [("X", x), ("Y", y), ("Z", z)],
+                            );
+                        }
                         first_focus = Some(egui::Id::new(("placement-position", 0)));
                         let position_edited = std::array::from_fn(|i| {
                             position[i].text
@@ -577,22 +732,88 @@ impl DesktopApp {
                                 valid &= field_valid[i];
                             }
                         }
-                        ui.label(format!("{} (°)", self.localizer.text("placement-rotation")));
+                        form::gap(ui);
+                        form::label(ui, &self.localizer.text("placement-rotation-order"));
+                        ui.add_space(2.0);
                         ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
                             for i in 0..3 {
-                                ui.vertical(|ui| {
-                                    ui.label(["X", "Y", "Z"][i]);
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut rotation[i])
-                                            .desired_width(85.0),
-                                    );
-                                });
+                                let label = format!(
+                                    "{} {}",
+                                    self.localizer.text("placement-rotation"),
+                                    ["X", "Y", "Z"][i]
+                                );
+                                let invalid = rotation[i]
+                                    .trim()
+                                    .replace(',', ".")
+                                    .parse::<f64>()
+                                    .ok()
+                                    .filter(|v| v.is_finite() && v.abs() <= 360.0)
+                                    .is_none();
+                                form::Input::new(
+                                    egui::Id::new(("placement-rotation", i)),
+                                    &label,
+                                    third,
+                                )
+                                .axis(i)
+                                .suffix("°")
+                                .invalid(invalid)
+                                .show(ui, &mut rotation[i]);
                             }
                         });
+                        ui.add_space(2.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for (choice, key) in [
+                                (PosePreset::StandUp, "placement-stand-up"),
+                                (PosePreset::LayFlat, "placement-lay-flat"),
+                                (PosePreset::Turn90Z, "placement-turn-z"),
+                            ] {
+                                let disclosure = match choice {
+                                    PosePreset::StandUp => "placement-stand-disclosure",
+                                    PosePreset::LayFlat => "placement-flat-disclosure",
+                                    PosePreset::Turn90Z => "placement-turn-disclosure",
+                                };
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new(self.localizer.text(key))
+                                                .size(12.0)
+                                                .color(theme_widgets::SECONDARY),
+                                        )
+                                        .fill(theme_widgets::VIEWPORT)
+                                        .stroke(egui::Stroke::NONE)
+                                        .corner_radius(6)
+                                        .min_size(egui::vec2(0.0, 24.0)),
+                                    )
+                                    .on_hover_text(self.localizer.text(disclosure))
+                                    .clicked()
+                                {
+                                    let current = framed_pose(
+                                        self.editor.preview().unwrap_or(self.editor.project()),
+                                        dialog.board_id,
+                                        *frame,
+                                    )
+                                    .unwrap();
+                                    dialog.error = apply_numeric_preset(
+                                        current, choice, position, rotation, preset,
+                                    )
+                                    .err();
+                                }
+                            }
+                        });
+                        if let Some(choice) = preset.as_ref().and_then(|state| state.kind) {
+                            let key = match choice {
+                                PosePreset::StandUp => "placement-stand-disclosure",
+                                PosePreset::LayFlat => "placement-flat-disclosure",
+                                PosePreset::Turn90Z => "placement-turn-disclosure",
+                            };
+                            form::hint(ui, &self.localizer.text(key));
+                        }
                         let rotation_edited = rotation
                             .iter()
                             .zip(euler(source))
-                            .any(|(text, angle)| *text != format!("{angle:.6}"));
+                            .any(|(text, angle)| *text != angle_text(angle));
                         let angles: Option<Vec<f64>> = rotation
                             .iter()
                             .map(|s| {
@@ -605,10 +826,7 @@ impl DesktopApp {
                             .collect();
                         if rotation_edited && angles.is_none() {
                             valid = false;
-                            ui.colored_label(
-                                egui::Color32::LIGHT_RED,
-                                self.localizer.text("error-invalid-rotation"),
-                            );
+                            form::error(ui, &self.localizer.text("error-invalid-rotation"));
                         }
                         if preset
                             .as_ref()
@@ -674,17 +892,44 @@ impl DesktopApp {
                             } else {
                                 parent.map_or(Frame::World, Frame::Object)
                             };
-                            if let Ok(bounds) =
-                                measure(preview, &[dialog.board_id], Scope::Body, measure_frame)
-                            {
-                                let [x, y, z] = bounds.dimensions_mm;
-                                ui.small(format!(
-                                    "{} · X × Y × Z: {x:.3} × {y:.3} × {z:.3} mm",
-                                    self.localizer.text("placement-derived-extents")
-                                ));
-                            } else {
-                                ui.small(self.localizer.text("measurement-invalid"));
-                            }
+                            form::gap(ui);
+                            let strip = form::strip(ui, |ui| {
+                                if let Ok(bounds) = measure(
+                                    preview,
+                                    &[dialog.board_id],
+                                    Scope::Body,
+                                    measure_frame,
+                                ) {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 14.0;
+                                        for axis in 0..3 {
+                                            ui.horizontal(|ui| {
+                                                ui.spacing_mut().item_spacing.x = 6.0;
+                                                ui.label(
+                                                    egui::RichText::new(["X", "Y", "Z"][axis])
+                                                        .size(11.0)
+                                                        .color(form::axis_color(axis)),
+                                                );
+                                                ui.label(
+                                                    theme_widgets::mono(
+                                                        format!(
+                                                            "{} → {}",
+                                                            trim_mm_value(bounds.minimum_mm[axis]),
+                                                            trim_mm_value(bounds.maximum_mm[axis])
+                                                        ),
+                                                        12.0,
+                                                    )
+                                                    .color(theme_widgets::TEXT),
+                                                );
+                                            });
+                                        }
+                                    });
+                                } else {
+                                    form::note(ui, &self.localizer.text("measurement-invalid"));
+                                }
+                            });
+                            strip
+                                .response.on_hover_text(self.localizer.text("placement-derived-extents"));
                         }
                     }
                     PlacementDraft::Face {
@@ -696,96 +941,169 @@ impl DesktopApp {
                         offset,
                         gap,
                     } => {
-                        let targets: Vec<_> = self
-                            .editor
-                            .project()
+                        let project = self.editor.project();
+                        let targets: Vec<_> = project
                             .boards
                             .iter()
                             .filter(|b| b.id != dialog.board_id)
                             .collect();
-                        let combo =
-                            egui::ComboBox::from_label(self.localizer.text("placement-target"))
-                                .selected_text(
-                                    targets
-                                        .iter()
-                                        .find(|b| b.id == *target)
-                                        .map(|b| b.name.as_str())
-                                        .unwrap_or("—"),
-                                )
-                                .show_ui(ui, |ui| {
-                                    for board in &targets {
-                                        combo_option(
-                                            ui,
-                                            target,
-                                            board.id,
-                                            format!("{} ({})", board.name, board.id),
+                        let target_name = targets
+                            .iter()
+                            .find(|b| b.id == *target)
+                            .map(|b| b.name.clone())
+                            .unwrap_or_else(|| "—".into());
+                        let popup = egui::Id::new("placement-target").with("popup");
+                        let combo = ui
+                            .vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 6.0;
+                                form::label(ui, &self.localizer.text("placement-target"));
+                                let response = form::select_box(
+                                    ui,
+                                    popup,
+                                    &self.localizer.text("placement-target"),
+                                    width,
+                                    |ui| {
+                                        form::legend_swatch(ui, TARGET_COLOR);
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(&target_name)
+                                                    .size(13.0)
+                                                    .color(theme_widgets::TEXT),
+                                            )
+                                            .truncate()
+                                            .selectable(false),
                                         );
-                                    }
+                                    },
+                                );
+                                egui::Popup::menu(&response).id(popup).width(width).show(|ui| {
+                                    ui.set_min_width(width - 12.0);
+                                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                                        for board in &targets {
+                                            if form::option(
+                                                ui,
+                                                board.id == *target,
+                                                &board.name,
+                                                |ui| {
+                                                    ui.label(
+                                                        egui::RichText::new(&board.name).size(13.0),
+                                                    );
+                                                },
+                                            )
+                                            .clicked()
+                                            {
+                                                *target = board.id;
+                                            }
+                                        }
+                                    });
                                 });
-                        first_focus = Some(combo.response.id);
-                        ui.horizontal(|ui| {
-                            theme_widgets::chip(
-                                ui,
-                                &self.localizer.text("placement-source-face"),
-                                egui::Color32::from_rgb(79, 184, 214),
-                                theme_widgets::TEXT,
-                            );
-                            face_selector(ui, &self.localizer, "source-face", source_face);
-                        });
-                        ui.horizontal(|ui| {
-                            theme_widgets::chip(
-                                ui,
-                                &self.localizer.text("placement-target-face"),
-                                egui::Color32::from_rgb(224, 85, 159),
-                                theme_widgets::TEXT,
-                            );
-                            face_selector(ui, &self.localizer, "target-face", target_face);
-                        });
-                        for i in 0..2 {
-                            let source_axis =
-                                (0..3).filter(|a| *a != source_face.axis).nth(i).unwrap();
-                            let target_axis =
-                                (0..3).filter(|a| *a != target_face.axis).nth(i).unwrap();
-                            ui.horizontal(|ui| {
-                                ui.label(format!(
-                                    "{} {} → {}",
-                                    self.localizer.text("placement-align"),
-                                    ["X", "Y", "Z"][source_axis],
-                                    ["X", "Y", "Z"][target_axis]
-                                ));
-                                align_selector(
+                                response
+                            })
+                            .inner;
+                        first_focus = Some(combo.id);
+                        form::gap(ui);
+                        let column = ((width - 34.0) / 2.0).max(80.0);
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            ui.vertical(|ui| {
+                                ui.set_width(column);
+                                ui.spacing_mut().item_spacing.y = 6.0;
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    form::legend_swatch(ui, SOURCE_COLOR);
+                                    form::label(
+                                        ui,
+                                        &format!(
+                                            "{} · {board_name}",
+                                            self.localizer.text("placement-source-short")
+                                        ),
+                                    );
+                                });
+                                face_selector(
                                     ui,
                                     &self.localizer,
-                                    ("source-align", i),
-                                    &mut source_align[i],
-                                );
-                                ui.label("→");
-                                align_selector(
-                                    ui,
-                                    &self.localizer,
-                                    ("target-align", i),
-                                    &mut target_align[i],
-                                );
+                                    "source-face",
+                                    source_face,
+                                    column,
+                                )
+                                .on_hover_text(self.localizer.text("placement-source-face"));
                             });
-                            valid &= position_field(
+                            ui.vertical(|ui| {
+                                ui.set_width(18.0);
+                                ui.add_space(24.0);
+                                ui.label(egui::RichText::new("→").color(theme_widgets::FAINT));
+                            });
+                            ui.vertical(|ui| {
+                                ui.set_width(column);
+                                ui.spacing_mut().item_spacing.y = 6.0;
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    form::legend_swatch(ui, TARGET_COLOR);
+                                    form::label(
+                                        ui,
+                                        &format!(
+                                            "{} · {target_name}",
+                                            self.localizer.text("placement-target-short")
+                                        ),
+                                    );
+                                });
+                                face_selector(
+                                    ui,
+                                    &self.localizer,
+                                    "target-face",
+                                    target_face,
+                                    column,
+                                )
+                                .on_hover_text(self.localizer.text("placement-target-face"));
+                            });
+                        });
+                        form::gap(ui);
+                        let half = ((width - 14.0) / 2.0).max(80.0);
+                        let mut rounding = false;
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 14.0;
+                            for i in 0..2 {
+                                let target_axis =
+                                    (0..3).filter(|a| *a != target_face.axis).nth(i).unwrap();
+                                let (ok, needs) = align_axis(
+                                    ui,
+                                    &self.localizer,
+                                    i,
+                                    target_axis,
+                                    &mut source_align[i],
+                                    &mut target_align[i],
+                                    &mut offset[i],
+                                    half,
+                                );
+                                valid &= ok;
+                                rounding |= needs;
+                            }
+                        });
+                        {
+                            let [first, second] = offset;
+                            let axes: Vec<usize> =
+                                (0..3).filter(|a| *a != target_face.axis).collect();
+                            pose_messages(
                                 ui,
                                 &self.localizer,
-                                format!(
-                                    "{} {} (mm)",
-                                    self.localizer.text("placement-offset"),
-                                    ["X", "Y", "Z"][target_axis]
-                                ),
-                                &mut offset[i],
-                                egui::Id::new(("placement-offset", i)),
+                                &mut [
+                                    (["X", "Y", "Z"][axes[0]], first),
+                                    (["X", "Y", "Z"][axes[1]], second),
+                                ],
                             );
                         }
-                        valid &= position_field(
+                        let _ = rounding;
+                        form::gap(ui);
+                        form::label(ui, &self.localizer.text("placement-gap-short"));
+                        ui.add_space(2.0);
+                        let gap_label = self.localizer.text("placement-gap");
+                        valid &= pose_input(
                             ui,
-                            &self.localizer,
-                            format!("{} (mm)", self.localizer.text("placement-gap")),
+                            form::Input::new(egui::Id::new("placement-gap"), &gap_label, width)
+                                .suffix("mm"),
                             gap,
-                            egui::Id::new("placement-gap"),
-                        );
+                        )
+                        .0;
+                        pose_messages(ui, &self.localizer, &mut [("", gap)]);
                         if valid {
                             let face = FacePlacement {
                                 source_face: *source_face,
@@ -806,56 +1124,23 @@ impl DesktopApp {
                                     dialog.board_id,
                                 )
                             {
-                                ui.small(format!(
-                                    "{} · X {:.3} · Y {:.3} · Z {:.3} mm",
-                                    self.localizer.text("placement-result"),
-                                    pose.translation_mm[0],
-                                    pose.translation_mm[1],
-                                    pose.translation_mm[2],
-                                ));
+                                let mut args = fluent_bundle::FluentArgs::new();
+                                args.set("name", board_name.as_str());
+                                args.set("x", trim_mm_value(pose.translation_mm[0]));
+                                args.set("y", trim_mm_value(pose.translation_mm[1]));
+                                args.set("z", trim_mm_value(pose.translation_mm[2]));
+                                form::note(
+                                    ui,
+                                    &self.localizer.format("placement-face-result", Some(&args)),
+                                );
                             }
                             request = Some(PlacementRequest::Face(face));
                         }
                     }
                 }
                 if let Some(error) = dialog.error {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text(placement_error_key(error)),
-                    );
+                    form::error(ui, &self.localizer.text(placement_error_key(error)));
                 }
-                ui.label(self.localizer.text(
-                    if matches!(dialog.draft, PlacementDraft::Numeric { .. }) {
-                        "placement-preview-numeric"
-                    } else {
-                        "placement-preview"
-                    },
-                ));
-                ui.horizontal_wrapped(|ui| {
-                    for (workspace, key) in [
-                        (Workspace::Design, "navigation-design"),
-                        (Workspace::Stock, "navigation-stock"),
-                        (Workspace::CutPlan, "navigation-cut-plan"),
-                        (Workspace::Hardware, "navigation-hardware"),
-                        (Workspace::Handoff, "navigation-handoff"),
-                    ] {
-                        if ui.button(self.localizer.text(key)).clicked() {
-                            destination = Some(NavigationRoute::Workspace(workspace));
-                        }
-                    }
-                });
-                ui.collapsing(self.localizer.text("board-list"), |ui| {
-                    for board in &self.editor.project().boards {
-                        if board.id != dialog.board_id
-                            && ui
-                                .button(format!("{} ({})", board.name, board.id))
-                                .clicked()
-                        {
-                            destination =
-                                Some(NavigationRoute::Entity(Destination::Board(board.id)));
-                        }
-                    }
-                });
                 ((), valid && dialog.error.is_none())
             },
         );
@@ -914,9 +1199,6 @@ impl DesktopApp {
             dialog.error = Some(PlacementError::InvalidPose(UnitError::OutOfBounds));
         }
         self.placement = Some(dialog);
-        if let Some(route) = destination {
-            self.request_navigation(route);
-        }
     }
 }
 

@@ -41,6 +41,12 @@ impl DesktopApp {
         };
         let mut first = None;
         let opening = !draft.chrome.is_active();
+        draft
+            .chrome
+            .set_context(Some(self.localizer.text("kerf-confirm-context")));
+        draft
+            .chrome
+            .set_hint(Some(self.localizer.text("kerf-confirm-hint")));
         let result = draft.chrome.show(
             ctx,
             &self.localizer.text("kerf-confirm-title"),
@@ -49,31 +55,60 @@ impl DesktopApp {
                 confirm: &self.localizer.text("kerf-confirm-action"),
             },
             |ui| {
-                ui.label(format!(
-                    "{}: {}",
-                    self.localizer.text("cutting-kerf"),
-                    format_length(draft.kerf, Unit::Mm, locale, 3)
-                ));
-                ui.label(self.localizer.text("cutting-kerf-hint"));
-                let response = ui.checkbox(
-                    &mut draft.acknowledged,
-                    self.localizer.text("kerf-confirm-acknowledge"),
-                );
+                use modal_chrome::form;
+                form::strip(ui, |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            theme_widgets::mono(
+                                format!(
+                                    "{}: {}",
+                                    self.localizer.text("cutting-kerf"),
+                                    format_length(draft.kerf, Unit::Mm, locale, 3)
+                                ),
+                                13.0,
+                            )
+                            .color(theme_widgets::TEXT),
+                        )
+                        .selectable(false),
+                    );
+                })
+                .response
+                .on_hover_text(self.localizer.text("cutting-kerf-hint"));
+                form::gap(ui);
+                let response = egui::Frame::new()
+                    .fill(theme_widgets::CARD)
+                    .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
+                    .corner_radius(9)
+                    .inner_margin(12)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.spacing_mut().item_spacing.y = 6.0;
+                        let response = ui.checkbox(
+                            &mut draft.acknowledged,
+                            theme_widgets::medium(
+                                ui,
+                                self.localizer.text("kerf-confirm-acknowledge"),
+                                13.0,
+                            ),
+                        );
+                        ui.horizontal(|ui| {
+                            ui.add_space(24.0);
+                            form::note(ui, &self.localizer.text("kerf-confirm-scope"));
+                        });
+                        response
+                    })
+                    .inner;
                 // egui's checkbox toggles on Enter without consuming the key.
                 // Acknowledging is not also permission to submit the parent.
                 if response.clicked() {
                     ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
                 }
                 first = Some(response.id);
-                ui.small(self.localizer.text("kerf-confirm-scope"));
                 if !current {
-                    ui.colored_label(theme_widgets::DANGER, self.localizer.text("grid-stale"));
+                    form::error(ui, &self.localizer.text("grid-stale"));
                 }
                 if draft.failed {
-                    ui.colored_label(
-                        theme_widgets::DANGER,
-                        self.localizer.text("cutting-kerf-invalid"),
-                    );
+                    form::error(ui, &self.localizer.text("cutting-kerf-invalid"));
                 }
                 ((), current && draft.acknowledged)
             },
