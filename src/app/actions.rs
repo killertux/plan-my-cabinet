@@ -1607,6 +1607,11 @@ mod tests {
         // Catch registered commands that have no actual pre-relocation UI route.
         let sources = [
             include_str!("../main.rs"),
+            include_str!("shell.rs"),
+            include_str!("board_dialogs.rs"),
+            include_str!("export_flow.rs"),
+            include_str!("settings_host.rs"),
+            include_str!("navigation.rs"),
             include_str!("project_ui.rs"),
             include_str!("assembly_ui.rs"),
             include_str!("stock_ui.rs"),
