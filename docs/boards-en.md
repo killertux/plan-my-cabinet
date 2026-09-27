@@ -1,20 +1,30 @@
 # Boards and materials (English)
 
-## Current desktop interface
+## Design workspace and advanced board controls
 
-The left panel has **New material**, **New board**, a material list and a board
-list. The center 3D viewport still draws a fixed smoke-test fixture: it does
-not display, select, or rotate the boards in the list. The list is the current
-representation of the created parts. There is no stock-entry or placement UI
-yet; new and duplicated boards appear **Unallocated**. Stock allocation comes
-later. The desktop shell also has no project Open/Save controls yet.
+Design's outliner lists real boards and their parent assemblies; selecting a row
+highlights the same physical part in the native 3D view. The inspector shows its
+material, effective thickness and provenance, local dimensions, grain, pose,
+allocation state and stock preview. The single-board selection HUD exposes
+inline length/width edits; advanced board/material, thickness, hierarchy and
+placement controls remain accessible from the inspector and object actions.
+The shared header offers project navigation and Save. New or duplicated boards
+are separate physical parts; any board without a stock placement is shown as
+**Unallocated** rather than hidden from allocation diagnostics. See
+[Assemblies and hierarchy](assembly-en.md) for placement and [Stock](stock-en.md)
+for stock/allocation operations.
 
 ## Create and edit
 
 Create a material first with **New material**: enter a name and a positive
-thickness, then choose its default grain direction. **New board** asks for a
+thickness, then choose its default grain direction and optional display swatch.
+The swatch is visual metadata, not a stock or cutting-property change. **New
+board** asks for a
 name, material, local length, and local width. It displays the effective
-material and thickness before confirmation. Thickness comes from the
+material and thickness before confirmation. A first-fit stock outlook is only
+a preview, not an allocation or reservation; confirmation rechecks the current
+material and stock. You can open New material from a board draft and return to
+that intact draft if you cancel the nested form. Thickness comes from the
 chosen material, rather than a third board-creation input. A newly created
 board follows that material's grain default; the initial plywood convention
 is grain along local length. Missing, zero, negative, nonfinite, or
@@ -25,7 +35,8 @@ does not create a partial board.
 Z axes. Turning a board or its parent assembly changes its world orientation,
 not these labels or its initial rectangular blank dimensions. For example,
 a 2300 × 600 × 18 mm side remains 2300 mm long after being turned upright.
-The current desktop interface does not yet offer a rotation control.
+Use **Numeric pose** (including the cancellable orientation presets), face
+placement or Move board to change pose without renaming these local axes.
 
 Each board's **Board grain** menu has **Follow material default**, **Along
 length**, **Along width**, and **Unrestricted**. The latter three are explicit
@@ -63,7 +74,38 @@ to several boards. The dialog shows **Mixed values** if their current values
 differ, lists affected boards and individual anchors, and commits all valid
 targets together or none if one is invalid.
 
-## Keyboard-only walkthrough in the current shell
+## Inspector and HUD edits
+
+In **Design**, select the board in the outliner or the scene. With no selection
+the inspector does not pretend a board is active; with several selected objects
+it shows their actual shared/batch context rather than one arbitrary board.
+Hidden boards remain selectable from the outliner and still require stock.
+
+With one board selected, edit **Length** or **Width** in either the inspector or
+the floating HUD. Both surfaces show the same pending text, local resize
+anchor, validation and rounding consent; changing surfaces does not create a
+second edit. Untouched rounded display text retains the exact committed
+quantity. Enter or **Apply** accepts a valid draft as one undoable edit; Escape
+or **Discard** cancels it. Leaving an invalid or unconfirmed rounded draft for
+another target/workspace offers Apply (disabled until valid), Discard or Stay;
+collapsing the inspector keeps the draft. Editing the text clears previous
+rounding consent; merely losing focus does not commit. The current display unit
+and input locale are captured on the first text edit, so changing unit or
+language while it is dirty does not reinterpret it. An explicit unit suffix
+still takes precedence. Advanced **Edit dimensions**, including anchored
+thickness changes and multi-board **Edit selected dimensions**, remain available;
+the HUD's thickness is a read-only *effective board value*, which may differ
+from the material's current default.
+
+For an allocated board, the inspector's clickable sheet miniature shows its
+actual stock piece, trims and part footprints, highlighting that board. Open
+it to navigate to the same board's allocation in Cut plan. An unallocated board
+instead leads to its allocation issue. This navigation does not reposition the
+board or select every board on the sheet; unfinished drafts receive the same
+Apply/Discard/Stay decision. The miniature is a stock sketch, not an
+independent cut-feasibility certificate.
+
+## Keyboard-only walkthrough using advanced board controls
 
 Opening a dialog moves focus to its first control. `Tab` (and `Shift+Tab` to
 go back) stays inside the dialog until it closes. Press `Space` on a focused button or
@@ -72,15 +114,22 @@ following uses exact millimetre values so no rounding prompt appears; type
 the unit suffix to make the input unambiguous. On macOS use `Command+A`, or
 on Linux `Ctrl+A`, to replace all text in a focused input.
 
-1. Run `cargo run --locked`. Tab to **New material** and press `Space`. In
+With a project open, `⌘/Ctrl+1–5` switches workspaces; it does not create objects.
+Use `⌘/Ctrl+K` and search for **New material** or **New board** to open those forms.
+
+1. Run `cargo run --locked`. On Welcome, Tab to **New project** and press
+   `Space`. In **Design**, Tab to **New material** and press `Space`; if the
+   left controls are collapsed, reopen **Design** from the header first. In
    the dialog, **Material name** already has focus: type `Plywood 18`; Tab to
    **Thickness**, type `18 mm`. Leave **Default grain** at **Along length**.
    Press `Return` to create the material. `Escape` would cancel instead.
 2. Tab to **New board**, press `Space`; **Board name** has focus: type `Side`.
    The first material is already selected. Tab to **Length**, type `2300 mm`;
    Tab to **Width**, type `600 mm`. Check the displayed effective material and
-   18 mm thickness, then press `Return`. The **Project boards** list now has
-   `Side`, `2300 × 600 × 18`, and **Unallocated**.
+   18 mm thickness, then press `Return`. `Side` appears in **Outliner**.
+   In the left controls, expand the lower **Advanced view and language**
+   section containing board actions to see its ID, `2300 × 600 × 18`, and
+   **Unallocated**, and to reach the duplicate/edit controls used below.
 3. Tab to the **Duplicate board** button belonging to `Side` and press
    `Space`. There are now two `Side` rows with different IDs. Find the second
    row by its position and ID; its dimensions still read `2300 × 600 × 18`

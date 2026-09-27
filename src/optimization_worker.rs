@@ -18,8 +18,8 @@ use crate::commands::{EditError, ProjectEditor};
 use crate::cut_tree::WitnessError;
 use crate::domain::{Allocation, Project};
 
-/// An optimization input token excludes scene poses, grid, display settings and hardware.
-/// Names and prices are included because they affect comparative previews and costs.
+/// An optimization input token excludes scene poses, grid, display settings,
+/// material appearance and hardware. Names and prices affect comparison/costs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceToken {
     pub project_id: Uuid,
@@ -29,10 +29,14 @@ pub struct SourceToken {
 
 fn source(project: &Project) -> SourceToken {
     let mut hash = Sha256::new();
-    hash.update(b"optimization inputs v1");
+    hash.update(b"optimization inputs v2");
     hash.update(
         serde_json::to_vec(&(
-            &project.materials,
+            project
+                .materials
+                .iter()
+                .map(|m| (&m.id, &m.name, &m.default_thickness, &m.default_grain))
+                .collect::<Vec<_>>(),
             &project
                 .boards
                 .iter()
@@ -49,6 +53,7 @@ fn source(project: &Project) -> SourceToken {
                 })
                 .collect::<Vec<_>>(),
             &project.stock,
+            &project.stock_aliases,
             &project.allocations,
             project.cutting_kerf,
             project.cut_fee,
@@ -432,5 +437,42 @@ mod tests {
         ));
         assert_eq!(editor.project(), &before);
         assert!(editor.can_redo());
+    }
+
+    #[test]
+    fn color_only_edit_accepts_new_placements_without_losing_newer_metadata() {
+        use crate::domain::SrgbColor;
+
+        let mut editor = fixture();
+        let material_id = editor.project().materials[0].id;
+        let mut worker = OptimizationWorker::start(
+            &editor,
+            Objective::FewestCuts,
+            budget(),
+            Duration::from_secs(5),
+        );
+        let result = complete(&mut worker).unwrap();
+        let color = SrgbColor([13, 42, 200]);
+        editor.set_material_color(material_id, Some(color)).unwrap();
+        editor.confirm_shop_kerf_at(1_700_000_000_000).unwrap();
+        let revision = editor.project().revision;
+        assert!(result.is_current(editor.project()));
+        assert_eq!(OptimizationWorker::apply(&mut editor, &result, 0), Ok(true));
+        assert_eq!(editor.project().material_color(material_id), color);
+        assert_eq!(
+            editor.project().confirmed_shop_kerf_unix_ms,
+            Some(1_700_000_000_000)
+        );
+        assert_eq!(editor.project().revision, revision + 1);
+        assert_eq!(
+            editor.project().allocations,
+            result.ranking.candidates[0].candidate.allocations
+        );
+        editor.undo().unwrap();
+        assert_eq!(editor.project().material_color(material_id), color);
+        assert_eq!(
+            editor.project().confirmed_shop_kerf_unix_ms,
+            Some(1_700_000_000_000)
+        );
     }
 }

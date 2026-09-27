@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:48px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">6a</span>
+    <span style="font-size:18px;font-weight:600">Shop handoff workspace</span>
+  </div>
+  <div style="font-size:13px;color:#6E655A;max-width:1440px">Choose Draft or Shop-ready (Shop-ready stays locked, with the reasons listed, until every check passes), set the PDF language and units separately from the app, preview the pages, then export. Past exports are kept as receipts and flagged when the design changes after them.</div>
+
+  <div data-screen-label="Shop handoff" style="width:1440px;height:900px;display:flex;background:#F4F1EC;font-family:'Noto Sans',sans-serif;color:#2A2520;font-size:13px;overflow:hidden;border-radius:10px;box-shadow:0 1px 0 #D4CDC1,0 20px 50px rgba(60,45,25,.18)">
+    <div style="width:60px;flex:none;background:#F4F1EC;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px">
+      <div style="width:32px;height:32px;border-radius:8px;background:#2A2520;color:#F4C27A;display:flex;align-items:center;justify-content:center;margin-bottom:12px"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/cube.svg) center/contain no-repeat"></span>Design</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/material.svg) center/contain no-repeat"></span>Stock</div>
+      <div style="position:relative;width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sheet.svg) center/contain no-repeat"></span>Cut plan<span style="position:absolute;top:5px;right:9px;width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/hinge.svg) center/contain no-repeat"></span>Hardware</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;background:#F6E3CB;color:#8A4F0E;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;font-weight:500"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Handoff</div>
+      <div style="flex:1"></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/globe.svg) center/contain no-repeat"></span></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sliders.svg) center/contain no-repeat"></span></div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="height:46px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px 0 16px;background:#FBFAF7;border-bottom:1px solid #DDD7CD">
+        <span style="color:#6E655A">Projects</span><span style="color:#B5AC9F">/</span><span style="font-weight:600">Kitchen base 800</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span><span style="color:#6E655A;font-size:11.5px;white-space:nowrap">unsaved</span>
+        <div style="flex:1"></div>
+        <div style="width:440px;height:30px;display:flex;align-items:center;gap:9px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;color:#8C8276"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/search.svg) center/contain no-repeat"></span><span style="flex:1">Search commands, parts, materials…</span><span style="font:11px 'JetBrains Mono',monospace;padding:1px 6px;border:1px solid #E6E0D6;border-radius:4px">⌘K</span></div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:2px;color:#5A5248">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/undo.svg) center/contain no-repeat"></span></div>
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px;opacity:.4"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/redo.svg) center/contain no-repeat"></span></div>
+        </div>
+        <div style="height:30px;display:flex;align-items:center;padding:0 12px;border-radius:7px;background:#ECE8E1;border:1px solid #E6E0D6">Save</div>
+        <div style="height:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:600"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Export</div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr) 300px">
+        <!-- settings -->
+        <div style="background:#FBFAF7;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:16px 16px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">PACKET TYPE</div>
+          <div style="padding:0 12px;display:flex;flex-direction:column;gap:6px">
+            <div style="padding:12px;border-radius:9px;background:#FFFFFF;border:1.5px solid #2A2520;display:flex;gap:10px">
+              <span style="width:16px;height:16px;border-radius:50%;border:5px solid #2A2520;flex:none;margin-top:1px"></span>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">Draft</span><span style="font-size:12px;color:#6E655A;line-height:1.45">Review copy. Every page stamped DRAFT / NOT FOR CUTTING, with open issues listed.</span></div>
+            </div>
+            <div style="padding:12px;border-radius:9px;background:#F4F1EC;border:1px solid #E6E0D6;display:flex;gap:10px;color:#8C8276">
+              <span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #BFB5A5;flex:none;margin-top:1px"></span>
+              <div style="display:flex;flex-direction:column;gap:6px;flex:1"><div style="display:flex;align-items:center;gap:6px"><span style="font-weight:600;color:#5A5248">Shop-ready</span><span style="display:block;width:12px;height:12px;background:currentColor;mask:url(icons/lock.svg) center/contain no-repeat"></span></div>
+                <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                  <span style="display:flex;align-items:center;gap:6px;color:#3F7D4E"><span style="display:block;width:12px;height:12px;background:currentColor;mask:url(icons/check.svg) center/contain no-repeat"></span>Kerf confirmed · 5 mm</span>
+                  <span style="display:flex;align-items:center;gap:6px;color:#3F7D4E"><span style="display:block;width:12px;height:12px;background:currentColor;mask:url(icons/check.svg) center/contain no-repeat"></span>Cut sequence verified · 2 sheets</span>
+                  <span style="display:flex;align-items:center;gap:6px;color:#8A5A12"><span style="display:block;width:12px;height:12px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>Back panel unallocated <a href="#" style="margin-left:auto">Fix</a></span>
+                </div></div>
+            </div>
+          </div>
+          <div style="padding:18px 16px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">PDF OUTPUT</div>
+          <div style="padding:0 16px;display:grid;grid-template-columns:78px 1fr;row-gap:8px;align-items:center">
+            <span style="color:#6E655A">Language</span><div style="height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">Português (BR)<span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div>
+            <span style="color:#6E655A">Units</span><div style="display:flex;gap:2px;padding:2px;background:#ECE8E1;border-radius:7px;font-size:12px;color:#5A5248"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;color:#2A2520;font-weight:500">mm</span><span style="flex:1;text-align:center;padding:4px 0">cm</span><span style="flex:1;text-align:center;padding:4px 0">in</span></div>
+            <span style="color:#6E655A">Include</span>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+              <span style="display:flex;align-items:center;gap:8px"><span style="width:15px;height:15px;border-radius:4px;background:#2A2520;display:flex;align-items:center;justify-content:center"><span style="display:block;width:10px;height:10px;background:#FBFAF7;mask:url(icons/check.svg) center/contain no-repeat"></span></span>Parts list &amp; costs</span>
+              <span style="display:flex;align-items:center;gap:8px"><span style="width:15px;height:15px;border-radius:4px;background:#2A2520;display:flex;align-items:center;justify-content:center"><span style="display:block;width:10px;height:10px;background:#FBFAF7;mask:url(icons/check.svg) center/contain no-repeat"></span></span>Sheet diagrams + cut steps</span>
+              <span style="display:flex;align-items:center;gap:8px"><span style="width:15px;height:15px;border-radius:4px;background:#2A2520;display:flex;align-items:center;justify-content:center"><span style="display:block;width:10px;height:10px;background:#FBFAF7;mask:url(icons/check.svg) center/contain no-repeat"></span></span>Hinge references</span>
+            </div>
+          </div>
+          <div style="margin:14px 16px 0;padding:10px 12px;border-radius:8px;background:#F4F1EC;font-size:11.5px;color:#6E655A;line-height:1.5">Interface stays in English. Names and IDs are never translated. Currency stays BRL.</div>
+          <div style="flex:1"></div>
+          <div style="padding:14px 16px;border-top:1px solid #E6E0D6;display:flex;flex-direction:column;gap:8px">
+            <div style="height:38px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;background:#2A2520;color:#FBFAF7;font-weight:600"><span style="display:block;width:16px;height:16px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Export draft PDF…</div>
+            <span style="font-size:11px;color:#8C8276;text-align:center">Tip: use a new file name for every revision you send</span>
+          </div>
+        </div>
+
+        <!-- preview -->
+        <div style="background:#E2DDD4;display:flex;flex-direction:column;min-width:0;overflow:hidden">
+          <div style="height:48px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px">
+            <span style="font-weight:600">Preview</span><span style="color:#6E655A">4 pages · A4</span>
+            <div style="flex:1"></div>
+            <div style="display:flex;gap:2px;padding:3px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:9px;font:12px 'JetBrains Mono',monospace;color:#5A5248"><span style="padding:4px 9px">−</span><span style="padding:4px 9px;color:#2A2520">86%</span><span style="padding:4px 9px">+</span></div>
+          </div>
+          <div style="flex:1;min-height:0;display:flex;gap:18px;padding:4px 18px 18px">
+            <div style="width:74px;flex:none;display:flex;flex-direction:column;gap:12px;align-items:center">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:62px;height:88px;background:#FFFFFF;box-shadow:0 0 0 2px #2A2520;padding:6px;display:flex;flex-direction:column;gap:3px"><span style="height:4px;width:70%;background:#2A2520"></span><span style="height:5px;background:#F2C4BE"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:2px;background:#D4CDC1"></span></div><span style="font-size:11px;font-weight:600">1</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:62px;height:88px;background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.15);padding:6px;display:flex;flex-direction:column;gap:4px"><span style="height:3px;width:50%;background:#8C8276"></span><span style="height:32px;background:#EFEBE3;border:1px solid #BFB5A5"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:2px;background:#D4CDC1"></span></div><span style="font-size:11px;color:#6E655A">2 · S1</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:62px;height:88px;background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.15);padding:6px;display:flex;flex-direction:column;gap:4px"><span style="height:3px;width:50%;background:#8C8276"></span><span style="height:32px;background:#EFEBE3;border:1px solid #BFB5A5"></span><span style="height:2px;background:#D4CDC1"></span></div><span style="font-size:11px;color:#6E655A">3 · S2</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:62px;height:88px;background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.15);padding:6px;display:flex;flex-direction:column;gap:4px"><span style="height:3px;width:50%;background:#8C8276"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:2px;background:#D4CDC1"></span><span style="height:14px;width:40%;background:#EFEBE3;border:1px solid #BFB5A5"></span></div><span style="font-size:11px;color:#6E655A">4 · Hinges</span></div>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;justify-content:center;overflow:hidden">
+              <div style="width:520px;height:735px;flex:none;background:#FFFFFF;box-shadow:0 4px 18px rgba(40,30,15,.18);padding:34px 36px;display:flex;flex-direction:column;gap:14px;font-size:10.5px;color:#222">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                  <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:17px;font-weight:600">Kitchen base 800</span><span style="color:#666">Pacote de corte · revisão 42 · 25/09/2026 14:40</span></div>
+                  <span style="font:9px 'JetBrains Mono',monospace;color:#666;text-align:right">pmc-7a1e<br>fp 3c9d…e21</span>
+                </div>
+                <div style="padding:8px 10px;border:1.5px solid #C4453A;color:#A5362C;font-weight:600;letter-spacing:.06em;text-align:center">RASCUNHO / NÃO USAR PARA CORTE</div>
+                <div style="padding:8px 10px;background:#FCF1EF;color:#6B2A22;line-height:1.5">Pendência: Painel traseiro (b-91c0) sem chapa alocada.</div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;font-weight:600">Chapas</span>
+                  <div style="display:grid;grid-template-columns:40px 1fr 90px 70px 60px;gap:4px 8px;font-size:10px">
+                    <span style="color:#666">ID</span><span style="color:#666">Material</span><span style="color:#666">Medida (mm)</span><span style="color:#666">Situação</span><span style="color:#666;text-align:right">Preço</span>
+                    <span style="font-family:'JetBrains Mono',monospace">S1</span><span>MDF White 18</span><span style="font-family:'JetBrains Mono',monospace">2750×1830</span><span>comprar</span><span style="font-family:'JetBrains Mono',monospace;text-align:right">289,90</span>
+                    <span style="font-family:'JetBrains Mono',monospace">S2</span><span>MDF Oak veneer 18</span><span style="font-family:'JetBrains Mono',monospace">2750×1830</span><span>comprar</span><span style="font-family:'JetBrains Mono',monospace;text-align:right">289,90</span>
+                  </div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;font-weight:600">Peças</span>
+                  <div style="display:grid;grid-template-columns:1fr 100px 56px 32px 40px;gap:4px 8px;font-size:10px">
+                    <span style="color:#666">Peça</span><span style="color:#666">C × L × E (mm)</span><span style="color:#666">IDs</span><span style="color:#666">Qtd</span><span style="color:#666">Chapa</span>
+                    <sc-for list="{{ pdfRows }}" as="r" hint-placeholder-count="7">
+                      <span>{{ r.name }}</span><span style="font-family:'JetBrains Mono',monospace">{{ r.dims }}</span><span style="font-family:'JetBrains Mono',monospace;color:#555">{{ r.ids }}</span><span style="font-family:'JetBrains Mono',monospace">{{ r.qty }}</span><span style="font-family:'JetBrains Mono',monospace">{{ r.sheet }}</span>
+                    </sc-for>
+                  </div></div>
+                <div style="display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid #DDD"><span style="font-size:11.5px;font-weight:600">Estimativa</span>
+                  <div style="display:flex;justify-content:space-between"><span>Material a comprar</span><span style="font-family:'JetBrains Mono',monospace">BRL 579,80</span></div>
+                  <div style="display:flex;justify-content:space-between"><span>12 cortes × taxa</span><span>desconhecida</span></div>
+                  <span style="color:#777;font-size:9px;margin-top:4px">Estimativa incompleta. Exclui impostos, frete, taxas de preparação e descontos. Diagramas não são gabaritos de corte.</span>
+                </div>
+                <div style="flex:1"></div>
+                <div style="display:flex;justify-content:space-between;color:#888;font-size:9px"><span>Plan My Cabinet</span><span>1 / 4</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- history -->
+        <div style="background:#FBFAF7;border-left:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:16px 16px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">EXPORT HISTORY</div>
+          <div style="padding:0 12px;display:flex;flex-direction:column;gap:8px">
+            <div style="padding:12px;border-radius:9px;background:#FFFFFF;border:1px solid #EBD2B0;display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;flex:1">kitchen-base-r41.pdf</span><span style="font-size:10.5px;padding:1px 7px;border-radius:9px;background:#FCF4E7;color:#8A520A">out of date</span></div>
+              <span style="font-size:11.5px;color:#6E655A">Shop-ready · pt-BR · mm · 24/09 18:12</span>
+              <span style="font-size:12px;color:#5C3E10;line-height:1.45">Since then: Shelf width 540 → 537, Back panel added. Don't send this one as the current plan.</span>
+              <span style="font:10px 'JetBrains Mono',monospace;color:#8C8276">sha256 91ab…0c4f</span>
+            </div>
+            <div style="padding:12px;border-radius:9px;background:#F4F1EC;display:flex;flex-direction:column;gap:4px;color:#6E655A">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:500;flex:1;color:#5A5248">kitchen-base-draft.pdf</span><span style="font-size:10.5px">superseded</span></div>
+              <span style="font-size:11.5px">Draft · en · mm · 22/09 10:03</span>
+            </div>
+          </div>
+          <div style="height:1px;background:#E6E0D6;margin:16px 0"></div>
+          <div style="padding:0 16px;display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">BEFORE YOU SEND</span>
+            <span style="font-size:12px;color:#5A5248;line-height:1.55">Confirm the blade kerf, edge trimming, cut order and no-stacking with the shop. Match part IDs between the list and each sheet.</span>
+          </div>
+          <div style="flex:1"></div>
+          <div style="margin:14px;padding:12px;border-radius:9px;background:#F4F1EC;display:flex;gap:10px;align-items:center">
+            <span style="display:block;width:16px;height:16px;flex:none;background:#6E655A;mask:url(icons/folder.svg) center/contain no-repeat"></span>
+            <span style="font-size:12px;color:#5A5248;line-height:1.4">Save the project after exporting to keep the receipt.</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:#FBFAF7;border-top:1px solid #DDD7CD;font-size:11.5px;color:#6E655A;white-space:nowrap">
+        <span style="display:flex;align-items:center;gap:5px"><span style="display:block;width:12px;height:12px;background:#3F7D4E;mask:url(icons/check.svg) center/contain no-repeat"></span>Kerf 5 mm confirmed</span>
+        <span>Revision 42</span>
+        <span style="display:flex;align-items:center;gap:5px;color:#8A5A12"><span style="display:block;width:12px;height:12px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>Last export out of date</span>
+        <span style="flex:1"></span>
+        <span>Est. new spending <span style="font-family:'JetBrains Mono',monospace;color:#2A2520">BRL 579,80</span> + cut fee unknown</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      pdfRows: [
+        { name: 'Lateral', dims: '720 × 560 × 18', ids: '12ad, 40e2', qty: '2', sheet: 'S1' },
+        { name: 'Base', dims: '764 × 560 × 18', ids: '5b17', qty: '1', sheet: 'S1' },
+        { name: 'Prateleira', dims: '764 × 537 × 18', ids: '7f3a', qty: '1', sheet: 'S1' },
+        { name: 'Travessa', dims: '764 × 100 × 18', ids: '6c03, 6c9e', qty: '2', sheet: 'S1' },
+        { name: 'Porta', dims: '716 × 397 × 18', ids: 'a711, a7f4', qty: '2', sheet: 'S2' },
+        { name: 'Painel traseiro', dims: '764 × 684 × 3', ids: '91c0', qty: '1', sheet: '—' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

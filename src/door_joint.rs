@@ -238,6 +238,14 @@ pub fn preview(
     let origin = door_world
         .transform_point([x, hinge.door_y.micrometres() as f64 / 1000.0, z])
         .map_err(|_| JointError::InvalidAxis)?;
+    // Positive opening moves the free edge away from the inside cup face.
+    // A global sign would open one of a mirrored pair into the cabinet.
+    // Persisted legacy axes are not rewritten: needs_review compares them
+    // with this proposal and requires an explicit undoable reconfirmation.
+    let direction = match (hinge.side.door_edge, hinge.side.door_face) {
+        (BoardEdge::MinX, BoardFace::MinZ) | (BoardEdge::MaxX, BoardFace::MaxZ) => -1.0,
+        _ => 1.0,
+    };
     let joint = DoorJoint {
         id,
         moving_root_id: root,
@@ -246,7 +254,7 @@ pub fn preview(
         closed_world_pose: world,
         closed_local_pose: local,
         axis_origin_mm: origin,
-        axis_direction: door_world.rotation.rotate([0.0, 1.0, 0.0]),
+        axis_direction: door_world.rotation.rotate([0.0, direction, 0.0]),
     };
     check(project, &joint)?;
     let mut candidate = project.clone();
@@ -560,6 +568,124 @@ mod tests {
     }
 
     #[test]
+    fn mirrored_edges_and_faces_open_away_from_cup_face_in_rotated_nested_roots() {
+        for edge in [BoardEdge::MinX, BoardEdge::MaxX] {
+            for face in [BoardFace::MinZ, BoardFace::MaxZ] {
+                let (mut p, root, door, mount, handle, cabinet) = fixture();
+                p.assemblies
+                    .iter_mut()
+                    .find(|a| a.id == cabinet)
+                    .unwrap()
+                    .pose
+                    .rotation = Quaternion::normalized(0.7, 0.2, -0.3, 0.4).unwrap();
+                for hinge in &mut p.hinge_installations {
+                    hinge.side.door_edge = edge;
+                    hinge.side.door_face = face;
+                }
+                let proposed = preview(
+                    &p,
+                    Uuid::new_v4(),
+                    root,
+                    mount,
+                    p.hinge_installations.iter().map(|h| h.id).collect(),
+                )
+                .unwrap();
+                assert!(
+                    proposed
+                        .installation_statuses
+                        .iter()
+                        .all(|s| s.issues.is_empty())
+                );
+                p.door_joints.push(proposed.joint);
+                let original = p.clone();
+                let joint = &p.door_joints[0];
+                let closed = world_pose(&p, door).unwrap();
+                let point = [
+                    if edge == BoardEdge::MinX { 100.0 } else { 0.0 },
+                    50.0,
+                    if face == BoardFace::MinZ { 0.0 } else { 18.0 },
+                ];
+                let before = closed.transform_point(point).unwrap();
+                let open = derived_poses(&p, joint, 60.0).unwrap();
+                let after = open
+                    .iter()
+                    .find(|(id, _)| *id == door)
+                    .unwrap()
+                    .1
+                    .transform_point(point)
+                    .unwrap();
+                let outward = closed.rotation.rotate([
+                    0.0,
+                    0.0,
+                    if face == BoardFace::MinZ { 1.0 } else { -1.0 },
+                ]);
+                let displacement: f64 = (0..3).map(|i| (after[i] - before[i]) * outward[i]).sum();
+                assert!(
+                    (displacement - 100.0 * 60.0_f64.to_radians().sin()).abs() < 1e-8,
+                    "{edge:?}/{face:?}: {displacement}"
+                );
+                assert!(open.iter().any(|(id, _)| *id == handle));
+                assert!(!open.iter().any(|(id, _)| *id == mount || *id == cabinet));
+                for (id, pose) in derived_poses(&p, joint, 0.0).unwrap() {
+                    assert_eq!(pose, world_pose(&p, id).unwrap());
+                }
+                assert_eq!(p, original);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_axis_load_is_unchanged_until_reconfirmation_and_undo_restores_review() {
+        let (mut p, root, door, mount, _, _) = fixture();
+        let proposed = preview(
+            &p,
+            Uuid::new_v4(),
+            root,
+            mount,
+            p.hinge_installations.iter().map(|h| h.id).collect(),
+        )
+        .unwrap();
+        let mut legacy = proposed.joint;
+        legacy.axis_direction = world_pose(&p, door)
+            .unwrap()
+            .rotation
+            .rotate([0.0, 1.0, 0.0]);
+        p.door_joints.push(legacy.clone());
+        let bytes = serde_json::to_vec(&p).unwrap();
+        let mut editor = crate::persistence::prepare_bytes(&bytes)
+            .unwrap()
+            .into_editor();
+        assert_eq!(editor.project().door_joints[0], legacy);
+        assert_eq!(serde_json::to_vec(editor.project()).unwrap(), bytes);
+        assert!(!editor.is_dirty());
+        assert_eq!(
+            opening_limit(editor.project(), &legacy),
+            Err(JointError::NeedsReview)
+        );
+        let proposal = preview(
+            editor.project(),
+            legacy.id,
+            root,
+            mount,
+            legacy.hinge_installation_ids.clone(),
+        )
+        .unwrap();
+        confirm(&mut editor, proposal).unwrap();
+        assert_eq!(
+            opening_limit(editor.project(), &editor.project().door_joints[0]),
+            Ok(105.0)
+        );
+        editor.undo().unwrap();
+        assert_eq!(editor.project().door_joints[0], legacy);
+        assert!(needs_review(editor.project(), &legacy));
+        editor.redo().unwrap();
+        assert!(!needs_review(
+            editor.project(),
+            &editor.project().door_joints[0]
+        ));
+    }
+
+    #[test]
     fn nested_door_and_handle_share_one_derived_transform_and_mount_stays_fixed() {
         let (p, root, door, mount, handle, cabinet) = fixture();
         let hinges = p.hinge_installations.iter().map(|h| h.id).collect();
@@ -763,8 +889,8 @@ mod tests {
         )
         .unwrap();
         p.door_joints.push(proposed.joint);
-        let initial = p.clone();
         let mut editor = ProjectEditor::new(p).unwrap();
+        let initial = editor.project().clone();
         delete_object(&mut editor, door).unwrap();
         assert!(editor.project().allocations.is_empty());
         assert!(editor.project().hinge_installations.is_empty());

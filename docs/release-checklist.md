@@ -1,5 +1,167 @@
 # Release acceptance evidence
 
+## Desktop redesign — acceptance pending
+
+**Hardware precision-fix follow-up (`dist/manual-review-4`):** user testing
+exposed falsely blocked left-door motion after opening the supplied fixture.
+The default JSON float parser shifted a derived axis by one ULP. Enabling
+round-trip float parsing fixes save/reopen without changing exact review guards
+or silently rewriting legacy axes. Full Rust tests, formatting, all-target check,
+warnings-denied Clippy, whitespace and strict OpenSpec validation passed; log:
+`…/opencode/hardware-roundtrip-full-tests.log`. The arm64 package built and passed
+plist/deep strict signature verification. It includes the count-card letter-spacing
+fix. A fresh `Hardware review v2.pmcab` is ready in `dist/manual-review/test-data`;
+the original remains untouched. Native motion acceptance is still pending.
+
+The subsequent user motion batch passed with the v2 fixture. Its screenshot
+shows outward 60° left-door preview, H1 selection and the approximate-motion
+disclosure; the user reports the batch works. Angle tick labels were visibly
+mispositioned, so their proportional layout is corrected in source with focused
+geometry/overlap regressions. That correction postdates `manual-review-4` and
+still needs inclusion in a later package. Other reference differences remain open.
+
+**Latest responsive follow-up (`dist/manual-review-3`):** the full Rust suite,
+formatting, all-target check, warnings-denied all-target Clippy, whitespace check
+and strict OpenSpec validation passed. The macOS arm64 bundle built successfully;
+plist lint and deep/strict ad-hoc signature verification passed. Log:
+`…/opencode/batch3-cards-full-tests.log`. Native retest is pending for the new
+localized count-card layout and inspector wrapping; the user already confirmed
+F-to-centre works in Design. The earlier `manual-review-2` screenshots confirm
+status overflow, visible repair buttons, fitted PDF and truthful empty Hardware
+guidance. The ready-made Hardware fixture is
+`dist/manual-review/test-data/Hardware review.pmcab`; its generator refuses
+overwrites. These results do not close remaining reference-fidelity or release
+acceptance tasks, and do not establish notarization or other-platform support.
+
+The subsequent three user screenshots pass the targeted `manual-review-3`
+Design HUD, Cut plan optimizer wrapping and readable Handoff count-card checks
+at pt-BR/130%. A minor count-label letter-spacing correction and its passing
+regression are source-only after this package. Full reference-fidelity acceptance
+is still pending; the next user batch covers the prepared Hardware fixture.
+
+**User-run manual-review build, batch 1:** the user confirmed successful launch,
+native legacy Open, upgrade Cancel, then accepted upgrade and save. The missing
+upgrade screenshot does not invalidate this explicitly reported interaction;
+it is user-observed evidence, not an assistant capture. The former native-driver
+upgrade-selection blocker is resolved by user testing. The user also reports
+passing Stock scrolling/edit-cancel and the explicit kerf-confirmation flow,
+with four attached Design/Stock/kerf screenshots. The next reply explicitly
+confirmed step 6 Save As → quit → reopen passed. User batch 2 also passed
+pending-edit protection, repair navigation/cancellation, populated multi-page
+draft PDF export/review and overwrite cancellation without another receipt.
+Two screenshots show the disabled-Apply prompt and selected repair part/cuts.
+The Batch 2 PDF was not attached; its result is user-observed evidence.
+
+### Latest packaged walkthrough (2026-09-27, modal safety build)
+
+`…/opencode/apply-package-modal-0927/Plan My Cabinet.app` was rebuilt after
+the modal safety changes. Before packaging, formatting, all-target check,
+warnings-denied Clippy and the full Rust suite passed (log:
+`…/opencode/modal-complete-suite.log`). With the isolated
+`…/opencode/native-handedness-home` and real Metal/AppKit:
+
+- Reopened the saved Drawers workflow (23 boards, four assemblies, three owned
+  sheets), reviewed all four Handoff pages and exported through the system Save
+  sheet as `Drawers reviewed packet.pdf`. Shop-ready remained disabled because
+  22 boards are unallocated and kerf remains unconfirmed; this was a **draft**.
+- Poppler reports four A4 pages, 734005 bytes. Independent PDF reading confirms
+  all 23 parts, unresolved issues, the allocated left-side sheet drawing and its
+  two physical cuts, and DRAFT / NOT FOR CUTTING on every page. Receipt hash and
+  actual file SHA-256 match:
+  `4c76a804941e6a2a43d1d5e35c05579d4e61b823bedb304fff0e8489f9636cd8`.
+- Exporting to the same destination opened the explicit Replace PDF prompt.
+  Enter on visibly focused **Cancel** reported cancellation and preserved that
+  exact hash. There is one successful receipt, not a second cancelled receipt.
+- Native **Save As** wrote `Drawers packaged Save As.pmcab`; compared with
+  `Drawers workflow.pmcab`, only `export_records` differs. Native Welcome recent
+  reopen retained all counts and showed **Last export is current** in Handoff.
+  The package then closed normally without an unsaved-work prompt.
+- Accepted schema upgrade is **still pending**. The Open sheet appeared, but
+  the computer-use driver could not select the legacy test file in its icon
+  view. Cancel worked and the copied schema-1 bytes remain unchanged. This is
+  an automation limitation, not a passed upgrade or diagnosed product defect.
+
+This bundle predates the subsequent explicit kerf-confirmation modal; rebuild
+again before final release acceptance. Task 15.5 remains open. The following
+entries are historical checkpoints, not claims about the newest source.
+
+2026-09-27 follow-up: rebuilt the arm64 signed bundle after the native
+accessibility and Stock/Hardware fixes. It passed `plutil -lint` and deep
+`codesign --verify --strict`; offline native Save/Welcome recent/reopen,
+missing-file display/Remove, native legacy Open, and the **new** schema-1
+upgrade notice's Cancel path were exercised with isolated app data and
+temporary files (the Dev test copies were cleared). The original legacy
+bytes were unchanged after Cancel. PDF picker/export, explicit native
+upgrade acceptance, full workflow and visual reference comparisons remain
+unverified; 15.5 is not complete.
+The later `…/opencode/apply-package-post-trims-0927/` bundle includes the
+Stock trim-stack and Hardware revision-label corrections; plist/signature
+verification and its 1280 × 875 Metal Hardware capture passed. In an isolated
+`HOME` its native Handoff preview displayed a one-page draft, the explicit
+review enabled Export PDF, and the system Save sheet wrote a PDF. The app
+reported the current receipt; `pdfinfo` verified one A4 page (143604 bytes),
+`pdffonts` found three embedded CID TrueType faces and `pdftotext` found the
+draft title/kerf warning. The PDF was moved to
+`…/opencode/native-final-home-0927/exported-draft.pdf`, and the temporary
+Dev test document cleared. This was an **empty** draft, not a populated
+multi-page design; accepted schema upgrade, Save As, full cross-workspace
+workflow and clean-machine checks are still pending.
+
+The 2026-09-27 interactive Metal walkthrough opened and cancelled the native
+Save sheet in an isolated-home **development** build after generating a Drawers
+assembly and stock piece. It found and fixed two AccessKit focused-ID crashes
+in the template wizard; the bundle used **then** predates those fixes. It did not
+save/reopen, open the schema-upgrade notice, or write a PDF with the packaged
+binary, so 15.5 remains pending rather than inferred from this smoke check.
+
+**2026-09-27 current checkout package smoke:** `python3
+scripts/package-release.py macos-arm64 --out-dir …/opencode/apply-package-final`
+completed from the current source. The ad-hoc signed bundle is arm64 Mach-O;
+`plutil -lint` and `codesign --verify --deep --strict` pass. Its Licenses
+directory contains 487 files including bundled font notices and dependency
+inventory. The **packaged executable**, not the unbundled development binary,
+produced a real Metal 900 × 650 pt-BR Design capture and manifest at
+`…/opencode/apply-packaged-capture/` with 2× pixels and no project file opened.
+This verifies offline embedded rendering/assets on this host, not a network-off
+clean-machine run. The newer package follow-up above covers some of the native
+picker and schema-1 checks, but not Save As, accepted upgrade or PDF write;
+task 15.5 remains open. The existing ad-hoc signature is not
+notarization or a Developer ID distribution signature; Linux is unverified and
+not a supported release target.
+
+The [redesign acceptance matrix](redesign-acceptance.md) tracks all ten reference
+screens, missing states, nine delta capabilities and per-stage evidence gates.
+Baseline and widget-gallery capture setup, the five-route shell, and functional
+Welcome/Settings surfaces are available. The redesigned responsive/native
+interaction matrix and full ten-screen comparison are unfinished. Earlier
+isolated Metal attempts timed out, but a later foreground logged-in session
+produced all five workspace, empty Welcome and three Settings captures. The
+native comparison **found material layout and clipping failures** in Design,
+Stock, Cut plan, Hardware, Handoff, Welcome and Settings; see the foreground
+review at the top of the acceptance matrix. The full sequential
+headless gate and measured optimizer workload are recorded in the matrix, but
+no native redesigned-screen acceptance is claimed. On 2026-09-27 all five
+offline packaging/license unit tests passed; a new bundle has not yet been
+built or interactively launched from this checkout. The historical waivers
+below concern the earlier change and do
+not waive native screenshot fidelity or interaction checks for this redesign.
+The 2026-09-26 foundation evidence (native gallery, offline icon raster,
+typography and licensing checks) is in [redesign-theme.md](redesign-theme.md).
+The offline macOS bundle assembled successfully, but its ad-hoc signed binary's
+capture timed out; an unbundled release binary captured the gallery. This is
+not a packaged visual or redesigned-screen pass.
+
+On 2026-09-27 the post-Handoff/Hardware/Cut plan host gate passed formatting,
+all-target check, warnings-denied Clippy and the full sequential Rust suite;
+see the timestamped transcript and limitations in the acceptance matrix.
+New board/Material modal, witness inspector and optimizer comparison tests
+were added, but no native visual approval follows from them. At that checkpoint,
+capture retries still received no native screenshot event even after 1200
+frames; the temporary retry was removed. The later successful foreground run
+used a supported `Bgra8Unorm` target and real screenshot callbacks, not a
+headless frame. Reflow and recapture the material reference deviations before
+claiming native acceptance.
+
 **Revised acceptance scope (2026-09-26):** macOS arm64 only. The user removed
 Linux release acceptance and explicitly waived interactive and separate
 clean-machine macOS GUI validation. All 65 revised OpenSpec implementation

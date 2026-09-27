@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:56px;display:flex;flex-direction:column;gap:28px;width:2560px">
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:1000px">
+    <div style="display:flex;align-items:center;gap:12px"><span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">9</span><span style="font-size:22px;font-weight:600">Settings</span></div>
+    <div style="font-size:13.5px;color:#5A5248;line-height:1.55">One window, opened from the rail (sliders icon) or ⌘,. Project settings are saved in the .pmcab file and each change is one undoable edit; app settings are local to this computer. It uses the dialog pattern with a section list on the left. Three sections shown.</div>
+  </div>
+  <div style="display:flex;gap:48px;align-items:flex-start">
+
+    <!-- 9a Cutting -->
+    <div id="9a" style="display:flex;flex-direction:column;gap:12px">
+      <span style="font:600 13px 'JetBrains Mono',monospace;color:#6E655A">9a · Project › Cutting</span>
+      <div data-screen-label="Settings cutting" style="width:780px;height:560px;display:flex;flex-direction:column;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+        <div style="flex:1;min-height:0;display:flex">
+          <div style="width:210px;flex:none;background:#F4F1EC;border-right:1px solid #E6E0D6;padding:16px 10px;display:flex;flex-direction:column;gap:2px">
+            <span style="padding:0 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">PROJECT</span>
+            <span style="padding:0 8px 8px;font-size:11.5px;color:#6E655A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Kitchen base 800</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;background:#F6E3CB;color:#5C3309;font-weight:500"><span style="display:block;width:15px;height:15px;background:#8A4F0E;mask:url(icons/cut.svg) center/contain no-repeat"></span>Cutting</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/grid.svg) center/contain no-repeat"></span>Grid &amp; units</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/sheet.svg) center/contain no-repeat"></span><span style="flex:1">Costs &amp; currency</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+            <span style="padding:18px 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">APP</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/globe.svg) center/contain no-repeat"></span>General</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/command.svg) center/contain no-repeat"></span>Shortcuts</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/list.svg) center/contain no-repeat"></span>About</div>
+          </div>
+          <div style="flex:1;min-width:0;padding:22px 26px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:17px;font-weight:600">Cutting</span><span style="font-size:12.5px;color:#6E655A">Used by first-fit, the optimizer, cut sequences and the shop packet.</span></div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:10px 18px;align-items:start">
+              <div style="display:flex;flex-direction:column;gap:2px;padding-top:7px"><span style="font-weight:500">Blade kerf</span><span style="font-size:11.5px;color:#8C8276">Width of one saw pass</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:140px;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace">5<span style="color:#8C8276;font-size:12px;font-family:'Noto Sans'">mm</span></div>
+                  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#3F7D4E;font-weight:500"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/check.svg) center/contain no-repeat"></span>Confirmed with shop · 24/09</span>
+                </div>
+                <div style="padding:12px;border-radius:9px;background:#FFFFFF;border:1px solid #E6E0D6;display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;align-items:center;gap:9px"><span style="width:16px;height:16px;border-radius:4px;background:#2A2520;display:flex;align-items:center;justify-content:center"><span style="display:block;width:11px;height:11px;background:#FBFAF7;mask:url(icons/check.svg) center/contain no-repeat"></span></span><span style="font-weight:500">I confirmed this kerf and cutting practice with the shop</span></div>
+                  <span style="font-size:12px;color:#6E655A;line-height:1.5;padding-left:25px">Required for Shop-ready packets. Changing the kerf clears this and re-checks every placement.</span>
+                </div>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Cutting model</span><span style="font-size:11.5px;color:#8C8276">What plans assume</span></div>
+              <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:#3A332C">
+                <span style="display:flex;gap:8px"><span style="color:#8C8276">•</span>Straight, full-span cuts parallel to an edge</span>
+                <span style="display:flex;gap:8px"><span style="color:#8C8276">•</span>One physical pass per split, trims included</span>
+                <span style="display:flex;gap:8px"><span style="color:#8C8276">•</span>No stacking, stopped, angled or interior cuts</span>
+                <a href="#" style="font-size:12px;margin-top:2px">Worked examples →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+          <span style="font-size:11.5px;color:#8C8276;flex:1">Project changes apply immediately and can be undone</span>
+          <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 16px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Done<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">Esc</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9b Costs -->
+    <div id="9b" style="display:flex;flex-direction:column;gap:12px">
+      <span style="font:600 13px 'JetBrains Mono',monospace;color:#6E655A">9b · Project › Costs &amp; currency</span>
+      <div data-screen-label="Settings costs" style="width:780px;height:560px;display:flex;flex-direction:column;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+        <div style="flex:1;min-height:0;display:flex">
+          <div style="width:210px;flex:none;background:#F4F1EC;border-right:1px solid #E6E0D6;padding:16px 10px;display:flex;flex-direction:column;gap:2px">
+            <span style="padding:0 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">PROJECT</span>
+            <span style="padding:0 8px 8px;font-size:11.5px;color:#6E655A">Kitchen base 800</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/cut.svg) center/contain no-repeat"></span>Cutting</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/grid.svg) center/contain no-repeat"></span>Grid &amp; units</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;background:#F6E3CB;color:#5C3309;font-weight:500"><span style="display:block;width:15px;height:15px;background:#8A4F0E;mask:url(icons/sheet.svg) center/contain no-repeat"></span><span style="flex:1">Costs &amp; currency</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+            <span style="padding:18px 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">APP</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/globe.svg) center/contain no-repeat"></span>General</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/command.svg) center/contain no-repeat"></span>Shortcuts</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/list.svg) center/contain no-repeat"></span>About</div>
+          </div>
+          <div style="flex:1;min-width:0;padding:22px 26px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:17px;font-weight:600">Costs &amp; currency</span><span style="font-size:12.5px;color:#6E655A">Estimates only. Taxes, delivery, setup fees and stacking discounts are excluded.</span></div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:10px 18px;align-items:start">
+              <div style="display:flex;flex-direction:column;gap:2px;padding-top:7px"><span style="font-weight:500">Fee per cut</span><span style="font-size:11.5px;color:#8C8276">Charged per saw pass</span></div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:160px;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB;font-family:'JetBrains Mono',monospace;color:#B5AC9F">unknown<span style="color:#8C8276;font-size:12px;font-family:'Noto Sans'">BRL</span></div>
+                  <span style="font-size:12px;padding:3px 9px;border-radius:6px;background:#ECE8E1">Free (0)</span>
+                </div>
+                <span style="font-size:12px;color:#6E655A;line-height:1.5">Leave blank if you don't know it yet: the estimate shows as incomplete, never as zero. Trims count as cuts.</span>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px;padding-top:7px"><span style="font-weight:500">Currency</span><span style="font-size:11.5px;color:#8C8276">One per project</span></div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:160px;height:34px;display:flex;align-items:center;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace">BRL</div>
+                  <span style="height:30px;display:flex;align-items:center;padding:0 12px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Change…</span>
+                </div>
+                <span style="font-size:12px;color:#6E655A;line-height:1.5">There's no exchange-rate conversion. Changing it asks you to re-enter prices or relabel the existing ones.</span>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Current estimate</span></div>
+              <div style="padding:12px;border-radius:9px;background:#FCF4E7;border:1px solid #EBD2B0;display:grid;grid-template-columns:1fr auto;row-gap:5px;font-size:12.5px">
+                <span style="color:#5C3E10">Material to purchase</span><span style="font-family:'JetBrains Mono',monospace">579,80</span>
+                <span style="color:#5C3E10">12 cuts × fee</span><span style="color:#8A5A12">unknown</span>
+                <span style="font-weight:600;color:#5C3E10">New spending</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600">incomplete</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+          <span style="font-size:11.5px;color:#8C8276;flex:1">Project changes apply immediately and can be undone</span>
+          <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 16px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Done<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">Esc</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9c General -->
+    <div id="9c" style="display:flex;flex-direction:column;gap:12px">
+      <span style="font:600 13px 'JetBrains Mono',monospace;color:#6E655A">9c · App › General</span>
+      <div data-screen-label="Settings general" style="width:780px;height:560px;display:flex;flex-direction:column;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+        <div style="flex:1;min-height:0;display:flex">
+          <div style="width:210px;flex:none;background:#F4F1EC;border-right:1px solid #E6E0D6;padding:16px 10px;display:flex;flex-direction:column;gap:2px">
+            <span style="padding:0 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">PROJECT</span>
+            <span style="padding:0 8px 8px;font-size:11.5px;color:#6E655A">Kitchen base 800</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/cut.svg) center/contain no-repeat"></span>Cutting</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/grid.svg) center/contain no-repeat"></span>Grid &amp; units</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/sheet.svg) center/contain no-repeat"></span><span style="flex:1">Costs &amp; currency</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+            <span style="padding:18px 8px 6px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">APP</span>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;background:#F6E3CB;color:#5C3309;font-weight:500"><span style="display:block;width:15px;height:15px;background:#8A4F0E;mask:url(icons/globe.svg) center/contain no-repeat"></span>General</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/command.svg) center/contain no-repeat"></span>Shortcuts</div>
+            <div style="height:32px;display:flex;align-items:center;gap:9px;padding:0 10px;border-radius:7px;color:#3A332C"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/list.svg) center/contain no-repeat"></span>About</div>
+          </div>
+          <div style="flex:1;min-width:0;padding:22px 26px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:17px;font-weight:600">General</span><span style="font-size:12.5px;color:#6E655A">Stored on this computer, not in project files.</span></div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 18px;align-items:start">
+              <div style="display:flex;flex-direction:column;gap:2px;padding-top:5px"><span style="font-weight:500">Interface language</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12.5px;width:280px"><span style="flex:1;text-align:center;padding:5px 0;border-radius:5px;background:#FBFAF7;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">English</span><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Português (BR)</span></div>
+                <span style="font-size:12px;color:#6E655A">Never converts prices or units. PDF language is chosen at export.</span>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Recovery</span><span style="font-size:11.5px;color:#8C8276">Autosave</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:12.5px;color:#3A332C;line-height:1.5">A recovery snapshot is written 30 s after your last edit. It never replaces your saved file.</span>
+                <div style="display:flex;gap:12px;font-size:12px"><a href="#">Show recovery folder</a><a href="#" style="color:#8C8276">Clear old snapshots…</a></div>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Viewport</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px"><span style="width:32px;height:18px;border-radius:9px;background:#2A2520;position:relative"><span style="position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#FBFAF7"></span></span><span>Show navigation hints in the status bar</span></div>
+                <div style="display:flex;align-items:center;gap:10px"><span style="width:32px;height:18px;border-radius:9px;background:#DDD7CD;position:relative"><span style="position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#FBFAF7"></span></span><span>Invert scroll-to-zoom</span></div>
+                <div style="display:flex;align-items:center;gap:10px"><span style="width:32px;height:18px;border-radius:9px;background:#2A2520;position:relative"><span style="position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#FBFAF7"></span></span><span>Tint boards by material colour</span></div>
+              </div>
+              <div style="height:1px;background:#EDE8E0;grid-column:1 / 3"></div>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Interface scale</span></div>
+              <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font:12px 'JetBrains Mono',monospace;width:280px"><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">90%</span><span style="flex:1;text-align:center;padding:5px 0;border-radius:5px;background:#FBFAF7;font-weight:500">100%</span><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">115%</span><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">130%</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+          <span style="font-size:11.5px;color:#8C8276;flex:1">App settings save automatically</span>
+          <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 16px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Done<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">Esc</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

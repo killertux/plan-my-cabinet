@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:48px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">7a</span>
+    <span style="font-size:18px;font-weight:600">Hardware workspace</span>
+  </div>
+  <div style="font-size:13px;color:#6E655A;max-width:1440px">Pinned catalog, hinge installations and door relationships on the left; the viewport previews door motion (display only, the saved pose stays closed); the inspector edits one installation, with the derived cup and plate references and warnings kept visible.</div>
+
+  <div data-screen-label="Hardware" style="width:1440px;height:900px;display:flex;background:#F4F1EC;font-family:'Noto Sans',sans-serif;color:#2A2520;font-size:13px;overflow:hidden;border-radius:10px;box-shadow:0 1px 0 #D4CDC1,0 20px 50px rgba(60,45,25,.18)">
+    <div style="width:60px;flex:none;background:#F4F1EC;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px">
+      <div style="width:32px;height:32px;border-radius:8px;background:#2A2520;color:#F4C27A;display:flex;align-items:center;justify-content:center;margin-bottom:12px"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/cube.svg) center/contain no-repeat"></span>Design</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/material.svg) center/contain no-repeat"></span>Stock</div>
+      <div style="position:relative;width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sheet.svg) center/contain no-repeat"></span>Cut plan<span style="position:absolute;top:5px;right:9px;width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;background:#F6E3CB;color:#8A4F0E;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;font-weight:500"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/hinge.svg) center/contain no-repeat"></span>Hardware</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Handoff</div>
+      <div style="flex:1"></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/globe.svg) center/contain no-repeat"></span></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sliders.svg) center/contain no-repeat"></span></div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="height:46px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px 0 16px;background:#FBFAF7;border-bottom:1px solid #DDD7CD">
+        <span style="color:#6E655A">Projects</span><span style="color:#B5AC9F">/</span><span style="font-weight:600">Kitchen base 800</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span><span style="color:#6E655A;font-size:11.5px;white-space:nowrap">unsaved</span>
+        <div style="flex:1"></div>
+        <div style="width:440px;height:30px;display:flex;align-items:center;gap:9px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;color:#8C8276"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/search.svg) center/contain no-repeat"></span><span style="flex:1">Search commands, parts, materials…</span><span style="font:11px 'JetBrains Mono',monospace;padding:1px 6px;border:1px solid #E6E0D6;border-radius:4px">⌘K</span></div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:2px;color:#5A5248">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/undo.svg) center/contain no-repeat"></span></div>
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px;opacity:.4"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/redo.svg) center/contain no-repeat"></span></div>
+        </div>
+        <div style="height:30px;display:flex;align-items:center;padding:0 12px;border-radius:7px;background:#ECE8E1;border:1px solid #E6E0D6">Save</div>
+        <div style="height:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:600"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Export</div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:268px minmax(0,1fr) 316px">
+        <!-- left -->
+        <div style="background:#FBFAF7;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600"><span style="flex:1">PINNED CATALOG</span><a href="#" style="font-size:11px;letter-spacing:0;font-weight:500">Browse</a></div>
+          <div style="margin:0 8px;padding:10px;border-radius:8px;background:#F4F1EC;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/hinge.svg) center/contain no-repeat"></span><span style="font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">FGVTN Click 3D Slow Reta</span></div>
+            <span style="font:10.5px 'JetBrains Mono',monospace;color:#8C8276">51MX153DRV00100 · plate 52MX15FG11003D</span>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#6E655A"><span>H=0 · door 15–22 mm</span><span>rev. May 2025</span></div>
+          </div>
+          <div style="height:1px;background:#DDD7CD;margin:12px 0 0"></div>
+          <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600"><span style="flex:1">DOORS</span><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span></div>
+          <div style="padding:0 6px;display:flex;flex-direction:column;gap:1px">
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px;border-radius:5px"><span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span><span style="display:block;width:14px;height:14px;background:#6E655A;mask:url(icons/door.svg) center/contain no-repeat"></span><span style="font-weight:500;flex:1">Door left</span><span style="font-size:11px;color:#8C8276">on Left side</span></div>
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px 0 30px;border-radius:5px;background:#F6E3CB;color:#5C3309;font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:#C9731F"></span><span style="flex:1">Hinge 1 · top</span><span style="font:11px 'JetBrains Mono',monospace;color:#8A5418">Y 100</span></div>
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px 0 30px;border-radius:5px;color:#3A332C"><span style="width:8px;height:8px;border-radius:50%;background:#9C907E"></span><span style="flex:1">Hinge 2 · bottom</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">Y 616</span></div>
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px;border-radius:5px"><span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span><span style="display:block;width:14px;height:14px;background:#6E655A;mask:url(icons/door.svg) center/contain no-repeat"></span><span style="font-weight:500;flex:1">Door right</span><span style="font-size:11px;color:#8C8276">on Right side</span></div>
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px 0 30px;border-radius:5px;color:#3A332C"><span style="width:8px;height:8px;border-radius:50%;background:#9C907E"></span><span style="flex:1">Hinge 3 · top</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">Y 100</span></div>
+            <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 8px 0 30px;border-radius:5px;color:#3A332C"><span style="width:8px;height:8px;border-radius:50%;background:#9C907E"></span><span style="flex:1">Hinge 4 · bottom</span><span style="display:block;width:13px;height:13px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span></div>
+          </div>
+          <div style="margin:12px 8px 0;padding:10px;border-radius:8px;border:1px solid #EBD2B0;background:#FFFFFF;display:flex;gap:9px">
+            <span style="display:block;margin-top:2px;width:14px;height:14px;flex:none;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>
+            <span style="font-size:12px;color:#5C3E10;line-height:1.45">Hinge 4 is 12 mm from the door edge. Needs at least 17.5 mm for the cup.</span>
+          </div>
+          <div style="flex:1"></div>
+          <div style="padding:10px 12px;border-top:1px solid #E6E0D6;display:flex;gap:6px">
+            <div style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:7px;background:#ECE8E1;font-weight:500;white-space:nowrap"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span>Hinge</div>
+            <div style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:7px;background:#ECE8E1;font-weight:500;white-space:nowrap"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/door.svg) center/contain no-repeat"></span>Door</div>
+          </div>
+        </div>
+
+        <!-- viewport -->
+        <div style="position:relative;background:#ECE8E1;overflow:hidden">
+          <div style="position:absolute;inset:0">{{ scene }}</div>
+          <div style="position:absolute;top:12px;left:12px;display:flex;gap:2px;padding:3px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px;font-size:12.5px;color:#5A5248">
+            <div style="padding:5px 11px;border-radius:6px;background:#2A2520;color:#FBFAF7;font-weight:500">Motion preview</div>
+            <div style="padding:5px 11px">Closed</div>
+          </div>
+          <div style="position:absolute;top:12px;right:12px;display:flex;gap:2px;padding:3px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px;font-size:12.5px;color:#5A5248">
+            <div style="padding:5px 11px;border-radius:6px;background:#ECE8E1;color:#2A2520;font-weight:500">Iso</div><div style="padding:5px 11px">Front</div><div style="padding:5px 11px">Top</div>
+          </div>
+          <div style="position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:460px;padding:12px 16px;background:#FBFAF7;border:1px solid #D4CDC1;border-radius:11px;box-shadow:0 8px 24px rgba(60,45,25,.16);display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/door.svg) center/contain no-repeat"></span><span style="font-weight:600;flex:1">Door left</span><span style="font:600 14px 'JetBrains Mono',monospace">60°</span></div>
+            <div style="position:relative;height:18px;display:flex;align-items:center">
+              <div style="position:absolute;left:0;right:0;height:4px;border-radius:2px;background:#E6E0D6"></div>
+              <div style="position:absolute;left:0;width:57%;height:4px;border-radius:2px;background:#C9731F"></div>
+              <div style="position:absolute;left:57%;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:#FBFAF7;border:2px solid #C9731F;box-shadow:0 1px 3px rgba(60,45,25,.2)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font:10.5px 'JetBrains Mono',monospace;color:#8C8276"><span>0°</span><span>45°</span><span>90°</span><span>105°</span></div>
+            <span style="font-size:11.5px;color:#6E655A">Display only: rotates around the reference axis. Clearance isn't checked; the saved pose stays closed.</span>
+          </div>
+        </div>
+
+        <!-- inspector -->
+        <div style="background:#FBFAF7;border-left:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:14px 14px 12px;border-bottom:1px solid #DDD7CD;display:flex;align-items:center;gap:10px">
+            <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/hinge.svg) center/contain no-repeat"></span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">Hinge 1</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">hw-3e0b · Door left → Left side</span></div>
+            <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:#6E655A"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/trash.svg) center/contain no-repeat"></span></div>
+          </div>
+          <div style="padding:12px 14px 4px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">MOUNTING</div>
+          <div style="padding:0 14px;display:grid;grid-template-columns:84px 1fr;row-gap:5px;align-items:center">
+            <span style="color:#6E655A">Door</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">Door left · edge X−<span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div>
+            <span style="color:#6E655A">Cabinet</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">Left side · face Z+<span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div>
+            <span style="color:#6E655A">Position Y</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:6px;box-shadow:0 0 0 3px #F6E3CB;font-family:'JetBrains Mono',monospace">100<span style="color:#8C8276;font-family:'Noto Sans';font-size:11.5px">mm from Y− edge</span></div>
+          </div>
+          <div style="padding:14px 14px 4px;display:flex;justify-content:space-between"><span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">SETBACK K / OVERLAY R</span><span style="font-size:11px;color:#6E655A">mm</span></div>
+          <div style="padding:0 14px"><div style="display:flex;gap:2px;padding:2px;background:#ECE8E1;border-radius:7px;font:12px 'JetBrains Mono',monospace;color:#5A5248"><span style="flex:1;text-align:center;padding:5px 0">3 / 15</span><span style="flex:1;text-align:center;padding:5px 0;border-radius:5px;background:#FBFAF7;color:#2A2520;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">4 / 16</span><span style="flex:1;text-align:center;padding:5px 0">5 / 17</span><span style="flex:1;text-align:center;padding:5px 0">6 / 18</span></div></div>
+          <div style="margin:14px 14px 0;padding:12px;border-radius:9px;background:#FFFFFF;border:1px solid #E6E0D6;display:flex;gap:12px;align-items:center">
+            <div style="position:relative;width:96px;height:110px;flex:none;background:#EFE6D6;border:1.5px solid #9C907E">
+              <div style="position:absolute;left:4px;top:20px;width:28px;height:28px;border-radius:50%;border:1.5px solid #8A4F0E;background:#F4C27A"></div>
+              <div style="position:absolute;left:4px;top:4px;width:1px;height:14px;background:#8A4F0E"></div>
+              <span style="position:absolute;left:36px;top:26px;font:10px 'JetBrains Mono',monospace;color:#8A4F0E">Ø35</span>
+              <div style="position:absolute;left:0;top:52px;width:4px;height:1px;background:#8A4F0E"></div>
+              <span style="position:absolute;left:4px;top:56px;font:9.5px 'JetBrains Mono',monospace;color:#6E655A">K 4</span>
+              <div style="position:absolute;left:36px;top:70px;width:4px;height:4px;border-radius:50%;background:#6E655A"></div>
+              <div style="position:absolute;left:36px;top:92px;width:4px;height:4px;border-radius:50%;background:#6E655A"></div>
+              <span style="position:absolute;left:46px;top:78px;font:9.5px 'JetBrains Mono',monospace;color:#6E655A">32</span>
+            </div>
+            <div style="flex:1;display:grid;grid-template-columns:auto auto;justify-content:space-between;column-gap:10px;row-gap:5px;font-size:12px;white-space:nowrap;min-width:0">
+              <span style="color:#6E655A">Cup</span><span style="font-family:'JetBrains Mono',monospace">Ø35 × 11.3</span>
+              <span style="color:#6E655A">Cup ctr · edge</span><span style="font-family:'JetBrains Mono',monospace">21.5</span>
+              <span style="color:#6E655A">Plate holes</span><span style="font-family:'JetBrains Mono',monospace">32 apart</span>
+              <span style="color:#6E655A">Plate · front</span><span style="font-family:'JetBrains Mono',monospace">37</span>
+              <span style="color:#6E655A">Door thk</span><span style="font-family:'JetBrains Mono',monospace;color:#3F7D4E">18 ✓</span>
+            </div>
+          </div>
+          <div style="margin:12px 14px 0;padding:10px 12px;border-radius:8px;background:#FCF4E7;border:1px solid #EBD2B0;display:flex;gap:9px">
+            <span style="display:block;margin-top:2px;width:14px;height:14px;flex:none;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>
+            <span style="font-size:12px;color:#5C3E10;line-height:1.5"><span style="font-weight:600">Fastener drilling not available.</span> Screws, pilot holes, load rating and hinge count aren't verified. These are board-local references, not drilling instructions.</span>
+          </div>
+          <div style="flex:1"></div>
+          <div style="padding:12px 14px;border-top:1px solid #E6E0D6;font-size:11.5px;color:#6E655A;display:flex;justify-content:space-between"><span>Source: FGVTN catalogue p. 23</span><a href="#">Source review</a></div>
+        </div>
+      </div>
+
+      <div style="height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:#FBFAF7;border-top:1px solid #DDD7CD;font-size:11.5px;color:#6E655A;white-space:nowrap">
+        <span>4 hinges · 2 doors</span>
+        <span style="display:flex;align-items:center;gap:5px;color:#8A5A12"><span style="display:block;width:12px;height:12px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>1 installation warning</span>
+        <span>Catalog pinned · no updates</span>
+        <span style="flex:1"></span>
+        <span>Est. new spending <span style="font-family:'JetBrains Mono',monospace;color:#2A2520">BRL 579,80</span> + cut fee unknown</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const h = React.createElement, c = 0.433;
+    const P = p => [+((p[0] + p[1]) * c).toFixed(1), +((p[0] - p[1]) * 0.25 - p[2] * 0.5).toFixed(1)];
+    const kids = [];
+    for (let i = -1600; i <= 2400; i += 100) {
+      const st = { stroke: i % 500 === 0 ? '#CFC7B9' : '#DDD7CC', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' };
+      let a = P([i, -1600, 0]), b = P([i, 2400, 0]);
+      kids.push(h('line', { key: 'gx' + i, x1: a[0], y1: a[1], x2: b[0], y2: b[1], ...st }));
+      a = P([-1600, i, 0]); b = P([2400, i, 0]);
+      kids.push(h('line', { key: 'gy' + i, x1: a[0], y1: a[1], x2: b[0], y2: b[1], ...st }));
+    }
+    const box = ([x0, y0, z0, x1, y1, z1]) => (u, t, z) => [u ? x1 : x0, t ? y1 : y0, z ? z1 : z0];
+    const th = 60 * Math.PI / 180, W = [Math.cos(th), -Math.sin(th)], O = [-Math.sin(th), -Math.cos(th)];
+    const door = (u, t, z) => { const uu = u ? 397 : 0, tt = t ? 18 : 0; return [uu * W[0] + tt * O[0], uu * W[1] + tt * O[1], z ? 718 : 2]; };
+    const white = ['#F4F2EE', '#E4E1DA', '#D3CFC6'], oak = ['#E2C59C', '#CFAE80', '#B8966A'], back = ['#B69A78', '#A48865', '#8E7456'];
+    const solids = [
+      { f: box([0, 0, 0, 18, 560, 720]), col: white }, { f: box([18, 0, 0, 782, 560, 18]), col: white },
+      { f: box([18, 557, 18, 782, 560, 702]), col: back }, { f: box([18, 20, 350, 782, 557, 368]), col: white },
+      { f: box([18, 460, 702, 782, 560, 720]), col: white }, { f: box([18, 0, 702, 782, 100, 720]), col: white },
+      { f: box([782, 0, 0, 800, 560, 720]), col: white }, { f: box([403, -18, 2, 800, 0, 718]), col: oak },
+      { f: door, col: oak, edge: '#7A5A36' },
+    ];
+    const V = [1, -1, 1];
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const FACES = [[[0,0,0],[0,1,0],[0,1,1],[0,0,1]],[[1,0,0],[1,1,0],[1,1,1],[1,0,1]],[[0,0,0],[1,0,0],[1,0,1],[0,0,1]],[[0,1,0],[1,1,0],[1,1,1],[0,1,1]],[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],[[0,0,1],[1,0,1],[1,1,1],[0,1,1]]];
+    const withKey = solids.map(s => { const ctr = s.f(0.5, 0.5, 0.5); const m = [0,1].flatMap(u=>[0,1].flatMap(t=>[0,1].map(z=>s.f(u,t,z)))); const cc = m.reduce((a,p)=>[a[0]+p[0]/8,a[1]+p[1]/8,a[2]+p[2]/8],[0,0,0]); return { ...s, cc, k: dot(cc, V) }; }).sort((a, b) => a.k - b.k);
+    kids.push(h('polygon', { key: 'sh', points: [[-10,-30,0],[810,-30,0],[810,570,0],[-10,570,0]].map(p=>P(p).join(',')).join(' '), fill: 'rgba(80,60,30,.10)' }));
+    withKey.forEach((s, si) => {
+      FACES.forEach((fc, fi) => {
+        const pts = fc.map(q => s.f(...q));
+        let n = cross(sub(pts[1], pts[0]), sub(pts[2], pts[0]));
+        const fcen = pts.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4,a[2]+p[2]/4],[0,0,0]);
+        if (dot(n, sub(fcen, s.cc)) < 0) n = n.map(v => -v);
+        if (dot(n, V) <= 0) return;
+        const L = Math.hypot(...n), nn = n.map(v => v / L);
+        const ci = nn[2] > 0.7 ? 0 : (nn[1] < -0.3 ? 1 : 2);
+        kids.push(h('polygon', { key: si + '-' + fi, points: pts.map(p => P(p).join(',')).join(' '), fill: s.col[ci], stroke: s.edge || '#8C8272', strokeWidth: 1, strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' }));
+      });
+    });
+    const cupAt = (z) => { const u = 21.5; return [u * W[0], u * W[1], z]; };
+    [[618, '#C9731F', 'H1'], [102, '#9C907E', 'H2']].forEach(([z, col, lbl], i) => {
+      const p = P(cupAt(z));
+      kids.push(h('circle', { key: 'cup' + i, cx: p[0], cy: p[1], r: 9, fill: col, stroke: '#FBFAF7', strokeWidth: 2, vectorEffect: 'non-scaling-stroke' }));
+      const q = P([18, 37, z]);
+      kids.push(h('rect', { key: 'pl' + i, x: q[0] - 5, y: q[1] - 9, width: 10, height: 18, rx: 2, fill: col, opacity: .8 }));
+      kids.push(h('line', { key: 'ax' + i, x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, strokeWidth: 1, strokeDasharray: '4 3', vectorEffect: 'non-scaling-stroke' }));
+      if (i === 0) {
+        kids.push(h('rect', { key: 'lb', x: p[0] - 78, y: p[1] - 44, width: 56, height: 26, rx: 6, fill: '#2A2520' }));
+        kids.push(h('text', { key: 'lt', x: p[0] - 50, y: p[1] - 26, textAnchor: 'middle', fontSize: 14, fontFamily: 'JetBrains Mono', fill: '#FBFAF7' }, lbl));
+      }
+    });
+    const a0 = P([0, 0, -20]), a1 = P([0, 0, 760]);
+    kids.push(h('line', { key: 'hax', x1: a0[0], y1: a0[1], x2: a1[0], y2: a1[1], stroke: '#E0559F', strokeWidth: 1.5, strokeDasharray: '6 4', vectorEffect: 'non-scaling-stroke' }));
+    const scene = h('svg', { viewBox: '-340 -570 1200 840', preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } }, kids);
+    return { scene };
+  }
+}
+</script>
+</body>
+</html>

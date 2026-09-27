@@ -1,6 +1,6 @@
-//! Version-one project records and structural validation. Names are display-only;
+//! Portable project records and structural validation. Names are display-only;
 //! UUIDs identify physical objects and are unique across all record kinds.
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -9,7 +9,7 @@ use crate::export::ExportRecord;
 use crate::money::{Currency, Money};
 use crate::units::{Length, Pose, Unit, UnitError};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
 /// Provisional project cutting assumption; confirm against the actual saw before shop use.
 pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
@@ -53,6 +53,10 @@ pub enum StockSource {
     ToPurchase,
 }
 
+fn first_stock_alias() -> u64 {
+    1
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Material {
     pub id: Uuid,
@@ -60,6 +64,14 @@ pub struct Material {
     pub default_thickness: Length,
     pub default_grain: BoardGrain,
 }
+
+/// Portable sRGB channels, independent of any renderer or display profile.
+/// JSON represents this value as a three-element byte array.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SrgbColor(pub [u8; 3]);
+
+/// Appearance for materials without a selected color (including legacy files).
+pub const NEUTRAL_MATERIAL_COLOR: SrgbColor = SrgbColor([200, 196, 187]);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Board {
@@ -274,14 +286,30 @@ pub struct Project {
     /// Explicit shop assumption, bound to the exact kerf value (never inferred from a default).
     #[serde(default)]
     pub confirmed_shop_kerf: Option<Length>,
+    /// UTC Unix milliseconds of an explicit confirmation of `confirmed_shop_kerf`.
+    /// Absent for unconfirmed kerfs and for confirmations from older projects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed_shop_kerf_unix_ms: Option<u64>,
     pub currency: Currency,
     /// Unknown until a shop charge is explicitly entered; zero is a known free cut.
     #[serde(default)]
     pub cut_fee: Option<Money>,
     pub materials: Vec<Material>,
+    /// Optional appearance keyed by material identity. Empty maps are omitted so
+    /// opening and explicitly saving an uncolored legacy file adds no color data.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub material_colors: BTreeMap<Uuid, SrgbColor>,
     pub boards: Vec<Board>,
     pub assemblies: Vec<Assembly>,
     pub stock: Vec<Stock>,
+    /// Persistent aliases are keyed by physical identity, never by priority or
+    /// current ownership. Removed identities leave their numbers reserved.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub stock_aliases: BTreeMap<Uuid, String>,
+    #[serde(default = "first_stock_alias")]
+    pub next_stock_s_alias: u64,
+    #[serde(default = "first_stock_alias")]
+    pub next_stock_o_alias: u64,
     pub allocations: Vec<Allocation>,
     pub catalog: Vec<CatalogReference>,
     pub hardware: Vec<Hardware>,
@@ -302,6 +330,7 @@ pub enum DomainError {
     InvalidDimension(Uuid),
     InvalidGridSpacing(UnitError),
     InvalidCuttingKerf(UnitError),
+    InvalidKerfConfirmationDate,
     InvalidPose { owner: Uuid, reason: UnitError },
     InvalidPrice(Uuid),
     InvalidCutFee,
@@ -310,9 +339,47 @@ pub enum DomainError {
     InvalidCatalog(Uuid),
     SameHingeBoards(Uuid),
     InvalidDoorJoint(Uuid),
+    InvalidStockAlias,
 }
 
 impl Project {
+    pub fn stock_alias(&self, id: Uuid) -> Option<&str> {
+        self.stock_aliases.get(&id).map(String::as_str)
+    }
+
+    /// Fill aliases missing from older documents in their original global order.
+    /// This is an in-memory compatibility operation, not an edit or renumbering.
+    pub(crate) fn assign_missing_stock_aliases(&mut self) -> Result<(), DomainError> {
+        let missing: Vec<_> = self
+            .ordered_stock()
+            .into_iter()
+            .filter(|piece| !self.stock_aliases.contains_key(&piece.id))
+            .map(|piece| (piece.id, piece.source))
+            .collect();
+        for (id, source) in missing {
+            self.assign_stock_alias(id, source)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn assign_stock_alias(
+        &mut self,
+        id: Uuid,
+        initial_source: StockSource,
+    ) -> Result<(), DomainError> {
+        if self.stock_aliases.contains_key(&id) {
+            return Err(DomainError::InvalidStockAlias);
+        }
+        let (prefix, next) = match initial_source {
+            StockSource::ToPurchase => ('S', &mut self.next_stock_s_alias),
+            StockSource::Owned => ('O', &mut self.next_stock_o_alias),
+        };
+        let following = next.checked_add(1).ok_or(DomainError::InvalidStockAlias)?;
+        self.stock_aliases.insert(id, format!("{prefix}{next}"));
+        *next = following;
+        Ok(())
+    }
+
     /// Declared physical-piece order. Legacy equal priorities have a stable ID tie-break.
     pub fn ordered_stock(&self) -> Vec<&Stock> {
         let mut pieces: Vec<_> = self.stock.iter().collect();
@@ -330,12 +397,17 @@ impl Project {
             grid_spacing: DEFAULT_GRID_SPACING,
             cutting_kerf: DEFAULT_CUTTING_KERF,
             confirmed_shop_kerf: None,
+            confirmed_shop_kerf_unix_ms: None,
             currency,
             cut_fee: None,
             materials: Vec::new(),
+            material_colors: BTreeMap::new(),
             boards: Vec::new(),
             assemblies: Vec::new(),
             stock: Vec::new(),
+            stock_aliases: BTreeMap::new(),
+            next_stock_s_alias: 1,
+            next_stock_o_alias: 1,
             allocations: Vec::new(),
             catalog: Vec::new(),
             hardware: Vec::new(),
@@ -348,7 +420,20 @@ impl Project {
     /// Structural validation of an entire candidate document before it replaces a project.
     /// Placement feasibility and hardware installation checks belong to later planners.
     pub fn validate(&self) -> Result<(), DomainError> {
-        if self.schema_version != SCHEMA_VERSION {
+        self.validate_version(SCHEMA_VERSION)
+    }
+
+    pub fn material_color(&self, material_id: Uuid) -> SrgbColor {
+        self.material_colors
+            .get(&material_id)
+            .copied()
+            .unwrap_or(NEUTRAL_MATERIAL_COLOR)
+    }
+
+    /// The persistence compatibility path validates legacy data before changing
+    /// its version. Normal editors and writers accept only the current schema.
+    pub(crate) fn validate_version(&self, version: u32) -> Result<(), DomainError> {
+        if self.schema_version != version {
             return Err(DomainError::UnsupportedVersion(self.schema_version));
         }
         validate_grid_spacing(self.grid_spacing).map_err(DomainError::InvalidGridSpacing)?;
@@ -360,6 +445,13 @@ impl Project {
             .is_some_and(|kerf| kerf != self.cutting_kerf)
         {
             return Err(DomainError::InvalidCuttingKerf(UnitError::InvalidNumber));
+        }
+        // Unix milliseconds must represent a real UTC date within the four-digit
+        // calendar range. In particular an orphan date cannot confer confirmation.
+        if let Some(date) = self.confirmed_shop_kerf_unix_ms
+            && (self.confirmed_shop_kerf.is_none() || date > 253_402_300_799_999)
+        {
+            return Err(DomainError::InvalidKerfConfirmationDate);
         }
         if self
             .cut_fee
@@ -386,8 +478,41 @@ impl Project {
             }
         }
         let materials: HashSet<_> = self.materials.iter().map(|v| v.id).collect();
+        for &material_id in self.material_colors.keys() {
+            if !materials.contains(&material_id) {
+                return Err(DomainError::DanglingReference {
+                    owner: self.id,
+                    target: material_id,
+                });
+            }
+        }
         let boards: HashSet<_> = self.boards.iter().map(|v| v.id).collect();
         let stock: HashSet<_> = self.stock.iter().map(|v| v.id).collect();
+        if version == SCHEMA_VERSION {
+            if self.next_stock_s_alias == 0 || self.next_stock_o_alias == 0 {
+                return Err(DomainError::InvalidStockAlias);
+            }
+            let mut aliases = HashSet::new();
+            for (&id, alias) in &self.stock_aliases {
+                let (number, next) = if let Some(number) = alias.strip_prefix('S') {
+                    (number, self.next_stock_s_alias)
+                } else if let Some(number) = alias.strip_prefix('O') {
+                    (number, self.next_stock_o_alias)
+                } else {
+                    return Err(DomainError::InvalidStockAlias);
+                };
+                let valid_number = number
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| *n > 0 && n.to_string() == number && *n < next);
+                if !stock.contains(&id) || valid_number.is_none() || !aliases.insert(alias) {
+                    return Err(DomainError::InvalidStockAlias);
+                }
+            }
+            if !self.stock_aliases.is_empty() && self.stock_aliases.len() != self.stock.len() {
+                return Err(DomainError::InvalidStockAlias);
+            }
+        }
         let catalog: HashSet<_> = self.catalog.iter().map(|v| v.id).collect();
         let parents: HashMap<_, _> = self
             .assemblies
@@ -740,10 +865,9 @@ mod tests {
     #[test]
     fn refuses_unsupported_versions() {
         let mut p = fixture();
-        p.schema_version = SCHEMA_VERSION + 1;
-        assert_eq!(
-            p.validate(),
-            Err(DomainError::UnsupportedVersion(SCHEMA_VERSION + 1))
-        );
+        for version in [0, 1, SCHEMA_VERSION + 1] {
+            p.schema_version = version;
+            assert_eq!(p.validate(), Err(DomainError::UnsupportedVersion(version)));
+        }
     }
 }

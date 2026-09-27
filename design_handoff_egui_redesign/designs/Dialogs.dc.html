@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:56px;display:flex;flex-direction:column;gap:28px;width:1680px">
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:1000px">
+    <div style="display:flex;align-items:center;gap:12px"><span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">5a</span><span style="font-size:22px;font-weight:600">Dialog system</span></div>
+    <div style="font-size:13.5px;color:#5A5248;line-height:1.55">One pattern for every modal egui::Window: icon + title + one-line context, grouped fields with unit-aware inputs, a live preview in the viewport where relevant, and a footer with Esc / ⏎ hints. The primary action stays bottom-right and says what it does ("Create board", not "OK"). Focus starts in the first field; Tab stays inside.</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <!-- New board -->
+    <div data-screen-label="New board" style="width:480px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #E6E0D6">
+        <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">New board</span><span style="font-size:12px;color:#6E655A">Added at the origin of Carcass · first-fit places it on stock</span></div>
+        <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;padding:2px 6px;border:1px solid #E6E0D6;border-radius:4px">Esc</span>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Name</span>
+          <div style="height:34px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB">Divider<span style="width:1px;height:16px;background:#2A2520;margin-left:1px"></span></div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Material</span>
+          <div style="height:34px;display:flex;align-items:center;gap:9px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="width:14px;height:14px;border-radius:3px;background:#F1F0EC;border:1px solid #C9C3B8"></span><span style="flex:1">MDF White</span><span style="font:12px 'JetBrains Mono',monospace;color:#8C8276">18 mm</span><span style="display:block;width:12px;height:12px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 96px;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Length · X</span><div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace">684<span style="color:#8C8276;font-size:12px">mm</span></div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Width · Y</span><div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace">21 1/4 in<span style="color:#8C8276;font-size:12px"></span></div><span style="font:11px 'JetBrains Mono',monospace;color:#3F7D4E">= 539.750 mm exact</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Thickness</span><div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border:1px dashed #D4CDC1;border-radius:7px;font-family:'JetBrains Mono',monospace;color:#6E655A">18<span style="font-size:11px;font-family:'Noto Sans'">mat.</span></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Grain</span>
+          <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><div style="flex:1.5;text-align:center;padding:5px 0;border-radius:5px;background:#FBFAF7;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">Material (length)</div><div style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Length</div><div style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Width</div><div style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Any</div></div></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;background:#F4F1EC">
+          <div style="width:54px;height:42px;flex:none;display:flex;align-items:center;justify-content:center"><div style="width:48px;height:38px;background:#E9E3D7;border:1.5px solid #9C907E"></div></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font:500 13px 'JetBrains Mono',monospace">684 × 539.75 × 18 mm</span><span style="font-size:11.5px;color:#6E655A">Fits S1 at X 1538 · Y 565 (first-fit preview)</span></div>
+        </div>
+      </div>
+      <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <span style="font-size:11.5px;color:#8C8276;flex:1">Accepts mm, cm, m, in, ft and fractions</span>
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Create board<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⏎</span></div>
+      </div>
+    </div>
+
+    <!-- Numeric pose -->
+    <div data-screen-label="Numeric pose" style="width:440px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #E6E0D6">
+        <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/axes.svg) center/contain no-repeat"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">Position · Left side</span><span style="font-size:12px;color:#6E655A">Previewing live in the viewport</span></div>
+        <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;padding:2px 6px;border:1px solid #E6E0D6;border-radius:4px">Esc</span>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#6E655A">Coordinate frame</span>
+          <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="padding:4px 12px;border-radius:5px;background:#FBFAF7;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">World</span><span style="padding:4px 12px;color:#5A5248">Local · Carcass</span></div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Position (mm)</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-family:'JetBrains Mono',monospace">
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB"><span style="color:#C4453A;font-size:11px;font-weight:600">X</span>18</div>
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="color:#4E9A57;font-size:11px;font-weight:600">Y</span>0</div>
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="color:#3E6FC4;font-size:11px;font-weight:600">Z</span>0</div>
+          </div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:#6E655A">Rotation (° about X, then Y, then Z)</span></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-family:'JetBrains Mono',monospace">
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="color:#C4453A;font-size:11px;font-weight:600">X</span>0</div>
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="color:#4E9A57;font-size:11px;font-weight:600">Y</span>−90</div>
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px"><span style="color:#3E6FC4;font-size:11px;font-weight:600">Z</span>0</div>
+          </div>
+          <div style="display:flex;gap:6px;font-size:12px;color:#5A5248"><span style="padding:3px 9px;border-radius:6px;background:#ECE8E1">Stand up</span><span style="padding:3px 9px;border-radius:6px;background:#ECE8E1">Lay flat</span><span style="padding:3px 9px;border-radius:6px;background:#ECE8E1">Turn 90° Z</span></div>
+        </div>
+        <div style="padding:10px 12px;border-radius:8px;background:#F4F1EC;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px"><span style="color:#6E655A">Thickness spans</span><span style="font-family:'JetBrains Mono',monospace">X 0 → 18</span><span style="color:#6E655A">Length rises</span><span style="font-family:'JetBrains Mono',monospace">Z 0 → 720</span></div>
+      </div>
+      <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <span style="font-size:11.5px;color:#8C8276;flex:1">One undoable move · no snap constraint</span>
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Apply<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⏎</span></div>
+      </div>
+    </div>
+
+    <!-- Face to face -->
+    <div data-screen-label="Place face to face" style="width:520px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #E6E0D6">
+        <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/place.svg) center/contain no-repeat"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">Place face to face</span><span style="font-size:12px;color:#6E655A">Move Shelf so one of its faces meets a face on another board</span></div>
+        <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;padding:2px 6px;border:1px solid #E6E0D6;border-radius:4px">Esc</span>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:1fr 26px 1fr;gap:8px;align-items:end">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:2px;background:#4FB8D6"></span>Source · Shelf</span>
+            <div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px">Bottom face (Z−)<span style="display:block;width:12px;height:12px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div></div>
+          <span style="height:34px;display:flex;align-items:center;justify-content:center;color:#8C8276">→</span>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:2px;background:#E0559F"></span>Target · Bottom</span>
+            <div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px">Top face (Z+)<span style="display:block;width:12px;height:12px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Align along X</span>
+            <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;font-weight:500">Start</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">Centre</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">End</span></div>
+            <div style="height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px"><span style="color:#8C8276;font-family:'Noto Sans';font-size:12px">offset</span>0 mm</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Align along Y</span>
+            <div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;font-weight:500">Start</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">Centre</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">End</span></div>
+            <div style="height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px"><span style="color:#8C8276;font-family:'Noto Sans';font-size:12px">offset</span>20 mm</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Gap between faces</span>
+          <div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB;font-family:'JetBrains Mono',monospace">332<span style="color:#8C8276;font-size:12px">mm</span></div>
+          <span style="font-size:11.5px;color:#6E655A">Shelf bottom lands at <span style="font-family:'JetBrains Mono',monospace;color:#2A2520">Z 350</span>. The gap is a one-time position, not a rule.</span></div>
+      </div>
+      <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <span style="font-size:11.5px;color:#8C8276;flex:1;display:flex;align-items:center;gap:10px"><span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:#4FB8D6"></span>source</span><span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:#E0559F"></span>target</span> highlighted in 3D</span>
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Place<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⏎</span></div>
+      </div>
+    </div>
+
+    <!-- Edit dimension with rounding -->
+    <div data-screen-label="Edit dimension" style="width:440px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #E6E0D6">
+        <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/measure.svg) center/contain no-repeat"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">Resize · 3 boards</span><span style="font-size:12px;color:#6E655A">Left side, Right side, Back panel</span></div>
+        <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;padding:2px 6px;border:1px solid #E6E0D6;border-radius:4px">Esc</span>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Axis</span><div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;font-weight:500">Length</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">Width</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">Thk</span></div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Keep fixed</span><div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;font-weight:500">Start</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">Centre</span><span style="flex:1;text-align:center;padding:4px 0;color:#5A5248">End</span></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:#6E655A">New length</span><span style="font-size:11.5px;color:#8C8276">current: mixed (720, 720, 764)</span></div>
+          <div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB;font-family:'JetBrains Mono',monospace">28 11/64 in<span style="color:#8C8276;font-size:12px;font-family:'Noto Sans'">in</span></div></div>
+        <div style="padding:12px;border-radius:8px;background:#FCF4E7;border:1px solid #EBD2B0;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:flex-start;gap:9px"><span style="display:block;margin-top:2px;width:15px;height:15px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span><span style="flex:1;color:#5C3E10;line-height:1.45">Stored at 0.001 mm. <span style="font-family:'JetBrains Mono',monospace">715.565625</span> will be rounded to <span style="font-family:'JetBrains Mono',monospace;font-weight:600">715.566 mm</span>.</span></div>
+          <div style="display:flex;align-items:center;gap:9px;padding-left:24px"><span style="width:16px;height:16px;border-radius:4px;background:#2A2520;display:flex;align-items:center;justify-content:center"><span style="display:block;width:11px;height:11px;background:#FBFAF7;mask:url(icons/check.svg) center/contain no-repeat"></span></span><span>Use the rounded value</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #EDE8E0"><span>Left side</span><span style="font-family:'JetBrains Mono',monospace;color:#6E655A">720 → 715.566</span></div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #EDE8E0"><span>Right side</span><span style="font-family:'JetBrains Mono',monospace;color:#6E655A">720 → 715.566</span></div>
+          <div style="display:flex;justify-content:space-between;padding:5px 0"><span>Back panel</span><span style="font-family:'JetBrains Mono',monospace;color:#6E655A">764 → 715.566</span></div>
+        </div>
+      </div>
+      <div style="padding:12px 18px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <span style="font-size:11.5px;color:#8C8276;flex:1">All boards change together, or none</span>
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Resize 3 boards<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⏎</span></div>
+      </div>
+    </div>
+
+    <!-- New material -->
+    <div data-screen-label="New material" style="width:400px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #E6E0D6">
+        <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/material.svg) center/contain no-repeat"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">New material</span><span style="font-size:12px;color:#6E655A">Boards take thickness and grain from here</span></div>
+      </div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:1fr 110px;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Name</span><div style="height:34px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #D9A45E;border-radius:7px;box-shadow:0 0 0 3px #F6E3CB">HDF</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Thickness</span><div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;font-family:'JetBrains Mono',monospace">3<span style="color:#8C8276;font-size:12px">mm</span></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Default grain</span><div style="display:flex;gap:2px;background:#ECE8E1;border-radius:7px;padding:2px;font-size:12px"><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Along length</span><span style="flex:1;text-align:center;padding:5px 0;color:#5A5248">Along width</span><span style="flex:1;text-align:center;padding:5px 0;border-radius:5px;background:#FBFAF7;font-weight:500">None</span></div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:#6E655A">Display colour <span style="color:#8C8276">· viewport only</span></span>
+          <div style="display:flex;gap:8px"><span style="width:26px;height:26px;border-radius:6px;background:#F1F0EC;border:1px solid #C9C3B8"></span><span style="width:26px;height:26px;border-radius:6px;background:#D9C3A0"></span><span style="width:26px;height:26px;border-radius:6px;background:#B98B5E"></span><span style="width:26px;height:26px;border-radius:6px;background:#7A6246;box-shadow:0 0 0 2px #FBFAF7,0 0 0 4px #2A2520"></span><span style="width:26px;height:26px;border-radius:6px;background:#5A5248"></span></div></div>
+      </div>
+      <div style="padding:12px 18px;display:flex;align-items:center;justify-content:flex-end;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Create material<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⏎</span></div>
+      </div>
+    </div>
+
+    <!-- Unsaved -->
+    <div data-screen-label="Unsaved changes" style="width:400px;background:#FBFAF7;border:1px solid #DDD7CD;border-radius:12px;box-shadow:0 18px 44px rgba(60,45,25,.18);font-size:13px;overflow:hidden">
+      <div style="padding:20px 20px 16px;display:flex;flex-direction:column;gap:10px">
+        <div style="width:38px;height:38px;border-radius:9px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:20px;height:20px;background:currentColor;mask:url(icons/save.svg) center/contain no-repeat"></span></div>
+        <span style="font-size:16px;font-weight:600">Save changes to Kitchen base 800?</span>
+        <span style="color:#5A5248;line-height:1.5">You have 14 unsaved edits since 14:05. Autosave keeps a recovery copy, but it isn't a replacement for saving.</span>
+      </div>
+      <div style="padding:12px 20px;display:flex;align-items:center;gap:8px;background:#F4F1EC;border-top:1px solid #E6E0D6">
+        <div style="height:32px;display:flex;align-items:center;padding:0 12px;border-radius:7px;color:#B4412F">Discard</div>
+        <div style="flex:1"></div>
+        <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Cancel</div>
+        <div style="height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Save<span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⌘S</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

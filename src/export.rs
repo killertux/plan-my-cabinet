@@ -1,6 +1,7 @@
 //! Stable manufacturing input identity and historical output receipts.
 //! Hashes identify content, not feasibility; the PDF writer and release gate are separate.
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -15,17 +16,19 @@ use crate::cut_tree::{
     CutTree, Reconstruction, ReconstructionViolation, WitnessError, reconstruct_witness,
     validate_witness,
 };
+use crate::document_layout::{Document, FONT_METRICS_VERSION, LAYOUT_VERSION};
 use crate::domain::{DomainError, HardwareKind, Project, StockSource};
 use crate::hinge_installation::{
     InstallationIssue, InstallationReferences, diagnose as diagnose_hinge,
 };
 use crate::i18n::Language;
-use crate::pdf_export::{PdfExportError, render_pdf};
+use crate::pdf_export::{PdfExportError, render_document_pdf, render_pdf};
 use crate::persistence::{
     NoFailure, SaveError, SaveStages, atomic_write_new_with_stages, atomic_write_with_stages,
 };
 use crate::units::Length;
 use crate::units::Unit;
+use crate::workshop_document::{WorkshopDocumentError, build_workshop_document};
 use uuid::Uuid as Id;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,10 +37,303 @@ pub struct ExportSettings {
     pub units: Unit,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExportMode {
     Draft,
     ShopReady,
+}
+
+/// These choices are portable packet settings; a missing value on an old
+/// receipt means unknown, not "all included".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptSections {
+    pub parts_and_costs: bool,
+    pub sheets_and_cut_steps: bool,
+    pub hinge_references: bool,
+}
+
+impl Default for ReceiptSections {
+    fn default() -> Self {
+        Self {
+            parts_and_costs: true,
+            sheets_and_cut_steps: true,
+            hinge_references: true,
+        }
+    }
+}
+
+pub const RECEIPT_METADATA_VERSION: u16 = 1;
+const CURRENT_FINGERPRINT_VERSION: u16 = 4;
+pub const MAX_COMPARISON_ENTRIES: usize = 4096;
+pub const MAX_COMPARISON_BYTES: usize = 512 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ComparisonKind {
+    Project,
+    Material,
+    Board,
+    Stock,
+    Allocation,
+    Catalog,
+    Hardware,
+    Installation,
+    Joint,
+}
+
+/// Historical values are deliberately independent of today's entities: a
+/// deleted board or stock piece must still be explainable later.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComparisonEntry {
+    pub kind: ComparisonKind,
+    pub id: Uuid,
+    pub name: String,
+    pub facts: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComparisonBaseline {
+    pub version: u16,
+    pub entries: Vec<ComparisonEntry>,
+    pub cutting_kerf_um: i64,
+    pub cut_fee_minor: Option<i64>,
+}
+
+impl ComparisonBaseline {
+    pub fn from_project(project: &Project) -> Result<Self, ExportError> {
+        let mut normalized = project.clone();
+        normalized
+            .assign_missing_stock_aliases()
+            .map_err(|_| ExportError::InvalidMetadata)?;
+        let project = &normalized;
+        let mut entries = Vec::new();
+        let mut add = |kind, id, name: &str, facts: BTreeMap<String, String>| {
+            entries.push(ComparisonEntry {
+                kind,
+                id,
+                name: name.into(),
+                facts,
+            });
+        };
+        add(
+            ComparisonKind::Project,
+            project.id,
+            &project.name,
+            BTreeMap::from([
+                ("currency".into(), format!("{:?}", project.currency)),
+                (
+                    "kerf_um".into(),
+                    project.cutting_kerf.micrometres().to_string(),
+                ),
+                ("cut_fee".into(), format!("{:?}", project.cut_fee)),
+            ]),
+        );
+        for material in &project.materials {
+            add(
+                ComparisonKind::Material,
+                material.id,
+                &material.name,
+                BTreeMap::from([
+                    (
+                        "thickness_um".into(),
+                        material.default_thickness.micrometres().to_string(),
+                    ),
+                    ("grain".into(), format!("{:?}", material.default_grain)),
+                ]),
+            );
+        }
+        for board in &project.boards {
+            add(
+                ComparisonKind::Board,
+                board.id,
+                &board.name,
+                BTreeMap::from([
+                    ("material".into(), board.material_id.to_string()),
+                    ("length_um".into(), board.length.micrometres().to_string()),
+                    ("width_um".into(), board.width.micrometres().to_string()),
+                    (
+                        "thickness_um".into(),
+                        board.thickness.micrometres().to_string(),
+                    ),
+                    (
+                        "grain".into(),
+                        format!(
+                            "{:?}",
+                            project
+                                .materials
+                                .iter()
+                                .find(|material| material.id == board.material_id)
+                                .map(|material| board.effective_grain(material))
+                        ),
+                    ),
+                ]),
+            );
+        }
+        for stock in &project.stock {
+            add(
+                ComparisonKind::Stock,
+                stock.id,
+                &stock.name,
+                BTreeMap::from([
+                    ("material".into(), stock.material_id.to_string()),
+                    ("length_um".into(), stock.length.micrometres().to_string()),
+                    ("width_um".into(), stock.width.micrometres().to_string()),
+                    (
+                        "thickness_um".into(),
+                        stock.thickness.micrometres().to_string(),
+                    ),
+                    ("grain".into(), format!("{:?}", stock.grain)),
+                    ("source".into(), format!("{:?}", stock.source)),
+                    ("priority".into(), stock.priority.to_string()),
+                    (
+                        "alias".into(),
+                        project.stock_alias(stock.id).unwrap_or("").into(),
+                    ),
+                    ("price".into(), format!("{:?}", stock.price)),
+                    (
+                        "trim_um".into(),
+                        format!("{:?}", stock.trim.map(|v| v.micrometres())),
+                    ),
+                ]),
+            );
+        }
+        for allocation in &project.allocations {
+            add(
+                ComparisonKind::Allocation,
+                allocation.id,
+                "",
+                BTreeMap::from([
+                    ("board".into(), allocation.board_id.to_string()),
+                    ("stock".into(), allocation.stock_id.to_string()),
+                    (
+                        "origin_um".into(),
+                        format!("{:?}", allocation.origin.map(|v| v.micrometres())),
+                    ),
+                    ("quarter_turn".into(), allocation.quarter_turn.to_string()),
+                ]),
+            );
+        }
+        for catalog in &project.catalog {
+            add(
+                ComparisonKind::Catalog,
+                catalog.id,
+                &catalog.name,
+                BTreeMap::from([
+                    ("product".into(), catalog.product_id.clone()),
+                    ("plate".into(), format!("{:?}", catalog.plate_id)),
+                    ("revision".into(), catalog.revision.clone()),
+                    ("source".into(), catalog.source.clone()),
+                    (
+                        "dimensions".into(),
+                        format!(
+                            "{:?}",
+                            catalog
+                                .installation_dimensions
+                                .iter()
+                                .collect::<BTreeMap<_, _>>()
+                        ),
+                    ),
+                    ("verified".into(), format!("{:?}", catalog.verified_hinge)),
+                ]),
+            );
+        }
+        for hardware in &project.hardware {
+            add(
+                ComparisonKind::Hardware,
+                hardware.id,
+                &hardware.name,
+                BTreeMap::from([("kind".into(), format!("{:?}", hardware.kind))]),
+            );
+        }
+        for installation in &project.hinge_installations {
+            add(
+                ComparisonKind::Installation,
+                installation.id,
+                "",
+                BTreeMap::from([("reference".into(), format!("{installation:?}"))]),
+            );
+        }
+        for joint in &project.door_joints {
+            add(
+                ComparisonKind::Joint,
+                joint.id,
+                "",
+                BTreeMap::from([("reference".into(), format!("{joint:?}"))]),
+            );
+        }
+        entries.sort_by_key(|entry| (entry.id, entry.kind as u8));
+        let baseline = Self {
+            version: RECEIPT_METADATA_VERSION,
+            entries,
+            cutting_kerf_um: project.cutting_kerf.micrometres(),
+            cut_fee_minor: project.cut_fee.map(|fee| fee.minor_units()),
+        };
+        if !baseline.is_valid() {
+            return Err(ExportError::InvalidMetadata);
+        }
+        Ok(baseline)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.version != RECEIPT_METADATA_VERSION
+            || self.entries.len() > MAX_COMPARISON_ENTRIES
+            || self.cutting_kerf_um <= 0
+            || self.cut_fee_minor.is_some_and(|fee| fee < 0)
+        {
+            return false;
+        }
+        let mut seen = HashSet::new();
+        self.entries.iter().all(|entry| {
+            seen.insert((entry.kind, entry.id))
+                && entry.name.len() <= 512
+                && entry.facts.len() <= 32
+                && entry
+                    .facts
+                    .iter()
+                    .all(|(key, value)| !key.is_empty() && key.len() <= 64 && value.len() <= 2048)
+        }) && serde_json::to_vec(self).is_ok_and(|bytes| bytes.len() <= MAX_COMPARISON_BYTES)
+    }
+
+    /// Identity-level changes backed by stored before values, including removals.
+    pub fn changed_entries(&self, project: &Project) -> Result<Vec<ComparisonChange>, ExportError> {
+        let current = Self::from_project(project)?;
+        let before: BTreeMap<_, _> = self
+            .entries
+            .iter()
+            .map(|entry| ((entry.kind as u8, entry.id), entry))
+            .collect();
+        let after: BTreeMap<_, _> = current
+            .entries
+            .iter()
+            .map(|entry| ((entry.kind as u8, entry.id), entry))
+            .collect();
+        let mut keys: Vec<_> = before.keys().chain(after.keys()).copied().collect();
+        keys.sort_unstable();
+        keys.dedup();
+        Ok(keys
+            .into_iter()
+            .filter_map(|key| {
+                let previous = before.get(&key).copied();
+                let current = after.get(&key).copied();
+                (previous != current).then(|| ComparisonChange {
+                    kind: previous.or(current).expect("change has a side").kind,
+                    id: key.1,
+                    previous: previous.cloned(),
+                    current: current.cloned(),
+                })
+            })
+            .collect())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComparisonChange {
+    pub kind: ComparisonKind,
+    pub id: Uuid,
+    pub previous: Option<ComparisonEntry>,
+    pub current: Option<ComparisonEntry>,
 }
 
 /// An issue refers to a physical board or sheet where possible; the UI can locate it.
@@ -114,6 +410,147 @@ pub struct PreparedExport {
     pub preview_watermark: Option<&'static str>,
 }
 
+/// The complete identity of a reviewed layout. A presentation-only edit changes
+/// `revision` (and requires a fresh preview) without changing the manufacturing
+/// fingerprint used to assess an already-written receipt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewedPacketKey {
+    pub project_id: Uuid,
+    pub revision: u64,
+    pub fingerprint: ManufacturingFingerprint,
+    pub mode: ExportMode,
+    pub settings: ExportSettings,
+    pub sections: ReceiptSections,
+    pub layout_version: u32,
+    pub font_metrics_version: u32,
+}
+
+impl ReviewedPacketKey {
+    pub fn for_project(
+        project: &Project,
+        mode: ExportMode,
+        settings: ExportSettings,
+        sections: ReceiptSections,
+    ) -> Result<Self, DomainError> {
+        // Draft packets can deliberately contain invalid allocations or
+        // hardware references; matching their source must not require a
+        // shop-ready project.
+        let mut normalized = project.clone();
+        normalized.assign_missing_stock_aliases()?;
+        Ok(Self {
+            project_id: normalized.id,
+            revision: normalized.revision,
+            fingerprint: fingerprint(&normalized),
+            mode,
+            settings,
+            sections,
+            layout_version: LAYOUT_VERSION,
+            font_metrics_version: FONT_METRICS_VERSION,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ReviewPreparationError {
+    Cancelled,
+    Blocked(ShopReadyBlocked),
+    Document(WorkshopDocumentError),
+}
+
+/// One atomically prepared, read-only pairing of validated evidence and its
+/// positioned pages. No public constructor accepts an independently built PDF
+/// or document, so a picker can only write the pages actually reviewed.
+pub struct ReviewedPacket {
+    key: ReviewedPacketKey,
+    prepared: PreparedExport,
+    document: Document,
+}
+
+impl ReviewedPacket {
+    pub fn prepare(
+        project: &Project,
+        mode: ExportMode,
+        settings: ExportSettings,
+        sections: ReceiptSections,
+    ) -> Result<Self, ReviewPreparationError> {
+        Self::prepare_cancellable(project, mode, settings, sections, || false)
+    }
+
+    pub fn prepare_cancellable(
+        project: &Project,
+        mode: ExportMode,
+        settings: ExportSettings,
+        sections: ReceiptSections,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Self, ReviewPreparationError> {
+        if cancelled() {
+            return Err(ReviewPreparationError::Cancelled);
+        }
+        let mut prepared =
+            prepare_export(project, settings, mode).map_err(ReviewPreparationError::Blocked)?;
+        if cancelled() {
+            return Err(ReviewPreparationError::Cancelled);
+        }
+        // Prepare already normalized the source, including historical aliases.
+        // Freeze section metadata *before* layout so neither can diverge.
+        prepared.snapshot.sections = Some(sections);
+        prepared.snapshot.layout_version = LAYOUT_VERSION as u16;
+        let key = ReviewedPacketKey {
+            project_id: prepared.snapshot.project_id(),
+            revision: prepared.snapshot.revision(),
+            fingerprint: prepared.snapshot.fingerprint().clone(),
+            mode,
+            settings,
+            sections,
+            layout_version: LAYOUT_VERSION,
+            font_metrics_version: FONT_METRICS_VERSION,
+        };
+        let document = build_workshop_document(&prepared, sections)
+            .map_err(ReviewPreparationError::Document)?;
+        if cancelled() {
+            return Err(ReviewPreparationError::Cancelled);
+        }
+        debug_assert_eq!(document.layout_version, key.layout_version);
+        debug_assert_eq!(document.font_metrics_version, key.font_metrics_version);
+        Ok(Self {
+            key,
+            prepared,
+            document,
+        })
+    }
+
+    pub fn key(&self) -> &ReviewedPacketKey {
+        &self.key
+    }
+
+    pub fn document(&self) -> &Document {
+        &self.document
+    }
+
+    pub fn snapshot(&self) -> &ExportSnapshot {
+        &self.prepared.snapshot
+    }
+
+    pub fn wood_issues(&self) -> &[ExportIssue] {
+        &self.prepared.wood_issues
+    }
+
+    pub fn notices(&self) -> &[ExportIssue] {
+        &self.prepared.notices
+    }
+
+    pub fn matches_source(
+        &self,
+        project: &Project,
+        mode: ExportMode,
+        settings: ExportSettings,
+        sections: ReceiptSections,
+    ) -> bool {
+        ReviewedPacketKey::for_project(project, mode, settings, sections)
+            .is_ok_and(|current| current == self.key)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ShopReadyBlocked {
     pub issues: Vec<ExportIssue>,
@@ -139,6 +576,15 @@ pub fn prepare_export_with_budget(
     mode: ExportMode,
     budget: usize,
 ) -> Result<PreparedExport, ShopReadyBlocked> {
+    // A legacy in-memory project may lack aliases, but an exhausted counter
+    // cannot produce a truthful PDF/receipt pair. Resolve before any hashing.
+    let mut normalized = project.clone();
+    if let Err(error) = normalized.assign_missing_stock_aliases() {
+        return Err(ShopReadyBlocked {
+            issues: vec![ExportIssue::InvalidWood(error)],
+        });
+    }
+    let project = &normalized;
     let mut wood_issues = Vec::new();
     // Validate ordinary wood records independently from hardware and draft allocations.
     let mut wood = project.clone();
@@ -313,6 +759,9 @@ pub fn prepare_export_with_budget(
             project: project.clone(),
             fingerprint: fingerprint(project),
             settings,
+            mode: Some(mode),
+            sections: Some(ReceiptSections::default()),
+            layout_version: 1,
         },
         mode,
         wood_issues,
@@ -346,6 +795,12 @@ fn digest(value: &Value) -> String {
 /// Canonical, version-tagged input projection. Pose, parent, visibility, editing
 /// locks, unused catalog entries and record history cannot affect shop content.
 pub fn fingerprint(project: &Project) -> ManufacturingFingerprint {
+    fingerprint_version(project, CURRENT_FINGERPRINT_VERSION)
+}
+
+/// Version 2 is the pre-alias projection used by historical receipts (including
+/// records without an explicit version). Keep its exact JSON shape and tags.
+fn fingerprint_version(project: &Project, version: u16) -> ManufacturingFingerprint {
     let materials = sorted(
         &project.materials,
         |m| m.id,
@@ -391,7 +846,7 @@ pub fn fingerprint(project: &Project) -> ManufacturingFingerprint {
         |a| a.id,
         |a| json!([a.id, a.board_id, a.stock_id, a.origin, a.quarter_turn]),
     );
-    let wood = json!([
+    let legacy_wood = json!([
         "wood-v1",
         project.id,
         project.name,
@@ -473,15 +928,67 @@ pub fn fingerprint(project: &Project) -> ManufacturingFingerprint {
             ])
         },
     );
-    ManufacturingFingerprint {
+    let legacy_packet = json!([
+        "packet-v2",
+        legacy_wood,
+        hardware,
+        installations,
+        joints,
+        joint_poses
+    ]);
+    if version == 2 {
+        return ManufacturingFingerprint {
+            wood: digest(&legacy_wood),
+            packet: digest(&legacy_packet),
+        };
+    }
+    // Stock aliases are printed alongside physical-piece references. They must
+    // participate in the new wood and packet hashes even if dimensions do not
+    // change. Legacy files receive the same deterministic aliases as on load.
+    let normalized = if project.stock_aliases.len() == project.stock.len() {
+        None
+    } else {
+        let mut copy = project.clone();
+        copy.assign_missing_stock_aliases().ok().map(|_| copy)
+    };
+    let normalized = normalized.as_ref().unwrap_or(project);
+    let aliases = sorted(
+        &normalized.stock,
+        |s| s.id,
+        |s| json!([s.id, normalized.stock_alias(s.id)]),
+    );
+    let wood = json!(["wood-v3", legacy_wood, aliases]);
+    let v3 = ManufacturingFingerprint {
         wood: digest(&wood),
+        packet: digest(&json!(["packet-v3", wood, legacy_packet])),
+    };
+    if version == 3 {
+        return v3;
+    }
+    // Only catalogs actually used by hardware are printed in the hardware
+    // section. Installation catalogs already participate in the v3 projection.
+    let hardware_guidance = sorted(
+        &project.hardware,
+        |h| h.id,
+        |h| match h.kind {
+            HardwareKind::Catalog { catalog_id } => json!([
+                h.id,
+                project
+                    .catalog
+                    .iter()
+                    .find(|c| c.id == catalog_id)
+                    .map(|c| &c.verified_hinge)
+            ]),
+            HardwareKind::Placeholder { .. } => json!([h.id, Value::Null]),
+        },
+    );
+    ManufacturingFingerprint {
+        wood: v3.wood,
         packet: digest(&json!([
-            "packet-v2",
-            wood,
-            hardware,
-            installations,
-            joints,
-            joint_poses
+            "packet-v4",
+            v3.packet,
+            hardware_guidance,
+            project.confirmed_shop_kerf == Some(project.cutting_kerf)
         ])),
     }
 }
@@ -492,15 +999,23 @@ pub struct ExportSnapshot {
     project: Project,
     fingerprint: ManufacturingFingerprint,
     settings: ExportSettings,
+    mode: Option<ExportMode>,
+    sections: Option<ReceiptSections>,
+    layout_version: u16,
 }
 
 impl ExportSnapshot {
     pub fn new(project: &Project, settings: ExportSettings) -> Result<Self, DomainError> {
         project.validate()?;
+        let mut normalized = project.clone();
+        normalized.assign_missing_stock_aliases()?;
         Ok(Self {
-            project: project.clone(),
-            fingerprint: fingerprint(project),
+            fingerprint: fingerprint(&normalized),
+            project: normalized,
             settings,
+            mode: Some(ExportMode::Draft),
+            sections: Some(ReceiptSections::default()),
+            layout_version: 1,
         })
     }
 
@@ -519,6 +1034,13 @@ impl ExportSnapshot {
     pub fn settings(&self) -> ExportSettings {
         self.settings
     }
+
+    pub fn mode(&self) -> Option<ExportMode> {
+        self.mode
+    }
+    pub fn sections(&self) -> Option<ReceiptSections> {
+        self.sections
+    }
 }
 
 /// A receipt for bytes already written to a destination. Historical records are
@@ -531,8 +1053,29 @@ pub struct ExportRecord {
     pub packet_sha256: String,
     pub settings: ExportSettings,
     pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "is_unknown_date")]
     pub completed_unix_ms: u64,
     pub file_sha256: String,
+    #[serde(flatten)]
+    pub metadata: Box<ReceiptMetadata>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiptMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata_version: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ExportMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sections: Option<ReceiptSections>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint_version: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_version: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stock_aliases: Option<BTreeMap<Uuid, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison_baseline: Option<ComparisonBaseline>,
 }
 
 fn valid_hash(hash: &str) -> bool {
@@ -542,12 +1085,74 @@ fn valid_hash(hash: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
+fn is_unknown_date(date: &u64) -> bool {
+    *date == 0
+}
+
 impl ExportRecord {
     pub(crate) fn is_valid(&self) -> bool {
         !self.path.as_os_str().is_empty()
+            && self.completed_unix_ms <= 253_402_300_799_999
             && valid_hash(&self.wood_sha256)
             && valid_hash(&self.packet_sha256)
             && valid_hash(&self.file_sha256)
+            && self
+                .metadata
+                .metadata_version
+                .is_none_or(|v| v == RECEIPT_METADATA_VERSION)
+            && self
+                .metadata
+                .fingerprint_version
+                .is_none_or(|v| (2..=CURRENT_FINGERPRINT_VERSION).contains(&v))
+            && self
+                .metadata
+                .layout_version
+                .is_none_or(|v| (1..=LAYOUT_VERSION as u16).contains(&v))
+            && self.metadata.stock_aliases.as_ref().is_none_or(|aliases| {
+                aliases.len() <= MAX_COMPARISON_ENTRIES && {
+                    let mut names = HashSet::new();
+                    aliases.values().all(|alias| {
+                        let number = alias.strip_prefix('S').or_else(|| alias.strip_prefix('O'));
+                        number.is_some_and(|n| {
+                            n.parse::<u64>().is_ok_and(|v| v > 0 && v.to_string() == n)
+                        }) && names.insert(alias)
+                    })
+                }
+            })
+            && self
+                .metadata
+                .comparison_baseline
+                .as_ref()
+                .is_none_or(ComparisonBaseline::is_valid)
+            && (self.metadata.metadata_version.is_none()
+                || (self.metadata.mode.is_some()
+                    && self.metadata.sections.is_some()
+                    && self.metadata.fingerprint_version.is_some()
+                    && self.metadata.layout_version.is_some()
+                    && self.metadata.stock_aliases.is_some()
+                    && self.metadata.comparison_baseline.is_some()))
+            && (self.metadata.metadata_version.is_some()
+                || (self.metadata.mode.is_none()
+                    && self.metadata.sections.is_none()
+                    && self.metadata.fingerprint_version.is_none()
+                    && self.metadata.layout_version.is_none()
+                    && self.metadata.stock_aliases.is_none()
+                    && self.metadata.comparison_baseline.is_none()))
+    }
+
+    pub fn completed_at(&self) -> Option<u64> {
+        (self.completed_unix_ms != 0).then_some(self.completed_unix_ms)
+    }
+
+    pub fn changed_entries(
+        &self,
+        project: &Project,
+    ) -> Result<Option<Vec<ComparisonChange>>, ExportError> {
+        self.metadata
+            .comparison_baseline
+            .as_ref()
+            .map(|baseline| baseline.changed_entries(project))
+            .transpose()
     }
 
     pub(crate) fn verify_completed(
@@ -559,11 +1164,28 @@ impl ExportRecord {
         if !valid_hash(hash) {
             return Err(ExportError::InvalidHash);
         }
+        if time > 253_402_300_799_999 {
+            return Err(ExportError::InvalidMetadata);
+        }
+        let baseline = snapshot
+            .mode
+            .map(|_| ComparisonBaseline::from_project(&snapshot.project))
+            .transpose()?;
+        let aliases = snapshot
+            .mode
+            .map(|_| {
+                let mut project = snapshot.project.clone();
+                project
+                    .assign_missing_stock_aliases()
+                    .map_err(|_| ExportError::InvalidMetadata)?;
+                Ok::<_, ExportError>(project.stock_aliases)
+            })
+            .transpose()?;
         let bytes = fs::read(path).map_err(ExportError::Io)?;
         if bytes.is_empty() || format!("{:x}", Sha256::digest(&bytes)) != hash {
             return Err(ExportError::FileMismatch);
         }
-        Ok(Self {
+        let record = Self {
             project_id: snapshot.project_id(),
             revision: snapshot.revision(),
             wood_sha256: snapshot.fingerprint.wood.clone(),
@@ -572,7 +1194,20 @@ impl ExportRecord {
             path: path.to_path_buf(),
             completed_unix_ms: time,
             file_sha256: hash.to_owned(),
-        })
+            metadata: Box::new(ReceiptMetadata {
+                metadata_version: snapshot.mode.map(|_| RECEIPT_METADATA_VERSION),
+                mode: snapshot.mode,
+                sections: snapshot.sections,
+                fingerprint_version: snapshot.mode.map(|_| CURRENT_FINGERPRINT_VERSION),
+                layout_version: snapshot.mode.map(|_| snapshot.layout_version),
+                stock_aliases: aliases,
+                comparison_baseline: baseline,
+            }),
+        };
+        if !record.is_valid() {
+            return Err(ExportError::InvalidMetadata);
+        }
+        Ok(record)
     }
 }
 
@@ -582,6 +1217,7 @@ pub enum ExportError {
     InvalidHash,
     FileMismatch,
     WrongProject,
+    InvalidMetadata,
 }
 
 /// A destination must be explicitly approved when it already exists. No receipt
@@ -621,12 +1257,65 @@ pub fn write_pdf_cancellable(
     write_pdf_with_stages(prepared, destination, overwrite, cancelled, &NoFailure)
 }
 
+/// Write precisely the pages returned by `ReviewedPacket::document`. The
+/// destination picker may complete later; no preparation or layout occurs here.
+/// The caller can use `matches_source` to require a fresh review before opening
+/// the picker. A stale packet still identifies its own historical source.
+pub fn write_reviewed_pdf(
+    packet: &ReviewedPacket,
+    destination: Option<&Path>,
+    overwrite: Overwrite,
+    cancelled: impl Fn() -> bool,
+) -> Result<ExportRecord, OutputError> {
+    write_reviewed_pdf_with_stages(packet, destination, overwrite, cancelled, &NoFailure)
+}
+
+fn write_reviewed_pdf_with_stages(
+    packet: &ReviewedPacket,
+    destination: Option<&Path>,
+    overwrite: Overwrite,
+    cancelled: impl Fn() -> bool,
+    stages: &impl SaveStages,
+) -> Result<ExportRecord, OutputError> {
+    write_bytes_with_stages(
+        &packet.prepared.snapshot,
+        destination,
+        overwrite,
+        cancelled,
+        stages,
+        || render_document_pdf(&packet.document),
+    )
+}
+
 fn write_pdf_with_stages(
     prepared: &PreparedExport,
     destination: Option<&Path>,
     overwrite: Overwrite,
     cancelled: impl Fn() -> bool,
     stages: &impl SaveStages,
+) -> Result<ExportRecord, OutputError> {
+    // The legacy renderer always emits all three sections. It must never be
+    // used to write a reviewed selection with misleading receipt metadata.
+    if prepared.snapshot.sections != Some(ReceiptSections::default()) {
+        return Err(OutputError::PreparationBlocked);
+    }
+    write_bytes_with_stages(
+        &prepared.snapshot,
+        destination,
+        overwrite,
+        cancelled,
+        stages,
+        || render_pdf(prepared),
+    )
+}
+
+fn write_bytes_with_stages(
+    snapshot: &ExportSnapshot,
+    destination: Option<&Path>,
+    overwrite: Overwrite,
+    cancelled: impl Fn() -> bool,
+    stages: &impl SaveStages,
+    render: impl FnOnce() -> Result<Vec<u8>, PdfExportError>,
 ) -> Result<ExportRecord, OutputError> {
     let path = destination.ok_or(OutputError::Cancelled)?;
     if cancelled() {
@@ -635,7 +1324,10 @@ fn write_pdf_with_stages(
     if path.symlink_metadata().is_ok() && overwrite != Overwrite::Confirm {
         return Err(OutputError::OverwriteRequired);
     }
-    let bytes = render_pdf(prepared).map_err(OutputError::Pdf)?;
+    // Reject oversized evidence before touching a destination, rather than
+    // writing a PDF whose successful receipt cannot be represented.
+    ComparisonBaseline::from_project(snapshot.project()).map_err(OutputError::Verify)?;
+    let bytes = render().map_err(OutputError::Pdf)?;
     if cancelled() {
         return Err(OutputError::Cancelled);
     }
@@ -664,8 +1356,7 @@ fn write_pdf_with_stages(
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX);
-    ExportRecord::verify_completed(&prepared.snapshot, path, time, &hash)
-        .map_err(OutputError::Verify)
+    ExportRecord::verify_completed(snapshot, path, time, &hash).map_err(OutputError::Verify)
 }
 
 impl From<io::Error> for OutputError {
@@ -680,18 +1371,101 @@ pub enum ExportStatus {
     Current,
     PacketStale,
     WoodStale,
+    /// Historical evidence does not identify a comparable hash algorithm.
+    Unknown,
 }
 
 impl ExportStatus {
     pub fn for_project(project: &Project) -> Self {
         let Some(last) = project.export_records.last() else {
-            return Self::NeverExported;
+            let mut normalized = project.clone();
+            return if project.validate().is_ok()
+                && normalized.assign_missing_stock_aliases().is_ok()
+            {
+                Self::NeverExported
+            } else {
+                Self::Unknown
+            };
         };
-        let current = fingerprint(project);
-        if last.wood_sha256 != current.wood {
+        Self::for_record(project, last)
+    }
+
+    /// Compare one historical receipt using the hash version it actually wrote.
+    /// Receipt order is not part of manufacturing freshness.
+    pub fn for_record(project: &Project, last: &ExportRecord) -> Self {
+        // Structural validation permits alias-free legacy input; normalization
+        // can still fail when a persisted counter is exhausted.
+        if project.validate().is_err() {
+            return Self::Unknown;
+        }
+        let mut normalized = project.clone();
+        if normalized.assign_missing_stock_aliases().is_err() {
+            return Self::Unknown;
+        }
+        if last.project_id != project.id {
+            return Self::Unknown;
+        }
+        let version = last.metadata.fingerprint_version.unwrap_or(2);
+        if !(2..=CURRENT_FINGERPRINT_VERSION).contains(&version) {
+            return Self::Unknown;
+        }
+        let current = fingerprint_version(&normalized, version);
+        // Version-2 hashes did not contain printed stock aliases. Receipts with
+        // a recorded mapping can still detect alias changes independently.
+        let aliases_changed = version == 2
+            && last
+                .metadata
+                .stock_aliases
+                .as_ref()
+                .is_some_and(|previous| previous != &normalized.stock_aliases);
+        if last.wood_sha256 != current.wood || aliases_changed {
             Self::WoodStale
-        } else if last.packet_sha256 != current.packet {
+        } else if last.packet_sha256 != current.packet
+            || (version == 3
+                && last
+                    .metadata
+                    .comparison_baseline
+                    .as_ref()
+                    .is_some_and(|baseline| {
+                        normalized.hardware.iter().any(|hardware| {
+                            let HardwareKind::Catalog { catalog_id } = hardware.kind else {
+                                return false;
+                            };
+                            let Some(catalog) = normalized
+                                .catalog
+                                .iter()
+                                .find(|catalog| catalog.id == catalog_id)
+                            else {
+                                return false;
+                            };
+                            baseline.entries.iter().any(|entry| {
+                                entry.kind == ComparisonKind::Catalog
+                                    && entry.id == catalog_id
+                                    && entry.facts.get("verified")
+                                        != Some(&format!("{:?}", catalog.verified_hinge))
+                            })
+                        })
+                    }))
+        {
             Self::PacketStale
+        } else if last.metadata.fingerprint_version.is_none()
+            && last.metadata.stock_aliases.is_none()
+        {
+            // An unversioned historical receipt has no printed-alias evidence.
+            // Its legacy hash is comparable only while aliases still match the
+            // deterministic migration of its unchanged stock/order/source.
+            let mut migrated = project.clone();
+            migrated.stock_aliases.clear();
+            migrated.next_stock_s_alias = 1;
+            migrated.next_stock_o_alias = 1;
+            if migrated.assign_missing_stock_aliases().is_err() {
+                return Self::Unknown;
+            }
+            if normalized.stock_aliases != migrated.stock_aliases {
+                Self::Unknown
+            } else {
+                Self::Current
+            }
         } else {
             Self::Current
         }
@@ -702,6 +1476,7 @@ impl ExportStatus {
             Self::NeverExported => "export-never",
             Self::Current => "export-current",
             Self::PacketStale | Self::WoodStale => "export-stale",
+            Self::Unknown => "export-unknown",
         }
     }
 }
@@ -795,6 +1570,46 @@ mod tests {
         }
     }
 
+    #[test]
+    fn persisted_v3_hash_uses_its_original_projection() {
+        let mut project = fixture();
+        project.catalog[0] = crate::hardware_catalog::builtin_hinge();
+        project.hardware[0].kind = HardwareKind::Catalog {
+            catalog_id: project.catalog[0].id,
+        };
+        project.assign_missing_stock_aliases().unwrap();
+        project.validate().unwrap();
+        let old = fingerprint_version(&project, 3);
+        project.export_records.push(ExportRecord {
+            project_id: project.id,
+            revision: project.revision,
+            wood_sha256: old.wood.clone(),
+            packet_sha256: old.packet.clone(),
+            settings: settings(),
+            path: PathBuf::from("older.pdf"),
+            completed_unix_ms: 1,
+            file_sha256: "0".repeat(64),
+            metadata: Box::new(ReceiptMetadata {
+                metadata_version: Some(1),
+                mode: Some(ExportMode::Draft),
+                sections: Some(ReceiptSections::default()),
+                fingerprint_version: Some(3),
+                layout_version: Some(1),
+                stock_aliases: Some(project.stock_aliases.clone()),
+                comparison_baseline: Some(ComparisonBaseline::from_project(&project).unwrap()),
+            }),
+        });
+        assert_eq!(ExportStatus::for_project(&project), ExportStatus::Current);
+        let new_packet = fingerprint(&project).packet;
+        project.catalog[0].verified_hinge = None;
+        assert_eq!(fingerprint_version(&project, 3), old);
+        assert_eq!(
+            ExportStatus::for_project(&project),
+            ExportStatus::PacketStale
+        );
+        assert_ne!(fingerprint(&project).packet, new_packet);
+    }
+
     fn cutting_fixture() -> Project {
         let mut p = fixture();
         p.boards.truncate(1);
@@ -878,15 +1693,17 @@ mod tests {
             [[37_000, 9_000, 18_000], [37_000, 41_000, 18_000]]
         );
         let baseline = fingerprint(&p);
+        let historical = fingerprint_version(&p, 2);
         p.export_records.push(ExportRecord {
             project_id: p.id,
             revision: p.revision,
-            wood_sha256: baseline.wood.clone(),
-            packet_sha256: baseline.packet.clone(),
+            wood_sha256: historical.wood,
+            packet_sha256: historical.packet,
             settings: settings(),
             path: PathBuf::from("previous-packet.pdf"),
             completed_unix_ms: 1,
             file_sha256: "0".repeat(64),
+            metadata: Box::default(),
         });
         assert_eq!(ExportStatus::for_project(&p), ExportStatus::Current);
         p.hardware.push(Hardware {

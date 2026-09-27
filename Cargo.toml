@@ -5,13 +5,17 @@ edition = "2024"
 
 [dependencies]
 eframe = { version = "=0.36.2", default-features = false, features = ["wgpu", "x11", "wayland", "default_fonts", "accesskit"] }
+egui_extras = { version = "=0.36.2", default-features = false, features = ["svg"] }
 fluent-bundle = "0.16"
 pollster = "0.4"
 printpdf = { version = "=0.8.2", default-features = false }
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Persisted poses and directed hinge axes participate in exact review checks.
+# A save/open cycle must not shift their f64 values by a parsing ULP.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
+time = { version = "=0.3.55", default-features = false }
 unic-langid = "0.9"
 uuid = { version = "1", features = ["v4", "serde"] }
 

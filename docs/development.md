@@ -26,6 +26,13 @@ verify high-DPI window resizing on actual target hardware.
 GitHub Actions runs format, all-target checks, strict Clippy, headless library
 tests, and all tests on macOS and Ubuntu. Interactive GUI checks are manual.
 
+## Desktop redesign acceptance
+
+See [redesign acceptance](redesign-acceptance.md) for the ten-screen reference
+inventory, missing-state matrix, all nine delta capabilities and per-stage tests.
+Capture setup, shell and screens are unfinished; native redesign checks remain
+pending. Earlier GUI waivers do not waive this change's screenshot fidelity.
+
 ## Offline release artifacts (task 11.3)
 
 From a checkout with the committed `Cargo.lock`, Rust 1.95+ and all native

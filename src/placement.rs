@@ -22,6 +22,62 @@ pub struct NumericPose {
     pub frame: CoordinateFrame,
 }
 
+/// Named numeric-editor proposals. Orientations are expressed in the selected
+/// frame; the board pose origin remains fixed (not its centre).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PosePreset {
+    StandUp,
+    LayFlat,
+    Turn90Z,
+}
+
+pub fn preset_pose(current: Pose, preset: PosePreset) -> Result<Pose, PlacementError> {
+    let orientation = match preset {
+        PosePreset::LayFlat => Quaternion::IDENTITY,
+        PosePreset::StandUp => {
+            let half = -std::f64::consts::FRAC_PI_4;
+            Quaternion::normalized(half.cos(), 0.0, half.sin(), 0.0)
+                .map_err(PlacementError::InvalidPose)?
+        }
+        PosePreset::Turn90Z => {
+            let half = std::f64::consts::FRAC_PI_4;
+            let turn = Quaternion::normalized(half.cos(), 0.0, 0.0, half.sin())
+                .map_err(PlacementError::InvalidPose)?;
+            turn.compose(current.rotation)
+                .map_err(PlacementError::InvalidPose)?
+        }
+    };
+    Pose::new(current.translation_mm, orientation).map_err(PlacementError::InvalidPose)
+}
+
+#[cfg(test)]
+mod preset_tests {
+    use super::*;
+
+    fn close(actual: [f64; 3], expected: [f64; 3]) {
+        for (a, b) in actual.into_iter().zip(expected) {
+            assert!((a - b).abs() < 1e-9, "{a} != {b}");
+        }
+    }
+
+    #[test]
+    fn absolute_orientations_and_relative_frame_z_keep_origin_fixed() {
+        let source = Pose::new([15.0, 20.0, 35.0], Quaternion::IDENTITY).unwrap();
+        let standing = preset_pose(source, PosePreset::StandUp).unwrap();
+        close(standing.translation_mm, source.translation_mm);
+        close(standing.rotation.rotate([1.0, 0.0, 0.0]), [0.0, 0.0, 1.0]);
+        close(standing.rotation.rotate([0.0, 1.0, 0.0]), [0.0, 1.0, 0.0]);
+        close(standing.rotation.rotate([0.0, 0.0, 1.0]), [-1.0, 0.0, 0.0]);
+        let turned = preset_pose(standing, PosePreset::Turn90Z).unwrap();
+        close(turned.translation_mm, source.translation_mm);
+        close(turned.rotation.rotate([1.0, 0.0, 0.0]), [0.0, 0.0, 1.0]);
+        close(turned.rotation.rotate([0.0, 1.0, 0.0]), [-1.0, 0.0, 0.0]);
+        let flat = preset_pose(turned, PosePreset::LayFlat).unwrap();
+        assert_eq!(flat.rotation, Quaternion::IDENTITY);
+        close(flat.translation_mm, source.translation_mm);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     Negative,
@@ -178,6 +234,20 @@ fn validated_pose(project: &Project, id: Uuid, world: Pose) -> Result<Pose, Plac
     inverse(parent)?
         .compose(world)
         .map_err(PlacementError::InvalidPose)
+}
+
+/// Convert a tentative world pose to the numeric editor's chosen frame
+/// without committing or reconstructing its quaternion from display text.
+pub fn pose_in_frame(
+    project: &Project,
+    id: Uuid,
+    world: Pose,
+    frame: CoordinateFrame,
+) -> Result<Pose, PlacementError> {
+    match frame {
+        CoordinateFrame::World => Ok(world),
+        CoordinateFrame::LocalParent => validated_pose(project, id, world),
+    }
 }
 
 fn numeric_world(project: &Project, id: Uuid, input: NumericPose) -> Result<Pose, PlacementError> {
@@ -473,6 +543,38 @@ impl<'a> PlacementSession<'a> {
         self.preview_world(world)
     }
 
+    /// Preserve a preset's exact quaternion while validating a position typed
+    /// in the selected frame; only explicit rotation text edits use Euler input.
+    pub fn preview_exact_framed(
+        &mut self,
+        frame: CoordinateFrame,
+        entered: Pose,
+        position_edited: [bool; 3],
+    ) -> Result<Pose, PlacementError> {
+        for (value, edited) in entered.translation_mm.into_iter().zip(position_edited) {
+            if !value.is_finite() {
+                return Err(PlacementError::InvalidPose(UnitError::NonFinite));
+            }
+            if value.abs() > crate::units::WORLD_LIMIT_MM {
+                return Err(PlacementError::InvalidPose(UnitError::OutOfBounds));
+            }
+            if edited && (value * 1000.0 - (value * 1000.0).round()).abs() > 1e-7 {
+                return Err(PlacementError::OffGrid);
+            }
+        }
+        let world = match frame {
+            CoordinateFrame::World => entered,
+            CoordinateFrame::LocalParent => {
+                let project = self.editor.project();
+                let parent = parent_world(project, board(project, self.board_id)?.parent_id)?;
+                parent
+                    .compose(entered)
+                    .map_err(PlacementError::InvalidPose)?
+            }
+        };
+        self.preview_world(world)
+    }
+
     /// Merge explicitly edited values with the exact committed pose, rather than
     /// round-tripping the displayed decimal and Euler representations.
     pub fn preview_numeric_edited(
@@ -678,6 +780,114 @@ mod tests {
                 b[i]
             );
         }
+    }
+
+    #[test]
+    fn rotated_parent_presets_are_tentative_and_exact_until_one_accept() {
+        let (mut editor, source, _) = fixture(true);
+        let initial = editor.project().clone();
+        let revision = initial.revision;
+        let standing = preset_pose(initial.boards[0].pose, PosePreset::StandUp).unwrap();
+        let turned = preset_pose(standing, PosePreset::Turn90Z).unwrap();
+        {
+            let mut session = PlacementSession::begin(&mut editor, source).unwrap();
+            session
+                .preview_exact_framed(CoordinateFrame::LocalParent, standing, [false; 3])
+                .unwrap();
+            assert_eq!(session.project().boards[0].pose.rotation, standing.rotation);
+            session
+                .preview_exact_framed(CoordinateFrame::LocalParent, turned, [false; 3])
+                .unwrap();
+            assert_eq!(session.project().boards[0].pose, turned);
+            session.cancel();
+        }
+        assert!(editor.preview().is_none());
+        assert_eq!(editor.project(), &initial);
+        assert_eq!(editor.project().revision, revision);
+        {
+            let mut session = PlacementSession::begin(&mut editor, source).unwrap();
+            session
+                .preview_exact_framed(CoordinateFrame::LocalParent, turned, [false; 3])
+                .unwrap();
+            assert_eq!(session.accept(), Ok(true));
+        }
+        assert_eq!(editor.project().revision, revision + 1);
+        assert_eq!(editor.project().boards[0].pose, turned);
+        editor.undo().unwrap();
+        assert_eq!(editor.project().boards[0].pose, initial.boards[0].pose);
+    }
+
+    #[test]
+    fn exact_preset_position_rejects_off_grid_without_mutation() {
+        let (mut editor, source, _) = fixture(false);
+        let initial = editor.project().clone();
+        let proposal = Pose::new([0.0005, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
+        let mut session = PlacementSession::begin(&mut editor, source).unwrap();
+        assert!(matches!(
+            session.preview_exact_framed(CoordinateFrame::World, proposal, [true, false, false]),
+            Err(PlacementError::OffGrid)
+        ));
+        session.cancel();
+        assert_eq!(editor.project(), &initial);
+    }
+
+    #[test]
+    fn preset_rotation_preserves_untouched_half_grid_origin() {
+        let (mut editor, source, _) = fixture(false);
+        let origin = [0.0005, -1.0005, 3.0005];
+        editor
+            .transact(|project| {
+                project.boards[0].pose.translation_mm = origin;
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        let before = editor.project().clone();
+        let standing = preset_pose(before.boards[0].pose, PosePreset::StandUp).unwrap();
+        let mut session = PlacementSession::begin(&mut editor, source).unwrap();
+        session
+            .preview_exact_framed(CoordinateFrame::World, standing, [false; 3])
+            .unwrap();
+        assert_eq!(session.project().boards[0].pose.translation_mm, origin);
+        assert_eq!(session.accept(), Ok(true));
+        assert_eq!(editor.project().boards[0].pose.translation_mm, origin);
+        editor.undo().unwrap();
+        assert_eq!(editor.project().boards, before.boards);
+    }
+
+    #[test]
+    fn world_frame_presets_respect_rotated_parent_and_absolute_alignment() {
+        let (mut editor, source, _) = fixture(true);
+        let original = editor.project().clone();
+        let current_world = world_pose(&original, source).unwrap();
+        let flat_world = preset_pose(current_world, PosePreset::LayFlat).unwrap();
+        assert_eq!(flat_world.rotation, Quaternion::IDENTITY);
+        let turned_world = preset_pose(flat_world, PosePreset::Turn90Z).unwrap();
+        near(
+            turned_world.rotation.rotate([1.0, 0.0, 0.0]),
+            [0.0, 1.0, 0.0],
+        );
+        {
+            let mut session = PlacementSession::begin(&mut editor, source).unwrap();
+            session
+                .preview_exact_framed(CoordinateFrame::World, flat_world, [false; 3])
+                .unwrap();
+            assert_eq!(
+                world_pose(session.project(), source).unwrap().rotation,
+                Quaternion::IDENTITY
+            );
+            session
+                .preview_exact_framed(CoordinateFrame::World, turned_world, [false; 3])
+                .unwrap();
+            near(
+                world_pose(session.project(), source)
+                    .unwrap()
+                    .rotation
+                    .rotate([1.0, 0.0, 0.0]),
+                [0.0, 1.0, 0.0],
+            );
+            session.cancel();
+        }
+        assert_eq!(editor.project(), &original);
     }
 
     #[test]

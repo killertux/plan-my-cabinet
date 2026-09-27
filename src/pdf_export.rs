@@ -8,7 +8,10 @@ use printpdf::{
 use uuid::Uuid;
 
 use crate::cut_tree::{Axis, CutKind, CutTree, Edge};
-use crate::domain::{BoardGrain, HardwareKind, StockGrain, StockSource};
+use crate::document_layout::{
+    self, Document, Face, Ink, Page, Primitive, Rect as PageRect, TextRun,
+};
+use crate::domain::{BoardGrain, HardwareKind, Project, Stock, StockGrain, StockSource};
 use crate::export::{ExportIssue, ExportMode, PreparedExport};
 use crate::i18n::{Language, Localizer};
 use crate::money::{Money, MoneyLocale};
@@ -19,10 +22,722 @@ const FONT: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 #[derive(Debug)]
 pub enum PdfExportError {
     Font,
+    EmptyDocument,
+    MissingGlyph(char),
+    InvalidGeometry,
+    UnsupportedLink,
+}
+
+const MM_TO_PT: f32 = 72.0 / 25.4;
+const DOCUMENT_FACES: [Face; 6] = [
+    Face::Sans,
+    Face::SansMedium,
+    Face::SansSemibold,
+    Face::Mono,
+    Face::MonoMedium,
+    Face::MonoSemibold,
+];
+
+fn ink_color(ink: Ink) -> printpdf::Color {
+    printpdf::Color::Rgb(printpdf::Rgb::new(
+        f32::from(ink.red) / 255.0,
+        f32::from(ink.green) / 255.0,
+        f32::from(ink.blue) / 255.0,
+        None,
+    ))
+}
+
+fn pdf_point(point: document_layout::Point, height: f32) -> Point {
+    Point::new(Mm(point.x), Mm(height - point.y))
+}
+
+fn pdf_rect(bounds: PageRect, height: f32) -> printpdf::Rect {
+    printpdf::Rect {
+        x: Pt(bounds.x * MM_TO_PT),
+        // LinkAnnotation serializes Rect.y as its lower edge (unlike
+        // Rect::to_line, which treats it as the top edge).
+        y: Pt((height - bounds.y - bounds.height) * MM_TO_PT),
+        width: Pt(bounds.width * MM_TO_PT),
+        height: Pt(bounds.height * MM_TO_PT),
+    }
+}
+
+fn pdf_line(points: &[document_layout::Point], closed: bool, height: f32) -> Line {
+    Line {
+        points: points
+            .iter()
+            .map(|&point| LinePoint {
+                p: pdf_point(point, height),
+                bezier: false,
+            })
+            .collect(),
+        is_closed: closed,
+    }
+}
+
+fn box_points(bounds: PageRect) -> [document_layout::Point; 4] {
+    [
+        document_layout::Point {
+            x: bounds.x,
+            y: bounds.y,
+        },
+        document_layout::Point {
+            x: bounds.x + bounds.width,
+            y: bounds.y,
+        },
+        document_layout::Point {
+            x: bounds.x + bounds.width,
+            y: bounds.y + bounds.height,
+        },
+        document_layout::Point {
+            x: bounds.x,
+            y: bounds.y + bounds.height,
+        },
+    ]
+}
+
+fn face_index(face: Face) -> usize {
+    DOCUMENT_FACES
+        .iter()
+        .position(|f| *f == face)
+        .expect("document face")
+}
+
+fn glyph_face(fonts: &[ParsedFont], face: Face, character: char) -> Option<(usize, u16)> {
+    // PositionedGlyph does not record which fallback face shaped a character.
+    // Refuse an unsupported primary face instead of silently using another
+    // face with different outlines/metrics from the native preview.
+    let index = face_index(face);
+    fonts[index]
+        .lookup_glyph_index(character as u32)
+        .map(|gid| (index, gid))
+}
+
+fn valid_rect(bounds: PageRect, page: &Page) -> bool {
+    bounds.x.is_finite()
+        && bounds.y.is_finite()
+        && bounds.width.is_finite()
+        && bounds.height.is_finite()
+        && bounds.x >= 0.0
+        && bounds.y >= 0.0
+        && bounds.width >= 0.0
+        && bounds.height >= 0.0
+        && bounds.x + bounds.width <= page.width_mm + 0.001
+        && bounds.y + bounds.height <= page.height_mm + 0.001
+}
+
+fn write_positioned_text(
+    ops: &mut Vec<Op>,
+    run: &TextRun,
+    page: &Page,
+    fonts: &[ParsedFont],
+    ids: &[FontId],
+) -> Result<(), PdfExportError> {
+    if !valid_rect(run.bounds, page)
+        || !run.style.size_pt.is_finite()
+        || run.style.size_pt <= 0.0
+        || run.glyphs.len() != run.text.chars().count()
+        || run.glyphs.iter().map(|g| g.character).ne(run.text.chars())
+    {
+        return Err(PdfExportError::InvalidGeometry);
+    }
+    // One scalar per positioned operation: printpdf must not shape/wrap the
+    // source string a second time. WriteText's font subset keeps ToUnicode.
+    ops.push(Op::SetFillColor {
+        col: ink_color(Ink::BLACK),
+    });
+    for glyph in &run.glyphs {
+        let b = glyph.baseline;
+        if !b.x.is_finite()
+            || !b.y.is_finite()
+            || !glyph.advance_mm.is_finite()
+            || b.x < 0.0
+            || b.x + glyph.advance_mm > page.width_mm + 0.001
+            || b.y < 0.0
+            || b.y > page.height_mm
+        {
+            return Err(PdfExportError::InvalidGeometry);
+        }
+        let (i, _gid) = glyph_face(fonts, run.style.face, glyph.character)
+            .ok_or(PdfExportError::MissingGlyph(glyph.character))?;
+        ops.extend([
+            Op::StartTextSection,
+            Op::SetTextCursor {
+                pos: pdf_point(b, page.height_mm),
+            },
+            Op::SetFontSize {
+                font: ids[i].clone(),
+                size: Pt(run.style.size_pt),
+            },
+            Op::WriteText {
+                font: ids[i].clone(),
+                items: vec![TextItem::Text(glyph.character.to_string())],
+            },
+            Op::EndTextSection,
+        ]);
+    }
+    Ok(())
+}
+
+/// Serialize exactly the given frozen pages, including their already resolved
+/// glyph origins, page breaks and diagram geometry. This intentionally does not
+/// call `build_workshop_document` or consult the live editor. The legacy
+/// `render_pdf(prepared)` receipt path remains separate until its reviewed
+/// sections and snapshot can be frozen by Handoff.
+pub fn render_document_pdf(document: &Document) -> Result<Vec<u8>, PdfExportError> {
+    if document.pages.is_empty() {
+        return Err(PdfExportError::EmptyDocument);
+    }
+    let fonts = DOCUMENT_FACES
+        .iter()
+        .map(|face| {
+            ParsedFont::from_bytes(face.bytes(), 0, &mut Vec::new()).ok_or(PdfExportError::Font)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut pdf = PdfDocument::new("Workshop packet");
+    let ids = fonts
+        .iter()
+        .map(|font| pdf.add_font(font))
+        .collect::<Vec<_>>();
+    let mut pages = Vec::with_capacity(document.pages.len());
+    for (number, page) in document.pages.iter().enumerate() {
+        if page.number != number + 1
+            || !page.width_mm.is_finite()
+            || !page.height_mm.is_finite()
+            || page.width_mm <= 0.0
+            || page.height_mm <= 0.0
+        {
+            return Err(PdfExportError::InvalidGeometry);
+        }
+        let mut ops = Vec::new();
+        for primitive in &page.primitives {
+            match primitive {
+                Primitive::Text(run) | Primitive::Notice(run) => {
+                    write_positioned_text(&mut ops, run, page, &fonts, &ids)?;
+                }
+                Primitive::Path {
+                    points,
+                    closed,
+                    stroke,
+                } => {
+                    if points.len() < 2
+                        || !stroke.width_mm.is_finite()
+                        || stroke.width_mm <= 0.0
+                        || points.iter().any(|p| {
+                            !p.x.is_finite()
+                                || !p.y.is_finite()
+                                || p.x < 0.0
+                                || p.x > page.width_mm
+                                || p.y < 0.0
+                                || p.y > page.height_mm
+                        })
+                    {
+                        return Err(PdfExportError::InvalidGeometry);
+                    }
+                    ops.extend([
+                        Op::SetOutlineColor {
+                            col: ink_color(stroke.ink),
+                        },
+                        Op::SetOutlineThickness {
+                            pt: Pt(stroke.width_mm * MM_TO_PT),
+                        },
+                        Op::DrawLine {
+                            line: pdf_line(points, *closed, page.height_mm),
+                        },
+                    ]);
+                }
+                Primitive::Box {
+                    bounds,
+                    stroke,
+                    fill,
+                } => {
+                    if !valid_rect(*bounds, page) || bounds.width <= 0.0 || bounds.height <= 0.0 {
+                        return Err(PdfExportError::InvalidGeometry);
+                    }
+                    if let Some(ink) = fill {
+                        ops.push(Op::SetFillColor {
+                            col: ink_color(*ink),
+                        });
+                    }
+                    if let Some(stroke) = stroke {
+                        if !stroke.width_mm.is_finite() || stroke.width_mm <= 0.0 {
+                            return Err(PdfExportError::InvalidGeometry);
+                        }
+                        ops.extend([
+                            Op::SetOutlineColor {
+                                col: ink_color(stroke.ink),
+                            },
+                            Op::SetOutlineThickness {
+                                pt: Pt(stroke.width_mm * MM_TO_PT),
+                            },
+                        ]);
+                    }
+                    if fill.is_some() || stroke.is_some() {
+                        ops.push(Op::DrawPolygon {
+                            polygon: printpdf::Polygon {
+                                rings: vec![printpdf::PolygonRing {
+                                    points: pdf_line(&box_points(*bounds), true, page.height_mm)
+                                        .points,
+                                }],
+                                mode: match (fill, stroke) {
+                                    (Some(_), Some(_)) => printpdf::PaintMode::FillStroke,
+                                    (Some(_), None) => printpdf::PaintMode::Fill,
+                                    _ => printpdf::PaintMode::Stroke,
+                                },
+                                winding_order: printpdf::WindingOrder::NonZero,
+                            },
+                        });
+                    }
+                }
+                Primitive::Link {
+                    bounds,
+                    destination,
+                } => {
+                    if !valid_rect(*bounds, page) || bounds.width <= 0.0 || bounds.height <= 0.0 {
+                        return Err(PdfExportError::InvalidGeometry);
+                    }
+                    let action = if let Some(index) = destination.strip_prefix("page:") {
+                        let index = index
+                            .parse::<usize>()
+                            .map_err(|_| PdfExportError::UnsupportedLink)?;
+                        if index == 0 || index > document.pages.len() {
+                            return Err(PdfExportError::UnsupportedLink);
+                        }
+                        printpdf::Actions::Goto(printpdf::Destination::Xyz {
+                            page: index,
+                            left: None,
+                            top: None,
+                            zoom: None,
+                        })
+                    } else if destination.starts_with("https://") {
+                        printpdf::Actions::Uri(destination.clone())
+                    } else {
+                        return Err(PdfExportError::UnsupportedLink);
+                    };
+                    ops.push(Op::LinkAnnotation {
+                        link: printpdf::LinkAnnotation::new(
+                            pdf_rect(*bounds, page.height_mm),
+                            action,
+                            None,
+                            None,
+                            None,
+                        ),
+                    });
+                }
+            }
+        }
+        pages.push(PdfPage::new(Mm(page.width_mm), Mm(page.height_mm), ops));
+    }
+    Ok(pdf
+        .with_pages(pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new()))
+}
+
+/// Paint one prepared page in egui points. `points_per_mm` controls only view
+/// magnification; it never changes the source page or reflows text. The caller
+/// must install the bundled native theme fonts before painting and clip the
+/// painter to the page. Link hit-testing uses the same page `Primitive::Link`
+/// bounds transformed by this scale; the drawing itself makes no UI decisions.
+pub fn paint_document_page(
+    painter: &eframe::egui::Painter,
+    page: &Page,
+    origin: eframe::egui::Pos2,
+    points_per_mm: f32,
+) -> Result<(), PdfExportError> {
+    use eframe::egui::{self, Color32, FontFamily, FontId as EguiFontId, Shape};
+    if !points_per_mm.is_finite() || points_per_mm <= 0.0 {
+        return Err(PdfExportError::InvalidGeometry);
+    }
+    if !page.width_mm.is_finite()
+        || !page.height_mm.is_finite()
+        || page.width_mm <= 0.0
+        || page.height_mm <= 0.0
+    {
+        return Err(PdfExportError::InvalidGeometry);
+    }
+    let at =
+        |p: document_layout::Point| origin + egui::vec2(p.x * points_per_mm, p.y * points_per_mm);
+    let rect = |b: PageRect| {
+        egui::Rect::from_min_size(
+            at(document_layout::Point { x: b.x, y: b.y }),
+            egui::vec2(b.width * points_per_mm, b.height * points_per_mm),
+        )
+    };
+    let color = |ink: Ink| Color32::from_rgb(ink.red, ink.green, ink.blue);
+    for primitive in &page.primitives {
+        match primitive {
+            Primitive::Text(run) | Primitive::Notice(run) => {
+                if !valid_rect(run.bounds, page)
+                    || !run.style.size_pt.is_finite()
+                    || run.style.size_pt <= 0.0
+                    || run.glyphs.iter().map(|g| g.character).ne(run.text.chars())
+                {
+                    return Err(PdfExportError::InvalidGeometry);
+                }
+                for glyph in &run.glyphs {
+                    if !glyph.baseline.x.is_finite()
+                        || !glyph.baseline.y.is_finite()
+                        || !glyph.advance_mm.is_finite()
+                        || glyph.baseline.x < 0.0
+                        || glyph.baseline.x + glyph.advance_mm > page.width_mm + 0.001
+                        || glyph.baseline.y < 0.0
+                        || glyph.baseline.y > page.height_mm
+                    {
+                        return Err(PdfExportError::InvalidGeometry);
+                    }
+                    let family = match run.style.face {
+                        Face::Sans => FontFamily::Proportional,
+                        Face::SansMedium => FontFamily::Name("noto-medium".into()),
+                        Face::SansSemibold => FontFamily::Name("noto-semibold".into()),
+                        Face::Mono => FontFamily::Monospace,
+                        Face::MonoMedium => FontFamily::Name("jetbrains-medium".into()),
+                        Face::MonoSemibold => FontFamily::Name("jetbrains-semibold".into()),
+                    };
+                    let font =
+                        EguiFontId::new(run.style.size_pt * points_per_mm / MM_TO_PT, family);
+                    // The galley is used only to rasterize this one glyph. Its
+                    // advance and placement are never used for page layout.
+                    let galley =
+                        painter.layout_no_wrap(glyph.character.to_string(), font, Color32::BLACK);
+                    if let Some(row) = galley.rows.first()
+                        && let Some(local) = row.glyphs.first()
+                    {
+                        let pos = at(glyph.baseline) - (row.pos.to_vec2() + local.pos.to_vec2());
+                        painter.galley(pos, galley, Color32::BLACK);
+                    }
+                }
+            }
+            Primitive::Path {
+                points,
+                closed,
+                stroke,
+            } => {
+                if points.len() < 2
+                    || !stroke.width_mm.is_finite()
+                    || stroke.width_mm <= 0.0
+                    || points.iter().any(|p| {
+                        !p.x.is_finite()
+                            || !p.y.is_finite()
+                            || p.x < 0.0
+                            || p.x > page.width_mm
+                            || p.y < 0.0
+                            || p.y > page.height_mm
+                    })
+                {
+                    return Err(PdfExportError::InvalidGeometry);
+                }
+                let mut line = points.iter().copied().map(&at).collect::<Vec<_>>();
+                if *closed && !line.is_empty() {
+                    line.push(line[0]);
+                }
+                painter.add(Shape::line(
+                    line,
+                    egui::Stroke::new(stroke.width_mm * points_per_mm, color(stroke.ink)),
+                ));
+            }
+            Primitive::Box {
+                bounds,
+                stroke,
+                fill,
+            } => {
+                if !valid_rect(*bounds, page) || bounds.width <= 0.0 || bounds.height <= 0.0 {
+                    return Err(PdfExportError::InvalidGeometry);
+                }
+                if stroke.is_some_and(|s| !s.width_mm.is_finite() || s.width_mm <= 0.0) {
+                    return Err(PdfExportError::InvalidGeometry);
+                }
+                if let Some(ink) = fill {
+                    painter.rect_filled(rect(*bounds), egui::CornerRadius::ZERO, color(*ink));
+                }
+                if let Some(stroke) = stroke {
+                    painter.rect_stroke(
+                        rect(*bounds),
+                        egui::CornerRadius::ZERO,
+                        egui::Stroke::new(stroke.width_mm * points_per_mm, color(stroke.ink)),
+                        egui::StrokeKind::Middle,
+                    );
+                }
+            }
+            Primitive::Link { bounds, .. } => {
+                if !valid_rect(*bounds, page) || bounds.width <= 0.0 || bounds.height <= 0.0 {
+                    return Err(PdfExportError::InvalidGeometry);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Preview-only selection and magnification. Never feed these values to the
+/// document builder or PDF serializer; one prepared document is the source for
+/// every thumbnail, full-size page and exported page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentPreviewState {
+    /// Zero-based selected page, clamped when a refreshed packet has fewer pages.
+    pub page: usize,
+    /// Logical egui points per physical millimetre of paper.
+    pub points_per_mm: f32,
+    /// Fit the entire page as the canvas or interface scale changes.
+    pub fit_page: bool,
+}
+
+impl Default for DocumentPreviewState {
+    fn default() -> Self {
+        Self {
+            page: 0,
+            // An A4 sheet fits the Handoff canvas at the 1440 × 900 reference size.
+            points_per_mm: 2.3,
+            fit_page: true,
+        }
+    }
+}
+
+impl DocumentPreviewState {
+    pub fn select(&mut self, page: usize, document: &Document) {
+        self.page = page.min(document.pages.len().saturating_sub(1));
+    }
+
+    pub fn set_zoom(&mut self, points_per_mm: f32) -> Result<(), PdfExportError> {
+        if !points_per_mm.is_finite() || !(0.8..=8.0).contains(&points_per_mm) {
+            return Err(PdfExportError::InvalidGeometry);
+        }
+        self.points_per_mm = points_per_mm;
+        self.fit_page = false;
+        Ok(())
+    }
+}
+
+/// Labels are supplied by the Handoff workspace in its UI language.
+pub struct DocumentPreviewLabels<'a> {
+    pub previous: &'a str,
+    pub next: &'a str,
+    pub page: &'a str,
+    pub zoom: &'a str,
+    pub fit: &'a str,
+}
+
+/// Paint the selected A4 page and the complete strip of selectable page
+/// thumbnails directly from the frozen positioned pages. Returns a clicked
+/// HTTPS destination for the host to handle; internal page links navigate here.
+/// Install the bundled theme fonts on `ui.ctx()` before the first frame.
+pub fn show_document_preview(
+    ui: &mut eframe::egui::Ui,
+    document: &Document,
+    state: &mut DocumentPreviewState,
+    labels: &DocumentPreviewLabels<'_>,
+) -> Result<Option<String>, PdfExportError> {
+    show_document_preview_layout(ui, document, state, labels).map(|(link, _)| link)
+}
+
+#[cfg_attr(not(test), allow(dead_code))] // Bounds are inspected by headless layout tests.
+struct PreviewAreas {
+    rail: eframe::egui::Rect,
+    center: eframe::egui::Rect,
+    page: eframe::egui::Rect,
+    thumbnails: Vec<eframe::egui::Rect>,
+}
+
+fn show_document_preview_layout(
+    ui: &mut eframe::egui::Ui,
+    document: &Document,
+    state: &mut DocumentPreviewState,
+    labels: &DocumentPreviewLabels<'_>,
+) -> Result<(Option<String>, PreviewAreas), PdfExportError> {
+    use eframe::egui::{self, Color32, Sense, StrokeKind};
+
+    if document.pages.is_empty() {
+        return Err(PdfExportError::EmptyDocument);
+    }
+    if !state.points_per_mm.is_finite() || !(0.8..=8.0).contains(&state.points_per_mm) {
+        return Err(PdfExportError::InvalidGeometry);
+    }
+    state.select(state.page, document);
+    let mut external = None;
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(state.page > 0, egui::Button::new(labels.previous))
+            .clicked()
+        {
+            state.page -= 1;
+        }
+        ui.label(format!(
+            "{} {} / {}",
+            labels.page,
+            state.page + 1,
+            document.pages.len()
+        ));
+        if ui
+            .add_enabled(
+                state.page + 1 < document.pages.len(),
+                egui::Button::new(labels.next),
+            )
+            .clicked()
+        {
+            state.page += 1;
+        }
+        ui.label(labels.zoom);
+        if ui
+            .add(egui::Slider::new(&mut state.points_per_mm, 0.8..=8.0).show_value(false))
+            .changed()
+        {
+            state.fit_page = false;
+        }
+        if ui.selectable_label(state.fit_page, labels.fit).clicked() {
+            state.fit_page = true;
+        }
+    });
+    let available = ui.available_size_before_wrap();
+    // Leave the history heading reachable below the preview at the reference
+    // window size, while smaller canvases use their entire available height.
+    let height = available.y.clamp(1.0, 690.0);
+    let gap = ui.spacing().item_spacing.x;
+    // A scroll area's max_width constrains its contents, not its share of an
+    // unconstrained horizontal row. Allocate two explicit, clipped viewports.
+    let rail_width = 112.0_f32.min((available.x - gap).max(1.0) * 0.28);
+    let center_width = (available.x - rail_width - gap).max(1.0);
+    let areas = ui
+        .horizontal(|ui| -> Result<PreviewAreas, PdfExportError> {
+            let rail = ui.allocate_ui_with_layout(
+                egui::vec2(rail_width, height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("document-preview-thumbnails")
+                        .max_height(height)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| -> Result<Vec<egui::Rect>, PdfExportError> {
+                            let mut thumbnails = Vec::with_capacity(document.pages.len());
+                            for (index, page) in document.pages.iter().enumerate() {
+                                let scale = (rail_width - 16.0).max(1.0) / page.width_mm;
+                                let size =
+                                    egui::vec2(page.width_mm * scale, page.height_mm * scale);
+                                let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                                response.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::WidgetType::Button,
+                                        response.enabled(),
+                                        index == state.page,
+                                        format!("{} {}", labels.page, index + 1),
+                                    )
+                                });
+                                thumbnails.push(rect);
+                                ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+                                paint_document_page(
+                                    &ui.painter().with_clip_rect(rect),
+                                    page,
+                                    rect.min,
+                                    scale,
+                                )?;
+                                if index == state.page || response.has_focus() {
+                                    ui.painter().rect_stroke(
+                                        rect,
+                                        0.0,
+                                        egui::Stroke::new(2.0, Color32::DARK_BLUE),
+                                        StrokeKind::Inside,
+                                    );
+                                }
+                                if response.clicked() {
+                                    state.page = index;
+                                }
+                                ui.label(format!("{} {}", labels.page, index + 1));
+                            }
+                            Ok(thumbnails)
+                        })
+                        .inner
+                },
+            );
+            let thumbnails = rail.inner?;
+            let center = ui.allocate_ui_with_layout(
+                egui::vec2(center_width, height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    egui::ScrollArea::both()
+                        .id_salt("document-preview-page")
+                        .max_height(height)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| -> Result<egui::Rect, PdfExportError> {
+                            let page = &document.pages[state.page];
+                            let scale = if state.fit_page {
+                                ((center_width - 16.0).max(1.0) / page.width_mm)
+                                    .min((height - 16.0).max(1.0) / page.height_mm)
+                            } else {
+                                state.points_per_mm
+                            };
+                            let size = egui::vec2(page.width_mm * scale, page.height_mm * scale);
+                            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                            ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+                            paint_document_page(
+                                &ui.painter().with_clip_rect(rect),
+                                page,
+                                rect.min,
+                                scale,
+                            )?;
+                            if response.clicked()
+                                && let Some(pointer) = response.interact_pointer_pos()
+                            {
+                                for primitive in &page.primitives {
+                                    if let Primitive::Link {
+                                        bounds,
+                                        destination,
+                                    } = primitive
+                                    {
+                                        let hit = egui::Rect::from_min_size(
+                                            rect.min
+                                                + egui::vec2(bounds.x * scale, bounds.y * scale),
+                                            egui::vec2(bounds.width * scale, bounds.height * scale),
+                                        );
+                                        if hit.contains(pointer) {
+                                            if let Some(index) = destination.strip_prefix("page:") {
+                                                let index = index
+                                                    .parse::<usize>()
+                                                    .map_err(|_| PdfExportError::UnsupportedLink)?;
+                                                if index == 0 || index > document.pages.len() {
+                                                    return Err(PdfExportError::UnsupportedLink);
+                                                }
+                                                state.page = index - 1;
+                                            } else if destination.starts_with("https://") {
+                                                external = Some(destination.clone());
+                                            } else {
+                                                return Err(PdfExportError::UnsupportedLink);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(rect)
+                        })
+                        .inner
+                },
+            );
+            Ok(PreviewAreas {
+                rail: rail.response.rect,
+                center: center.response.rect,
+                page: center.inner?,
+                thumbnails,
+            })
+        })
+        .inner?;
+    Ok((external, areas))
 }
 
 fn label(loc: &Localizer, key: &str) -> String {
     loc.text(key)
+}
+
+// Prepared snapshots have the same normalized aliases as their receipt.
+fn stock_alias(project: &Project, id: Uuid) -> Option<String> {
+    project.stock_alias(id).map(str::to_owned)
+}
+
+fn stock_ref(project: &Project, id: Uuid) -> String {
+    stock_alias(project, id)
+        .map(|alias| format!("{alias} [{id}]"))
+        .unwrap_or_else(|| id.to_string())
+}
+
+fn stock_description(project: &Project, stock: &Stock) -> String {
+    format!("{} · {}", stock_ref(project, stock.id), stock.name)
 }
 
 fn length(value: Length, unit: Unit, language: Language) -> String {
@@ -198,7 +913,7 @@ impl Pages {
     }
 }
 
-fn issue(issue: &ExportIssue, loc: &Localizer, unit: Unit) -> String {
+fn issue(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Unit) -> String {
     match issue {
         ExportIssue::Board {
             id, name, reasons, ..
@@ -211,7 +926,8 @@ fn issue(issue: &ExportIssue, loc: &Localizer, unit: Unit) -> String {
                 .join(", ")
         ),
         ExportIssue::Sheet { id, name, reason } => format!(
-            "{name} [{id}]: {}",
+            "{} · {name}: {}",
+            stock_ref(project, *id),
             loc.text(match reason {
                 crate::export::SheetIssue::BudgetExhausted => "sheet-feasibility-unknown",
                 _ => "sheet-cut-conflict",
@@ -227,7 +943,7 @@ fn issue(issue: &ExportIssue, loc: &Localizer, unit: Unit) -> String {
         ExportIssue::UnknownPrice { stock_id } => format!(
             "{}: {}",
             loc.text("export-price-unknown"),
-            stock_id.map_or_else(|| loc.text("export-cut-fee"), |id| id.to_string())
+            stock_id.map_or_else(|| loc.text("export-cut-fee"), |id| stock_ref(project, id))
         ),
         ExportIssue::Hardware { id, name, reason } => {
             format!(
@@ -286,7 +1002,11 @@ fn draw_sheet(
     let scale = (170. / (stock.length.micrometres() as f32 / 1000.))
         .min(105. / (stock.width.micrometres() as f32 / 1000.));
     let context = vec![
-        format!("{}: {}", label(loc, "pdf-sheet"), stock.name),
+        format!(
+            "{}: {}",
+            label(loc, "pdf-sheet"),
+            stock_description(project, stock)
+        ),
         format!("ID: {}", stock.id),
         format!(
             "{}: 1 mm {} = {} mm {}; {}",
@@ -561,7 +1281,7 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
     if !prepared.wood_issues.is_empty() || !prepared.notices.is_empty() {
         p.title(label(&loc, "pdf-issues"));
         for item in prepared.wood_issues.iter().chain(&prepared.notices) {
-            p.line(issue(item, &loc, settings.units));
+            p.line(issue(item, project, &loc, settings.units));
         }
     }
     p.title(label(&loc, "pdf-stock"));
@@ -573,9 +1293,8 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
             .find(|m| m.id == stock.material_id)
             .map_or_else(|| label(&loc, "pdf-missing"), |m| m.name.clone());
         p.line(format!(
-            "{} [{}] — {} — {} × {} × {}; {}; {}; {}: {}{}",
-            stock.name,
-            stock.id,
+            "{} — {} — {} × {} × {}; {}; {}; {}: {}{}",
+            stock_description(project, stock),
             material,
             length(stock.length, settings.units, settings.language),
             length(stock.width, settings.units, settings.language),
@@ -664,7 +1383,7 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
                     .find(|a| a.board_id == id)
                     .map_or_else(
                         || label(&loc, "board-unallocated"),
-                        |a| a.stock_id.to_string()
+                        |a| stock_ref(project, a.stock_id)
                     )
             ));
         }
@@ -887,9 +1606,222 @@ mod tests {
     use crate::export::{ExportSettings, prepare_export};
     use crate::money::{Currency, Money};
     use crate::units::{Pose, Quaternion};
+    use eframe::egui;
 
     fn mm(n: i64) -> Length {
         Length::from_micrometres(n * 1000)
+    }
+
+    fn preview_document() -> Document {
+        Document {
+            pages: (1..=6)
+                .map(|number| Page {
+                    number,
+                    width_mm: document_layout::A4_WIDTH_MM,
+                    height_mm: document_layout::A4_HEIGHT_MM,
+                    primitives: Vec::new(),
+                })
+                .collect(),
+            layout_version: document_layout::LAYOUT_VERSION,
+            font_metrics_version: document_layout::FONT_METRICS_VERSION,
+        }
+    }
+
+    fn preview_frame(
+        ctx: &egui::Context,
+        document: &Document,
+        state: &mut DocumentPreviewState,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> (PreviewAreas, Vec<egui::output::OutputEvent>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        let mut areas = None;
+        let mut output = ctx.run_ui(input, |ui| {
+            areas = Some(
+                show_document_preview_layout(
+                    ui,
+                    document,
+                    state,
+                    &DocumentPreviewLabels {
+                        previous: "Previous",
+                        next: "Next",
+                        page: "Page",
+                        zoom: "Zoom",
+                        fit: "Fit page",
+                    },
+                )
+                .unwrap()
+                .1,
+            );
+        });
+        output.textures_delta.clear();
+        (areas.unwrap(), output.platform_output.events)
+    }
+
+    #[test]
+    fn preview_has_vertical_rail_and_separate_page_at_reference_and_small_sizes() {
+        let doc = preview_document();
+        for size in [egui::vec2(928.0, 760.0), egui::vec2(430.0, 360.0)] {
+            let ctx = egui::Context::default();
+            let (areas, _) = preview_frame(
+                &ctx,
+                &doc,
+                &mut DocumentPreviewState::default(),
+                size,
+                vec![],
+            );
+            assert!(areas.rail.width() <= 112.1, "rail: {:?}", areas.rail);
+            assert!(
+                areas.rail.right() < areas.center.left(),
+                "areas overlap: {:?} {:?}",
+                areas.rail,
+                areas.center
+            );
+            assert!(
+                areas.center.right() <= size.x + 1.0,
+                "center escapes canvas: {:?}",
+                areas.center
+            );
+            assert!(areas.center.bottom() <= size.y + 1.0);
+            assert_eq!(areas.thumbnails.len(), 6);
+            for pair in areas.thumbnails.windows(2) {
+                assert!(
+                    pair[0].bottom() < pair[1].top(),
+                    "thumbnails not stacked: {pair:?}"
+                );
+                assert!((pair[0].left() - pair[1].left()).abs() < 1.0);
+            }
+            assert!(
+                areas
+                    .thumbnails
+                    .iter()
+                    .all(|r| r.right() < areas.center.left())
+            );
+            assert!(areas.page.left() >= areas.center.left());
+            assert!(areas.page.top() >= areas.center.top());
+            assert!((areas.page.width() / areas.page.height() - 210.0 / 297.0).abs() < 0.001);
+            assert!(
+                areas.center.contains_rect(areas.page),
+                "Fitted A4 not visible: {:?} {:?}",
+                areas.page,
+                areas.center
+            );
+        }
+    }
+
+    #[test]
+    fn preview_thumbnail_selection_and_zoom_leave_frozen_pages_unchanged() {
+        let doc = preview_document();
+        let original = doc.clone();
+        let ctx = egui::Context::default();
+        let mut state = DocumentPreviewState::default();
+        let size = egui::vec2(928.0, 760.0);
+        let (areas, _) = preview_frame(&ctx, &doc, &mut state, size, vec![]);
+        let pos = areas.thumbnails[1].center();
+        let (_, events) = preview_frame(
+            &ctx,
+            &doc,
+            &mut state,
+            size,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert_eq!(state.page, 1, "thumbnail click must select its page");
+        assert!(events.iter().any(|event| matches!(event,
+            egui::output::OutputEvent::Clicked(info)
+                if info.label.as_deref() == Some("Page 2") && info.typ == egui::WidgetType::Button
+        )), "thumbnail must expose a named accessible button: {events:?}");
+        state.set_zoom(4.0).unwrap();
+        let (zoomed, _) = preview_frame(&ctx, &doc, &mut state, size, vec![]);
+        assert_eq!(zoomed.page.size(), egui::vec2(840.0, 1188.0));
+        assert!(zoomed.rail.right() < zoomed.center.left());
+        assert_eq!(state.page, 1);
+        assert_eq!(doc, original, "zoom and selection cannot repaginate");
+        assert!(!render_document_pdf(&doc).unwrap().is_empty());
+    }
+
+    #[test]
+    fn small_preview_wheel_scrolls_the_frozen_page_and_thumbnail_rail_independently() {
+        let doc = preview_document();
+        let original = doc.clone();
+        let ctx = egui::Context::default();
+        let mut state = DocumentPreviewState::default();
+        state.set_zoom(4.0).unwrap();
+        let size = egui::vec2(430.0, 360.0);
+        let (initial, _) = preview_frame(&ctx, &doc, &mut state, size, vec![]);
+        let wheel = |pos: egui::Pos2| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -110.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        };
+        preview_frame(&ctx, &doc, &mut state, size, wheel(initial.center.center()));
+        let (page_scroll, _) = preview_frame(&ctx, &doc, &mut state, size, vec![]);
+        assert!(
+            page_scroll.page.top() < initial.page.top(),
+            "page did not scroll: center {:?} {:?}; page {:?} {:?}",
+            initial.center,
+            page_scroll.center,
+            initial.page,
+            page_scroll.page
+        );
+        assert_eq!(page_scroll.thumbnails[0].top(), initial.thumbnails[0].top());
+        preview_frame(&ctx, &doc, &mut state, size, wheel(initial.rail.center()));
+        let (rail_scroll, _) = preview_frame(&ctx, &doc, &mut state, size, vec![]);
+        assert!(rail_scroll.thumbnails[0].top() < initial.thumbnails[0].top());
+        assert_eq!(state.page, 0);
+        assert_eq!(doc, original);
+    }
+
+    #[test]
+    fn sheet_issue_and_price_notice_identify_alias_without_losing_uuid() {
+        let prepared = fixture(2, Language::En, ExportMode::Draft);
+        let project = prepared.snapshot.project();
+        let id = project.stock[0].id;
+        let loc = Localizer::new(Language::En);
+        let sheet = issue(
+            &ExportIssue::Sheet {
+                id,
+                name: project.stock[0].name.clone(),
+                reason: crate::export::SheetIssue::BudgetExhausted,
+            },
+            project,
+            &loc,
+            Unit::Mm,
+        );
+        let price = issue(
+            &ExportIssue::UnknownPrice { stock_id: Some(id) },
+            project,
+            &loc,
+            Unit::Mm,
+        );
+        assert!(
+            sheet.contains(&format!("S1 [{id}] · Chapa útil")),
+            "{sheet}"
+        );
+        assert!(price.contains(&format!("S1 [{id}]")), "{price}");
     }
 
     fn fixture(part_count: usize, language: Language, mode: ExportMode) -> PreparedExport {

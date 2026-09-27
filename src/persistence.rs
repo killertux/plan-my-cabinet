@@ -1,4 +1,5 @@
-//! Portable version-one `.pmcab` documents. Parsing prepares a separate editor;
+//! Portable `.pmcab` documents: read versions 1/2, write version 2.
+//! Migration is in memory only. Parsing prepares a separate editor;
 //! the active editor changes only when the caller explicitly commits the result.
 
 use std::fmt;
@@ -248,7 +249,12 @@ impl std::error::Error for PersistenceError {
 /// prices or catalog snapshots. The caller owns any subsequent disk write.
 pub fn serialize(project: &Project) -> Result<Vec<u8>, PersistenceError> {
     validate(project)?;
-    let bytes = serde_json::to_vec_pretty(project).map_err(PersistenceError::Json)?;
+    let mut document = project.clone();
+    document
+        .assign_missing_stock_aliases()
+        .map_err(PersistenceError::InvalidProject)?;
+    validate(&document)?;
+    let bytes = serde_json::to_vec_pretty(&document).map_err(PersistenceError::Json)?;
     if bytes.len() > MAX_DOCUMENT_BYTES {
         return Err(PersistenceError::TooLarge);
     }
@@ -256,11 +262,16 @@ pub fn serialize(project: &Project) -> Result<Vec<u8>, PersistenceError> {
 }
 
 /// A fully parsed and validated replacement, including fresh session-local history.
-pub struct PreparedProject(ProjectEditor);
+pub struct PreparedProject(ProjectEditor, u64);
 
 impl PreparedProject {
     pub fn project(&self) -> &Project {
         self.0.project()
+    }
+
+    /// On-disk schema before the validated in-memory migration.
+    pub fn source_version(&self) -> u64 {
+        self.1
     }
 
     /// Explicitly accept a prepared project. Undo history and previews belong to
@@ -295,13 +306,31 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         .get("schema_version")
         .and_then(Value::as_u64)
         .ok_or(PersistenceError::MissingVersion)?;
-    if version != u64::from(SCHEMA_VERSION) {
+    if version != 1 && version != u64::from(SCHEMA_VERSION) {
         return Err(PersistenceError::UnsupportedVersion(version));
     }
-    let project: Project = serde_json::from_value(value).map_err(PersistenceError::Json)?;
+    let mut project: Project = serde_json::from_value(value).map_err(PersistenceError::Json)?;
+    if version == 1 {
+        // Validate the original typed payload before migration, retaining all
+        // legacy defaults and exact stored values. Do not rebuild entities from
+        // material defaults, the installed catalog, or manufacturing grids.
+        project
+            .validate_version(1)
+            .map_err(PersistenceError::InvalidProject)?;
+        project.stock_aliases.clear();
+        project.next_stock_s_alias = 1;
+        project.next_stock_o_alias = 1;
+        project.schema_version = SCHEMA_VERSION;
+    } else {
+        validate(&project)?;
+    }
+    project
+        .assign_missing_stock_aliases()
+        .map_err(PersistenceError::InvalidProject)?;
     validate(&project)?;
     Ok(PreparedProject(
         ProjectEditor::new(project).map_err(PersistenceError::InvalidProject)?,
+        version,
     ))
 }
 
@@ -454,6 +483,8 @@ mod tests {
             priority: 3,
             trim: [mm(1); 4],
         });
+        p.stock_aliases.insert(stock, "S1".into());
+        p.next_stock_s_alias = 2;
         p.catalog.push(CatalogReference {
             id: catalog,
             name: "Pinned".into(),
@@ -740,7 +771,7 @@ mod tests {
         let before = editor.project().clone();
         let valid = serde_json::to_value(fixture()).unwrap();
         let mut cases = Vec::new();
-        for version in [2, 0] {
+        for version in [SCHEMA_VERSION + 1, 0] {
             let mut v = valid.clone();
             v["schema_version"] = Value::from(version);
             cases.push(serde_json::to_vec(&v).unwrap());
@@ -785,8 +816,8 @@ mod tests {
             assert!(editor.preview().is_some());
         }
         assert!(matches!(
-            prepare_bytes(b"{\"schema_version\":2}"),
-            Err(PersistenceError::UnsupportedVersion(2))
+            prepare_bytes(b"{\"schema_version\":3}"),
+            Err(PersistenceError::UnsupportedVersion(3))
         ));
         assert!(matches!(
             prepare_bytes(b"{\"schema_version\":4294967296}"),

@@ -243,10 +243,11 @@ mod tests {
         assert_eq!(input.focus(), "1/64 in");
         assert_eq!(
             input.rounding_preview(),
-            Some(("1/64 in".into(), "0,397 mm".into()))
+            Some(("1/64 in".into(), "0.397 mm".into()))
         );
         assert_eq!(input.committed(), old);
         assert_eq!(input.commit(true), Ok(Length::from_micrometres(397)));
+        assert_eq!(input.display(), "0,00 ft");
         assert_eq!(
             format_length(Length::from_micrometres(i64::MIN), Unit::Mm, Locale::En, 9),
             "-9223372036854775.808000000 mm"
@@ -255,6 +256,66 @@ mod tests {
             parse_length("999999999999999999999999 mm", Unit::Mm),
             Err(InputError::Unit(UnitError::Overflow))
         );
+    }
+
+    #[test]
+    fn unsuffixed_draft_keeps_entry_unit_through_preferences_and_further_edits() {
+        let old = Length::from_micrometres(100_000);
+        let mut input = DimensionInput::new(old, Unit::Mm, Locale::PtBr, 2);
+        assert_eq!(input.edit("1,5").as_ref().unwrap().unit, Unit::Mm);
+        input.set_presentation(Unit::Cm, Locale::En);
+        assert_eq!(input.focus(), "1,5");
+        assert_eq!(input.commit(false), Ok(Length::from_micrometres(1_500)));
+        assert_eq!(input.display(), "0.15 cm");
+        assert_eq!(input.edit("2").as_ref().unwrap().unit, Unit::Cm);
+        input.set_presentation(Unit::M, Locale::PtBr);
+        assert_eq!(input.edit("3").as_ref().unwrap().unit, Unit::Cm);
+        assert_eq!(input.commit(false), Ok(Length::from_micrometres(30_000)));
+        assert_eq!(input.display(), "0,03 m");
+    }
+
+    #[test]
+    fn explicit_suffix_and_rounding_consent_survive_presentation_changes() {
+        let original = Length::from_micrometres(12_345);
+        let mut input = DimensionInput::new(original, Unit::Cm, Locale::PtBr, 2);
+        input.edit("1/64 in");
+        assert_eq!(
+            input.rounding_preview(),
+            Some(("1/64 in".into(), "0,397 mm".into()))
+        );
+        input.set_presentation(Unit::Foot, Locale::En);
+        assert_eq!(input.focus(), "1/64 in");
+        assert_eq!(input.committed(), original);
+        assert_eq!(
+            input.commit(false),
+            Err(CommitError::NeedsConfirmation(Length::from_micrometres(
+                397
+            )))
+        );
+        assert_eq!(input.commit(true), Ok(Length::from_micrometres(397)));
+
+        // An untouched field may reformat in the new unit without becoming an edit.
+        let mut pristine = DimensionInput::new(original, Unit::Mm, Locale::En, 2);
+        pristine.set_presentation(Unit::Cm, Locale::PtBr);
+        assert_eq!(pristine.committed(), original);
+        assert_eq!(pristine.commit(false), Err(CommitError::NoEdit));
+    }
+
+    #[test]
+    fn invalid_draft_stays_invalid_and_cancel_uses_latest_presentation() {
+        let old = Length::from_micrometres(100_000);
+        let mut input = DimensionInput::new(old, Unit::Mm, Locale::PtBr, 2);
+        assert_eq!(input.edit("1/2"), &Err(InputError::FractionRequiresInches));
+        input.set_presentation(Unit::Inch, Locale::En);
+        assert_eq!(
+            input.preview(),
+            Some(&Err(InputError::FractionRequiresInches))
+        );
+        assert_eq!(input.edit("1/4"), &Err(InputError::FractionRequiresInches));
+        input.cancel();
+        assert_eq!(input.focus(), input.display());
+        assert_eq!(input.edit("1/4").as_ref().unwrap().unit, Unit::Inch);
+        assert_eq!(input.committed(), old);
     }
 }
 
@@ -326,6 +387,8 @@ pub struct DimensionInput {
     decimals: u8,
     draft: Option<String>,
     preview: Option<Result<ParsedDimension, InputError>>,
+    /// The unit and input locale when this edit started; presentation may change independently.
+    entry: Option<(Unit, Locale)>,
 }
 
 impl DimensionInput {
@@ -338,6 +401,7 @@ impl DimensionInput {
             decimals,
             draft: None,
             preview: None,
+            entry: None,
         }
     }
 
@@ -359,13 +423,14 @@ impl DimensionInput {
     pub fn set_presentation(&mut self, unit: Unit, locale: Locale) {
         self.field_unit = unit;
         self.locale = locale;
-        // Retain any already-parsed proposal while changing its presentation.
+        // Retain the entry semantics as well as the already-parsed proposal.
     }
 
     pub fn edit(&mut self, text: impl Into<String>) -> &Result<ParsedDimension, InputError> {
+        let (entry_unit, _) = *self.entry.get_or_insert((self.field_unit, self.locale));
         self.draft = Some(text.into());
         self.preview = Some(
-            parse_length(self.draft.as_deref().unwrap(), self.field_unit).and_then(|parsed| {
+            parse_length(self.draft.as_deref().unwrap(), entry_unit).and_then(|parsed| {
                 dimension(parsed.conversion).map_err(InputError::Unit)?;
                 Ok(parsed)
             }),
@@ -385,7 +450,12 @@ impl DimensionInput {
                 ..
             }) => Some((
                 self.draft.clone()?,
-                format_length(*value, Unit::Mm, self.locale, 3),
+                format_length(
+                    *value,
+                    Unit::Mm,
+                    self.entry.map_or(self.locale, |(_, locale)| locale),
+                    3,
+                ),
             )),
             _ => None,
         }
@@ -413,5 +483,6 @@ impl DimensionInput {
     pub fn cancel(&mut self) {
         self.draft = None;
         self.preview = None;
+        self.entry = None;
     }
 }

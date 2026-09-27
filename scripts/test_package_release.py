@@ -1,6 +1,7 @@
 """Focused checks for release license collection without a Cargo build."""
 
 import importlib.util
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,6 +11,36 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location("package_release", Path(__file__).with_name("package-release.py"))
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
+
+
+class FontNoticesTest(unittest.TestCase):
+    def test_all_embedded_weights_and_upstream_licenses_are_packaged(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "Licenses"
+            with patch.object(release, "dependency_notices"):
+                release.notices(out, "aarch64-apple-darwin")
+            inventory = (out / "fonts.txt").read_text()
+            for family, source_license in (("NotoSans", "OFL.txt"), ("JetBrainsMono", "JetBrainsMono-OFL.txt")):
+                self.assertEqual((out / f"{family}-OFL.txt").read_bytes(),
+                                 (release.ROOT / "assets/fonts" / source_license).read_bytes())
+                for weight, value in (("Regular", 400), ("Medium", 500), ("SemiBold", 600)):
+                    name = f"{family}-{weight}.ttf"
+                    digest = hashlib.sha256((release.ROOT / "assets/fonts" / name).read_bytes()).hexdigest()
+                    self.assertIn(f"{name} | {value} | {digest} | {family}-OFL.txt", inventory)
+            self.assertEqual((out / "redesign-typography.md").read_bytes(),
+                             (release.ROOT / "docs/redesign-typography.md").read_bytes())
+            release.font_notices(out)
+            self.assertEqual((out / "fonts.txt").read_text(), inventory)
+
+    def test_missing_new_license_fails_packaging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fonts = root / "assets/fonts"
+            fonts.mkdir(parents=True)
+            (fonts / "OFL.txt").write_text("Noto license")
+            with patch.object(release, "ROOT", root):
+                with self.assertRaises(FileNotFoundError):
+                    release.font_notices(root / "out")
 
 
 class DependencyNoticesTest(unittest.TestCase):

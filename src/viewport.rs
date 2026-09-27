@@ -1,55 +1,17 @@
 //! Project-driven, depth-tested 3D viewport. Camera state is presentation-only.
-use eframe::{egui, egui_wgpu, wgpu};
+use eframe::egui;
 use plan_my_cabinet::domain::{Board, HardwareKind, Project};
 use plan_my_cabinet::placement::{BoardFace, Side};
+use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use wgpu::util::DeviceExt;
 
-const SCENE_SHADER: &str = r#"
-struct Params {
-    right: vec4<f32>, up: vec4<f32>, forward: vec4<f32>, eye: vec4<f32>,
-    projection: vec4<f32>, // horizontal and vertical scale, near, far
-    mode: vec4<f32>, // perspective = 1
-};
-@group(0) @binding(0) var<uniform> params: Params;
-struct In { @location(0) position: vec3<f32>, @location(1) color: vec3<f32> };
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) color: vec3<f32> };
-@vertex fn vs(v: In) -> Out {
-    let d = v.position - params.eye.xyz;
-    let depth = dot(d, params.forward.xyz);
-    var o: Out;
-    let w = select(1.0, depth, params.mode.x > 0.5);
-    let z = select((depth - params.projection.z) / (params.projection.w - params.projection.z),
-                   (depth * params.projection.w - params.projection.z * params.projection.w) /
-                   (params.projection.w - params.projection.z), params.mode.x > 0.5);
-    o.clip = vec4<f32>(dot(d, params.right.xyz) * params.projection.x,
-                       dot(d, params.up.xyz) * params.projection.y, z, w);
-    o.color = v.color;
-    return o;
-}
-@fragment fn fs(v: Out) -> @location(0) vec4<f32> {
-    return vec4<f32>(v.color, 1.0);
-}
-"#;
+mod measure_ui;
+mod thumbnail;
+pub(crate) use measure_ui::measurement_readout;
+pub(crate) use thumbnail::saved_thumbnail;
 
-const COMPOSITE_SHADER: &str = r#"
-@group(0) @binding(0) var image: texture_2d<f32>;
-@group(0) @binding(1) var image_sampler: sampler;
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) uv: vec2<f32> };
-@vertex fn vs(@builtin(vertex_index) index: u32) -> Out {
-    var o: Out;
-    let uv = array<vec2<f32>, 3>(vec2<f32>(0.0, 0.0), vec2<f32>(2.0, 0.0), vec2<f32>(0.0, 2.0));
-    o.uv = uv[index];
-    o.clip = vec4<f32>(o.uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), 0.0, 1.0);
-    return o;
-}
-@fragment fn fs(v: Out) -> @location(0) vec4<f32> {
-    return textureSample(image, image_sampler, v.uv);
-}
-"#;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Projection {
     Perspective,
     Orthographic,
@@ -170,12 +132,13 @@ fn add_scaled(a: [f64; 3], b: [f64; 3], scale: f64) -> [f64; 3] {
     std::array::from_fn(|i| a[i] + b[i] * scale)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Preset {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Preset {
     Isometric,
     Front,
     Right,
     Top,
+    Free,
 }
 
 pub struct Camera {
@@ -187,12 +150,55 @@ pub struct Camera {
     preset: Preset,
     viewport_aspect: f64,
     viewport_height: f64,
+    pending_frame: bool,
 }
 
-#[derive(Default)]
 pub struct MoveTool {
-    pub enabled: bool,
+    pub mode: ToolMode,
+    pub face_snap: bool,
+    pub grid_snap: bool,
+    grid_edit_requested: bool,
     drag: Option<MoveDrag>,
+    capture_snap: Option<CaptureSnap>,
+    capture_evidence: Option<Result<serde_json::Value, String>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToolMode {
+    #[default]
+    Navigate,
+    Move,
+    Measure,
+}
+
+/// Opt-in, capture-only transient drag state. Never persisted or accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureSnap {
+    Face,
+    Grid,
+}
+
+impl CaptureSnap {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Face => "face",
+            Self::Grid => "grid",
+        }
+    }
+}
+
+impl Default for MoveTool {
+    fn default() -> Self {
+        Self {
+            mode: ToolMode::Navigate,
+            face_snap: true,
+            grid_snap: true,
+            grid_edit_requested: false,
+            drag: None,
+            capture_snap: None,
+            capture_evidence: None,
+        }
+    }
 }
 
 struct MoveDrag {
@@ -217,11 +223,178 @@ pub enum DragAction {
     Cancel(HashSet<Uuid>, Option<Uuid>),
 }
 
+/// A canvas click proposed to the owning editor; `picked: None` means background.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SelectionProposal {
+    pub picked: Option<Uuid>,
+    pub additive: bool,
+}
+
+/// Independent drag and selection events from a viewport frame.
+#[derive(Default)]
+pub struct ViewportInteraction {
+    pub drag: Option<DragAction>,
+    pub selection: Option<SelectionProposal>,
+}
+
 impl MoveTool {
+    pub fn configure_capture_snap(&mut self, mode: CaptureSnap) {
+        self.mode = ToolMode::Move;
+        self.face_snap = mode == CaptureSnap::Face;
+        self.grid_snap = true;
+        self.capture_snap = Some(mode);
+    }
+
+    pub fn capture_evidence(&self) -> Option<Result<serde_json::Value, String>> {
+        self.capture_evidence.clone()
+    }
+
+    fn prepare_capture_snap(
+        &mut self,
+        project: &Project,
+        camera: &Camera,
+        rect: egui::Rect,
+        selection: &mut Selection,
+    ) {
+        let Some(mode) = self.capture_snap else {
+            return;
+        };
+        // Recompute from the current canvas geometry, including the camera's
+        // current aspect, before each frame. Never synthesize a SnapCandidate.
+        self.capture_evidence =
+            Some(self.capture_candidate(project, camera, rect, selection, mode));
+    }
+
+    fn capture_candidate(
+        &mut self,
+        project: &Project,
+        camera: &Camera,
+        rect: egui::Rect,
+        selection: &mut Selection,
+        mode: CaptureSnap,
+    ) -> Result<serde_json::Value, String> {
+        let mut sources: Vec<_> = project
+            .boards
+            .iter()
+            .filter(|b| selection.visible(project, b.id))
+            .collect();
+        sources.sort_by_key(|b| (b.id != plan_my_cabinet::reference_fixture::SHELF_ID, b.id));
+        for source in sources {
+            let Ok(start) = plan_my_cabinet::placement::world_pose(project, source.id) else {
+                continue;
+            };
+            let Ok(candidates) =
+                plan_my_cabinet::placement::snap_candidates(project, source.id, start, 1_000_000.0)
+            else {
+                continue;
+            };
+            for candidate in candidates {
+                if !visible_face_with_selection(
+                    project, camera, rect, source.id, &candidate, selection,
+                ) {
+                    continue;
+                }
+                // An offset of two millimetres remains in the 32-point face
+                // radius while moving the origin enough to enable grid snap.
+                let mut translation = candidate.world_pose.translation_mm;
+                translation[0] += 2.0;
+                let Ok(free) = plan_my_cabinet::units::Pose::new(translation, start.rotation)
+                else {
+                    continue;
+                };
+                let choose = |face, grid, alt| {
+                    drag_target_with_modes_visible(
+                        project, camera, rect, source.id, free, start, alt, face, grid, selection,
+                    )
+                };
+                let (face_pose, face_result) = choose(true, true, false);
+                let (grid_pose, grid_result) = choose(false, true, false);
+                let bypass = choose(true, true, true);
+                let precedence = matches!(choose(true, true, false).1, Some(DragSnap::Face(_)));
+                let Some(DragSnap::Face(face)) = face_result else {
+                    continue;
+                };
+                if face.target_id != candidate.target_id
+                    || !matches!(grid_result, Some(DragSnap::Grid))
+                {
+                    continue;
+                }
+                let (pose, snap) = match mode {
+                    CaptureSnap::Face => (face_pose, DragSnap::Face(face)),
+                    CaptureSnap::Grid => (grid_pose, DragSnap::Grid),
+                };
+                selection.choose(Some(source.id), false);
+                self.drag = Some(MoveDrag {
+                    board_id: source.id,
+                    start: camera
+                        .project(start.translation_mm, rect)
+                        .unwrap_or(rect.center()),
+                    world: start,
+                    selection_ids: selection.ids.clone(),
+                    selection_active: selection.active,
+                    snap: Some(snap),
+                    last_pose: Some(pose),
+                });
+                return Ok(serde_json::json!({
+                    "mode": mode.as_str(), "redesign_acceptance": false,
+                    "source_id": source.id, "target_id": face.target_id,
+                    "configured_modes": {"face": self.face_snap, "grid": self.grid_snap},
+                    "candidate": if mode == CaptureSnap::Face { "face" } else { "grid" },
+                    "source_face": {"axis": face.source_face.axis, "side": format!("{:?}", face.source_face.side)},
+                    "target_face": {"axis": face.target_face.axis, "side": format!("{:?}", face.target_face.side)},
+                    "free_pose": free, "candidate_pose": pose,
+                    "face_precedes_grid_when_both": precedence,
+                    "grid_when_face_disabled": matches!(grid_result, Some(DragSnap::Grid)),
+                    "alt_bypass": bypass.1.is_none() && bypass.0 == free,
+                    "fixture_sha256": format!("{:x}", sha2::Sha256::digest(plan_my_cabinet::persistence::serialize(project).map_err(|e| e.to_string())?)),
+                }));
+            }
+        }
+        Err("No visible face and grid candidates share an eligible fixture drag at this canvas/camera".into())
+    }
+    pub(crate) fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
     pub fn cancel(&mut self) -> Option<DragAction> {
         self.drag
             .take()
             .map(|drag| DragAction::Cancel(drag.selection_ids, drag.selection_active))
+    }
+
+    pub fn take_grid_edit_request(&mut self) -> bool {
+        std::mem::take(&mut self.grid_edit_requested)
+    }
+}
+
+pub(crate) fn has_frame_bounds(project: &Project, selection: &Selection) -> bool {
+    bounds_visible(project, &selection.ids, selection).is_some()
+}
+
+/// Camera/tool commands are presentation-only; the action registry guards their invocation.
+pub(crate) fn apply_control(
+    request: crate::actions::Request,
+    camera: &mut Camera,
+    tool: &mut MoveTool,
+    project: &Project,
+    selection: &Selection,
+) {
+    use crate::actions::{ActionId as A, Argument};
+    match (request.id, request.argument) {
+        (A::ViewNavigate, _) => tool.mode = ToolMode::Navigate,
+        (A::ViewMove, _) => tool.mode = ToolMode::Move,
+        (A::ViewMeasure, _) => tool.mode = ToolMode::Measure,
+        (A::ViewFrame, _) => {
+            if let Some(b) = bounds_visible(project, &selection.ids, selection) {
+                camera.frame(b, camera.viewport_aspect);
+            } else if selection.ids.is_empty() {
+                camera.target = [0.0; 3];
+                camera.distance = 1500.0;
+            }
+        }
+        (A::ViewPreset, Argument::Preset(preset)) => camera.set_preset(preset),
+        (A::ViewProjection, Argument::Projection(projection)) => camera.projection = projection,
+        _ => unreachable!("viewport action must pass registry guard"),
     }
 }
 
@@ -229,12 +402,13 @@ impl Default for Camera {
     fn default() -> Self {
         Self {
             target: [0.0; 3],
-            yaw: -0.8,
-            pitch: 0.55,
+            yaw: -std::f64::consts::FRAC_PI_4,
+            pitch: (1.0_f64 / 3.0_f64.sqrt()).asin(),
             distance: 1500.0,
             projection: Projection::Perspective,
             preset: Preset::Isometric,
             viewport_aspect: 1.0,
+            pending_frame: false,
             viewport_height: 600.0,
         }
     }
@@ -245,6 +419,61 @@ const MIN_DISTANCE: f64 = 0.01;
 const MAX_DISTANCE: f64 = 1.0e9;
 
 impl Camera {
+    /// Defer a new-project fit until the target workspace has a real canvas.
+    pub(crate) fn request_frame(&mut self) {
+        self.pending_frame = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn framed_target(&self) -> Option<[f64; 3]> {
+        (!self.pending_frame).then_some(self.target)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn navigation_state(&self) -> ([f64; 3], f64, f64, f64) {
+        (self.target, self.distance, self.yaw, self.pitch)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn assert_framed_occupancy(&self, project: &Project, selection: &Selection) {
+        let rect = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(
+                (self.viewport_height * self.viewport_aspect) as f32,
+                self.viewport_height as f32,
+            ),
+        );
+        let mut projected = egui::Rect::NOTHING;
+        for board in &project.boards {
+            if selection.visible(project, board.id)
+                && selected_board(project, &selection.ids, board.id)
+            {
+                for corner in board_corners(project, board).unwrap() {
+                    let point = self.project(corner, rect).unwrap();
+                    assert!(rect.contains(point), "{point:?} outside {rect:?}");
+                    projected.extend_with(point);
+                }
+            }
+        }
+        let occupancy = projected.height() / rect.height().min(rect.width());
+        assert!(
+            (0.3..0.95).contains(&occupancy),
+            "postage stamp or clipped fit: {occupancy}"
+        );
+        assert!(projected.center().distance(rect.center()) < rect.width().min(rect.height()) * 0.1);
+    }
+    /// Stable presentation-only camera for native baseline captures.
+    pub fn reference_baseline() -> Self {
+        Self {
+            target: [400.0, 280.0, 360.0],
+            yaw: -std::f64::consts::FRAC_PI_4,
+            pitch: (1.0_f64 / 3.0_f64.sqrt()).asin(),
+            distance: 1800.0,
+            projection: Projection::Orthographic,
+            ..Self::default()
+        }
+    }
+
     fn project(&self, point: [f64; 3], rect: egui::Rect) -> Option<egui::Pos2> {
         let (right, up, forward) = self.basis();
         let offset = std::array::from_fn(|i| point[i] - self.target[i]);
@@ -325,7 +554,7 @@ impl Camera {
     fn orbit(&mut self, dx: f64, dy: f64) {
         self.yaw = (self.yaw - dx * 0.006).rem_euclid(std::f64::consts::TAU);
         self.pitch = (self.pitch + dy * 0.006).clamp(-1.55, 1.55);
-        self.preset = Preset::Isometric;
+        self.preset = Preset::Free;
     }
 
     fn pan(&mut self, dx: f64, dy: f64, height: f64) {
@@ -345,13 +574,14 @@ impl Camera {
     fn set_preset(&mut self, preset: Preset) {
         self.preset = preset;
         (self.yaw, self.pitch) = match preset {
-            Preset::Isometric => (-0.8, 0.55),
+            Preset::Isometric => (
+                -std::f64::consts::FRAC_PI_4,
+                (1.0_f64 / 3.0_f64.sqrt()).asin(),
+            ),
             Preset::Front => (-std::f64::consts::FRAC_PI_2, 0.0),
             Preset::Right => (0.0, 0.0),
-            Preset::Top => (
-                -std::f64::consts::FRAC_PI_2,
-                std::f64::consts::FRAC_PI_2 - 0.001,
-            ),
+            Preset::Top => (-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2),
+            Preset::Free => (self.yaw, self.pitch),
         };
     }
 
@@ -359,8 +589,13 @@ impl Camera {
         self.target = bounds.center();
         let radius = bounds.radius().max(10.0);
         // A sphere enclosing every corner fits at every preset/orbit angle.
-        let half_vertical = (FOV / 2.0).tan() * aspect.clamp(0.01, 1.0);
-        self.distance = (radius * 1.3 / half_vertical).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        let half_angle = ((FOV / 2.0).tan() * aspect.clamp(0.01, 1.0)).atan();
+        self.distance = (radius * 1.3
+            / match self.projection {
+                Projection::Perspective => half_angle.sin(),
+                Projection::Orthographic => half_angle.tan(),
+            })
+        .clamp(MIN_DISTANCE, MAX_DISTANCE);
     }
 
     fn uniform(&self, size: [u32; 2], radius: f64) -> Vec<u8> {
@@ -687,7 +922,7 @@ fn drag_target(
     start: plan_my_cabinet::units::Pose,
     bypass: bool,
 ) -> (plan_my_cabinet::units::Pose, Option<DragSnap>) {
-    drag_target_visible(
+    drag_target_with_modes_visible(
         project,
         camera,
         rect,
@@ -695,11 +930,14 @@ fn drag_target(
         free,
         start,
         bypass,
+        true,
+        true,
         &Selection::default(),
     )
 }
 
-#[allow(clippy::too_many_arguments)] // Camera, geometry and session visibility stay independent of project data.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn drag_target_visible(
     project: &Project,
     camera: &Camera,
@@ -710,11 +948,34 @@ fn drag_target_visible(
     bypass: bool,
     selection: &Selection,
 ) -> (plan_my_cabinet::units::Pose, Option<DragSnap>) {
+    drag_target_with_modes_visible(
+        project, camera, rect, source, free, start, bypass, true, true, selection,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Camera, geometry and session visibility stay independent of project data.
+fn drag_target_with_modes_visible(
+    project: &Project,
+    camera: &Camera,
+    rect: egui::Rect,
+    source: Uuid,
+    free: plan_my_cabinet::units::Pose,
+    start: plan_my_cabinet::units::Pose,
+    bypass: bool,
+    face_snap: bool,
+    grid_snap: bool,
+    selection: &Selection,
+) -> (plan_my_cabinet::units::Pose, Option<DragSnap>) {
     if bypass {
         return (free, None);
     }
-    if let Some(face) = screen_snap_visible(project, camera, rect, source, free, selection) {
+    if face_snap
+        && let Some(face) = screen_snap_visible(project, camera, rect, source, free, selection)
+    {
         return (face.world_pose, Some(DragSnap::Face(face)));
+    }
+    if !grid_snap {
+        return (free, None);
     }
     // A click/first drag frame must never pull a pre-existing off-grid pose onto
     // the grid. Evaluate the grid only after a visible movement of its origin.
@@ -823,596 +1084,19 @@ fn selected_ancestor(
     false
 }
 
-#[derive(Default)]
-struct Mesh {
-    faces: Vec<f32>,
-    lines: Vec<f32>,
-}
-
-impl Mesh {
-    fn vertex(out: &mut Vec<f32>, pos: [f32; 3], color: [f32; 3]) {
-        out.extend(pos);
-        out.extend(color);
-    }
-
-    fn line(&mut self, a: [f32; 3], b: [f32; 3], color: [f32; 3]) {
-        Self::vertex(&mut self.lines, a, color);
-        Self::vertex(&mut self.lines, b, color);
-    }
-
-    fn box_mesh(&mut self, corners: [[f32; 3]; 8], color: [f32; 3]) {
-        // `board_corners` uses bit-coded XYZ indexes (2 = min-X/max-Y,
-        // 3 = max-X/max-Y). The quad topology below uses perimeter order.
-        // Convert once before emitting faces and edges; otherwise each broad
-        // face becomes a self-crossing bow-tie of two long triangles.
-        let corners = [
-            corners[0], corners[1], corners[3], corners[2], corners[4], corners[5], corners[7],
-            corners[6],
-        ];
-        for (face, shade) in [
-            ([0, 3, 2, 1], 0.55),
-            ([4, 5, 6, 7], 1.0),
-            ([0, 1, 5, 4], 0.75),
-            ([1, 2, 6, 5], 0.85),
-            ([2, 3, 7, 6], 0.68),
-            ([3, 0, 4, 7], 0.8),
-        ] {
-            let shaded = color.map(|c| c * shade);
-            for i in [0, 1, 2, 0, 2, 3] {
-                Self::vertex(&mut self.faces, corners[face[i]], shaded);
-            }
-        }
-        for (a, b) in [
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 0),
-            (4, 5),
-            (5, 6),
-            (6, 7),
-            (7, 4),
-            (0, 4),
-            (1, 5),
-            (2, 6),
-            (3, 7),
-        ] {
-            self.line(corners[a], corners[b], [0.08, 0.11, 0.15]);
-        }
-    }
-}
-
-fn highlight_color(project: &Project, id: Uuid, selection: &Selection) -> [f32; 3] {
-    if selection.active == Some(id) {
-        [1.0, 0.78, 0.12]
-    } else if selection.ids.contains(&id) {
-        [0.35, 0.78, 0.94]
-    } else if selected_board(project, &selection.ids, id) {
-        [0.55, 0.76, 0.38]
-    } else {
-        [0.70, 0.47, 0.26]
-    }
-}
+mod annotations;
+mod canvas;
+mod controls;
+mod hardware_annotations;
+mod scene_render;
+pub use scene_render::install;
+#[cfg(test)]
+use scene_render::scene_with_faces;
+#[cfg(test)]
+use scene_render::{Mesh, add_grid, highlight_color, scene};
 
 #[cfg(test)]
-fn scene(project: &Project, camera: &Camera, selection: &Selection) -> (Mesh, f64) {
-    scene_with_faces(project, camera, selection, None, None)
-}
-
-fn scene_with_faces(
-    project: &Project,
-    camera: &Camera,
-    selection: &Selection,
-    faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
-    poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
-) -> (Mesh, f64) {
-    let mut mesh = Mesh::default();
-    add_grid(&mut mesh, project, camera);
-    for (end, color) in [
-        ([1000.0, 0.0, 0.0], [0.9, 0.18, 0.18]),
-        ([0.0, 1000.0, 0.0], [0.16, 0.67, 0.23]),
-        ([0.0, 0.0, 1000.0], [0.18, 0.36, 0.94]),
-    ] {
-        mesh.line(
-            relative([0.0; 3], camera.target),
-            relative(end, camera.target),
-            color,
-        );
-    }
-    let mut all = Bounds::empty();
-    for board in &project.boards {
-        if !selection.visible(project, board.id) {
-            continue;
-        }
-        let world = poses
-            .and_then(|p| p.get(&board.id).copied())
-            .map(|pose| {
-                box_corners(
-                    pose,
-                    board
-                        .blank_dimensions()
-                        .map(|d| d.micrometres() as f64 / 1000.0),
-                )
-            })
-            .unwrap_or_else(|| board_corners(project, board));
-        if let Some(world) = world {
-            let corners = world.map(|p| {
-                all.include(p);
-                relative(p, camera.target)
-            });
-            mesh.box_mesh(corners, highlight_color(project, board.id, selection));
-            if let Some((source, source_face, target, target_face)) = faces {
-                let selected = if source == board.id {
-                    Some((source_face, [0.15, 0.95, 0.95]))
-                } else if target == board.id {
-                    Some((target_face, [1.0, 0.25, 0.8]))
-                } else {
-                    None
-                };
-                if let Some((face, color)) = selected {
-                    let fixed = 1 << face.axis;
-                    let side = face.side == Side::Positive;
-                    let indexes: Vec<_> = (0..8).filter(|i| (*i & fixed != 0) == side).collect();
-                    let loop_indices = [indexes[0], indexes[1], indexes[3], indexes[2]];
-                    for i in 0..4 {
-                        mesh.line(
-                            corners[loop_indices[i]],
-                            corners[loop_indices[(i + 1) % 4]],
-                            color,
-                        );
-                    }
-                    for a in [loop_indices[0], loop_indices[1]] {
-                        mesh.line(corners[a], corners[loop_indices[2]], color);
-                    }
-                }
-            }
-        }
-    }
-    for hardware in &project.hardware {
-        let HardwareKind::Placeholder { dimensions } = hardware.kind else {
-            continue;
-        };
-        if !selection.visible(project, hardware.id) {
-            continue;
-        }
-        if let Some(pose) = poses
-            .and_then(|p| p.get(&hardware.id).copied())
-            .or_else(|| plan_my_cabinet::assembly_edit::world_pose(project, hardware.id).ok())
-            && let Some(world) =
-                box_corners(pose, dimensions.map(|d| d.micrometres() as f64 / 1000.0))
-        {
-            let corners = world.map(|p| {
-                all.include(p);
-                relative(p, camera.target)
-            });
-            let color = if selection.active == Some(hardware.id) {
-                [1.0, 0.78, 0.12]
-            } else if selection.ids.contains(&hardware.id) {
-                [0.35, 0.78, 0.94]
-            } else {
-                [0.36, 0.55, 0.68]
-            };
-            mesh.box_mesh(corners, color);
-        }
-    }
-    let radius = if all.valid() {
-        (0..3)
-            .map(|i| {
-                (all.min[i] - camera.target[i])
-                    .abs()
-                    .max((all.max[i] - camera.target[i]).abs())
-                    .powi(2)
-            })
-            .sum::<f64>()
-            .sqrt()
-    } else {
-        0.0
-    };
-    (mesh, radius.max(4000.0))
-}
-
-/// Draw lines on exact multiples of the project grid. At small spacings use
-/// integer multiples of the spacing to keep line count and pixel density sane.
-fn add_grid(mesh: &mut Mesh, project: &Project, camera: &Camera) {
-    let spacing = project.grid_spacing.micrometres() as f64 / 1000.0;
-    let visible_radius = (camera.distance * (FOV / 2.0).tan() * 2.5).clamp(100.0, 2_000_000.0);
-    let half = visible_radius.max(1000.0);
-    let desired = (visible_radius / 24.0).max(spacing);
-    let multiple = 10_f64.powf((desired / spacing).log10().ceil().max(0.0));
-    let step = spacing * multiple;
-    let center = camera.target;
-    let range = |axis: usize| {
-        let low = ((center[axis] - half) / step).ceil() as i64;
-        let high = ((center[axis] + half) / step).floor() as i64;
-        low..=high.min(low + 100)
-    };
-    for axis in 0..2 {
-        for i in range(axis) {
-            let n = i as f64 * step;
-            let mut a = [center[0] - half, center[1] - half, 0.0];
-            let mut b = [center[0] + half, center[1] + half, 0.0];
-            a[axis] = n;
-            b[axis] = n;
-            // World axes remain visible even when a coarse LOD skips fine lines.
-            let color = if i == 0 {
-                [0.40, 0.44, 0.48]
-            } else if i.rem_euclid(10) == 0 {
-                [0.57, 0.61, 0.65]
-            } else {
-                [0.74, 0.77, 0.80]
-            };
-            mesh.line(relative(a, center), relative(b, center), color);
-        }
-    }
-}
-
-fn relative(point: [f64; 3], origin: [f64; 3]) -> [f32; 3] {
-    std::array::from_fn(|i| (point[i] - origin[i]) as f32)
-}
-
-fn bytes(data: &[f32]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.to_ne_bytes()).collect()
-}
-
-struct Targets {
-    size: [u32; 2],
-    color: wgpu::TextureView,
-    depth: wgpu::TextureView,
-    bind: wgpu::BindGroup,
-}
-
-struct Resources {
-    faces: wgpu::Buffer,
-    face_count: u32,
-    lines: wgpu::Buffer,
-    line_count: u32,
-    params: wgpu::Buffer,
-    params_bind: wgpu::BindGroup,
-    faces_pipeline: wgpu::RenderPipeline,
-    lines_pipeline: wgpu::RenderPipeline,
-    composite_pipeline: wgpu::RenderPipeline,
-    texture_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
-    format: wgpu::TextureFormat,
-    targets: Option<Targets>,
-}
-
-fn scene_pipeline(
-    device: &wgpu::Device,
-    shader: &wgpu::ShaderModule,
-    layout: &wgpu::PipelineLayout,
-    format: wgpu::TextureFormat,
-    topology: wgpu::PrimitiveTopology,
-    depth_write: bool,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("viewport scene"),
-        layout: Some(layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs"),
-            compilation_options: Default::default(),
-            buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: 24,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
-            })],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs"),
-            compilation_options: Default::default(),
-            targets: &[Some(format.into())],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology,
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: wgpu::TextureFormat::Depth24Plus,
-            depth_write_enabled: Some(depth_write),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: Default::default(),
-            bias: wgpu::DepthBiasState {
-                constant: if depth_write { 1 } else { 0 },
-                ..Default::default()
-            },
-        }),
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-impl Resources {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let empty = [0_u8; 24];
-        let faces = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("box faces"),
-            contents: &empty,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let lines = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("outlines, axes and grid"),
-            contents: &empty,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let params = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("viewport camera"),
-            size: 96,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("viewport parameters"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let params_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &params_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            }],
-        });
-        let scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[Some(&params_layout)],
-            immediate_size: 0,
-        });
-        let scene_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("scene shader"),
-            source: wgpu::ShaderSource::Wgsl(SCENE_SHADER.into()),
-        });
-        let faces_pipeline = scene_pipeline(
-            device,
-            &scene_shader,
-            &scene_layout,
-            format,
-            wgpu::PrimitiveTopology::TriangleList,
-            true,
-        );
-        let lines_pipeline = scene_pipeline(
-            device,
-            &scene_shader,
-            &scene_layout,
-            format,
-            wgpu::PrimitiveTopology::LineList,
-            false,
-        );
-        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("viewport image"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        let composite_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[Some(&texture_layout)],
-            immediate_size: 0,
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("viewport composite shader"),
-            source: wgpu::ShaderSource::Wgsl(COMPOSITE_SHADER.into()),
-        });
-        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("viewport composite"),
-            layout: Some(&composite_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs"),
-                targets: &[Some(format.into())],
-                compilation_options: Default::default(),
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        Self {
-            faces,
-            face_count: 0,
-            lines,
-            line_count: 0,
-            params,
-            params_bind,
-            faces_pipeline,
-            lines_pipeline,
-            composite_pipeline,
-            texture_layout,
-            sampler,
-            format,
-            targets: None,
-        }
-    }
-
-    fn resize(&mut self, device: &wgpu::Device, size: [u32; 2]) {
-        if self.targets.as_ref().is_some_and(|t| t.size == size) {
-            return;
-        }
-        let texture = |label, format, usage| {
-            device.create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size: wgpu::Extent3d {
-                    width: size[0],
-                    height: size[1],
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage,
-                view_formats: &[],
-            })
-        };
-        let color = texture(
-            "viewport color",
-            self.format,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        )
-        .create_view(&Default::default());
-        let depth = texture(
-            "viewport depth",
-            wgpu::TextureFormat::Depth24Plus,
-            wgpu::TextureUsages::RENDER_ATTACHMENT,
-        )
-        .create_view(&Default::default());
-        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("viewport image binding"),
-            layout: &self.texture_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&color),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-        self.targets = Some(Targets {
-            size,
-            color,
-            depth,
-            bind,
-        });
-    }
-}
-
-pub fn install(state: &egui_wgpu::RenderState) {
-    state
-        .renderer
-        .write()
-        .callback_resources
-        .insert(Resources::new(&state.device, state.target_format));
-}
-
-struct ViewportCallback {
-    size: [u32; 2],
-    mesh: Mesh,
-    uniform: Vec<u8>,
-}
-
-impl egui_wgpu::CallbackTrait for ViewportCallback {
-    fn prepare(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _screen: &egui_wgpu::ScreenDescriptor,
-        encoder: &mut wgpu::CommandEncoder,
-        resources: &mut egui_wgpu::CallbackResources,
-    ) -> Vec<wgpu::CommandBuffer> {
-        let Some(r) = resources.get_mut::<Resources>() else {
-            return Vec::new();
-        };
-        r.resize(device, self.size);
-        queue.write_buffer(&r.params, 0, &self.uniform);
-        if !self.mesh.faces.is_empty() {
-            r.faces = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("board faces"),
-                contents: &bytes(&self.mesh.faces),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-        }
-        r.face_count = (self.mesh.faces.len() / 6) as u32;
-        r.lines = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("board edges and grid"),
-            contents: &bytes(&self.mesh.lines),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        r.line_count = (self.mesh.lines.len() / 6) as u32;
-        let target = r.targets.as_ref().expect("viewport target allocated");
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("3D viewport"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.color,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.92,
-                        g: 0.94,
-                        b: 0.96,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &target.depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            multiview_mask: None,
-        });
-        pass.set_bind_group(0, &r.params_bind, &[]);
-        pass.set_pipeline(&r.faces_pipeline);
-        pass.set_vertex_buffer(0, r.faces.slice(..));
-        pass.draw(0..r.face_count, 0..1);
-        pass.set_pipeline(&r.lines_pipeline);
-        pass.set_vertex_buffer(0, r.lines.slice(..));
-        pass.draw(0..r.line_count, 0..1);
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: egui::epaint::PaintCallbackInfo,
-        pass: &mut wgpu::RenderPass<'static>,
-        resources: &egui_wgpu::CallbackResources,
-    ) {
-        if let Some(r) = resources.get::<Resources>()
-            && let Some(target) = &r.targets
-        {
-            pass.set_pipeline(&r.composite_pipeline);
-            pass.set_bind_group(0, &target.bind, &[]);
-            pass.draw(0..3, 0..1);
-        }
-    }
-}
+mod boundary_tests;
 
 #[cfg(test)]
 pub fn show(
@@ -1432,11 +1116,16 @@ pub fn show(
         &mut MoveTool::default(),
         modal,
         language,
+        false,
+        true,
         faces,
         None,
+        plan_my_cabinet::measurements::Scope::Body,
+        plan_my_cabinet::measurements::Frame::World,
     );
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)] // View state and interaction state are kept separate from project data.
 pub fn show_move(
     ui: &mut egui::Ui,
@@ -1446,380 +1135,122 @@ pub fn show_move(
     tool: &mut MoveTool,
     modal: bool,
     language: plan_my_cabinet::i18n::Language,
+    inverse_scroll_zoom: bool,
+    material_tint: bool,
     faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
-) -> Option<DragAction> {
+    measurement_scope: plan_my_cabinet::measurements::Scope,
+    measurement_frame: plan_my_cabinet::measurements::Frame,
+) -> ViewportInteraction {
+    show_move_with_hardware(
+        ui,
+        camera,
+        project,
+        selection,
+        tool,
+        modal,
+        language,
+        inverse_scroll_zoom,
+        material_tint,
+        faces,
+        poses,
+        measurement_scope,
+        measurement_frame,
+        None,
+        false,
+    )
+}
+
+/// The installation target is a typed inspector ID, independent of board scene selection.
+/// `poses` is the disposable door display transform already used by the scene renderer.
+#[allow(clippy::too_many_arguments)]
+pub fn show_move_with_hardware(
+    ui: &mut egui::Ui,
+    camera: &mut Camera,
+    project: &Project,
+    selection: &mut Selection,
+    tool: &mut MoveTool,
+    modal: bool,
+    language: plan_my_cabinet::i18n::Language,
+    inverse_scroll_zoom: bool,
+    material_tint: bool,
+    faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
+    poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
+    measurement_scope: plan_my_cabinet::measurements::Scope,
+    measurement_frame: plan_my_cabinet::measurements::Frame,
+    installation_id: Option<Uuid>,
+    hardware_workspace: bool,
+) -> ViewportInteraction {
     use plan_my_cabinet::i18n::Language;
     let pt = language == Language::PtBr;
-    let mut action = None;
-    ui.horizontal(|ui| {
-        ui.add_enabled_ui(!modal && poses.is_none() && tool.drag.is_none(), |ui| {
-            ui.selectable_value(
-                &mut tool.enabled,
-                false,
-                if pt { "Navegar" } else { "Navigate" },
-            );
-            ui.selectable_value(
-                &mut tool.enabled,
-                true,
-                if pt { "Mover peça" } else { "Move board" },
-            );
-        });
-        ui.label(if tool.enabled && poses.is_none() {
-            if pt {
-                "Arraste a peça selecionada · Alt ignora encaixe · Esc cancela"
-            } else {
-                "Drag selected board · Alt bypasses snap · Esc cancels"
-            }
-        } else if pt {
-            "Arraste para orbitar"
-        } else {
-            "Drag to orbit"
-        });
-    });
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                !modal,
-                egui::Button::new(if pt {
-                    "Enquadrar seleção/cena"
-                } else {
-                    "Frame selection/scene"
-                }),
-            )
-            .clicked()
-        {
-            if let Some(b) = bounds_visible(project, &selection.ids, selection)
-                .or_else(|| bounds_visible(project, &HashSet::new(), selection))
-            {
-                camera.frame(b, camera.viewport_aspect);
-            } else {
-                camera.target = [0.0; 3];
-                camera.distance = 1500.0;
-            }
-        }
-        ui.add_enabled_ui(!modal, |ui| {
-            egui::ComboBox::from_id_salt("viewport-preset")
-                .selected_text(match (pt, camera.preset) {
-                    (false, Preset::Isometric) => "Isometric",
-                    (true, Preset::Isometric) => "Isométrica",
-                    (false, Preset::Front) => "Front",
-                    (true, Preset::Front) => "Frontal",
-                    (false, Preset::Right) => "Right",
-                    (true, Preset::Right) => "Direita",
-                    (false, Preset::Top) => "Top",
-                    (true, Preset::Top) => "Superior",
-                })
-                .show_ui(ui, |ui| {
-                    for (preset, en, br) in [
-                        (Preset::Isometric, "Isometric", "Isométrica"),
-                        (Preset::Front, "Front", "Frontal"),
-                        (Preset::Right, "Right", "Direita"),
-                        (Preset::Top, "Top", "Superior"),
-                    ] {
-                        if ui
-                            .selectable_label(camera.preset == preset, if pt { br } else { en })
-                            .clicked()
-                        {
-                            camera.set_preset(preset);
-                            ui.close();
-                        }
-                    }
-                });
-            egui::ComboBox::from_id_salt("viewport-projection")
-                .selected_text(match (pt, camera.projection) {
-                    (false, Projection::Perspective) => "Perspective",
-                    (true, Projection::Perspective) => "Perspectiva",
-                    (false, Projection::Orthographic) => "Orthographic",
-                    (true, Projection::Orthographic) => "Ortográfica",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut camera.projection,
-                        Projection::Perspective,
-                        if pt { "Perspectiva" } else { "Perspective" },
-                    );
-                    ui.selectable_value(
-                        &mut camera.projection,
-                        Projection::Orthographic,
-                        if pt { "Ortográfica" } else { "Orthographic" },
-                    );
-                });
-        });
-    });
-    ui.add_enabled_ui(!modal, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(if pt { "Órbita" } else { "Orbit" });
-            if ui.button(if pt { "Esq" } else { "Left" }).clicked() {
-                camera.orbit(-20.0, 0.0);
-            }
-            if ui.button(if pt { "Dir" } else { "Right" }).clicked() {
-                camera.orbit(20.0, 0.0);
-            }
-            ui.label(if pt { "Deslocar" } else { "Pan" });
-            if ui.button(if pt { "Esq" } else { "Left" }).clicked() {
-                camera.pan(-28.0, 0.0, camera.viewport_height);
-            }
-            if ui.button(if pt { "Dir" } else { "Right" }).clicked() {
-                camera.pan(28.0, 0.0, camera.viewport_height);
-            }
-            ui.label("Zoom");
-            if ui.button("+").clicked() {
-                camera.zoom(1.2);
-            }
-            if ui.button("-").clicked() {
-                camera.zoom(1.0 / 1.2);
-            }
-        });
-    });
-    let available = ui.available_size();
-    let size = egui::vec2(available.x.max(1.0), available.y.max(1.0));
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
-    camera.viewport_aspect = (rect.width() as f64 / rect.height().max(1.0) as f64).max(0.01);
-    camera.viewport_height = rect.height() as f64;
-    if modal {
-        action = tool.cancel();
+    let overlay_blocked = if hardware_workspace {
+        controls::hardware_overlay(
+            ui,
+            camera,
+            project,
+            selection,
+            tool,
+            modal,
+            pt,
+            poses.is_some(),
+        )
     } else {
-        if tool.drag.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            action = tool.cancel();
-        }
-        if action.is_none()
-            && tool.enabled
-            && poses.is_none()
-            && response.drag_started_by(egui::PointerButton::Primary)
-            && !ui.input(|i| i.modifiers.shift || i.modifiers.command)
-            && !ui.ctx().text_edit_focused()
-            && let Some(start) = ui.input(|i| i.pointer.press_origin())
-            && let Some(id) = selection.active
-            && pick_visible(project, camera, start, rect, selection) == Some(id)
-            && let Ok(world) = plan_my_cabinet::placement::world_pose(project, id)
-        {
-            tool.drag = Some(MoveDrag {
-                board_id: id,
-                start,
-                world,
-                selection_ids: selection.ids.clone(),
-                selection_active: selection.active,
-                snap: None,
-                last_pose: None,
-            });
-        }
-        if action.is_none()
-            && let Some(drag) = &mut tool.drag
-        {
-            if response.drag_stopped_by(egui::PointerButton::Primary) {
-                let final_pose = response
-                    .interact_pointer_pos()
-                    .and_then(|pointer| camera.drag_pose(drag.start, pointer, rect, drag.world))
-                    .map(|free| {
-                        drag_target_visible(
-                            project,
-                            camera,
-                            rect,
-                            drag.board_id,
-                            free,
-                            drag.world,
-                            ui.input(|i| i.modifiers.alt),
-                            selection,
-                        )
-                        .0
-                    })
-                    .or(drag.last_pose);
-                action = Some(DragAction::Accept(drag.board_id, final_pose));
-                tool.drag = None;
-            } else if let Some(pointer) = response.interact_pointer_pos()
-                && let Some(free) = camera.drag_pose(drag.start, pointer, rect, drag.world)
-            {
-                let (pose, snap) = drag_target_visible(
-                    project,
-                    camera,
-                    rect,
-                    drag.board_id,
-                    free,
-                    drag.world,
-                    ui.input(|i| i.modifiers.alt),
-                    selection,
-                );
-                drag.snap = snap;
-                drag.last_pose = Some(pose);
-                action = Some(DragAction::Preview(drag.board_id, pose));
-            }
-        }
-        if poses.is_none()
-            && response.clicked_by(egui::PointerButton::Primary)
-            && let Some(pointer) = response.interact_pointer_pos()
-        {
-            let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-            selection.choose(
-                pick_visible(project, camera, pointer, rect, selection),
-                additive,
-            );
-        }
-        if response.clicked() || response.drag_started() {
-            response.request_focus();
-            // egui only accepts a focus lock after the widget was focused in a
-            // previous pass. Schedule that pass even if there is no other input.
-            ui.ctx().request_repaint();
-        }
-        let delta = ui.input(|i| i.pointer.delta());
-        if response.dragged_by(egui::PointerButton::Secondary)
-            || (response.dragged_by(egui::PointerButton::Primary)
-                && ui.input(|i| i.modifiers.shift))
-        {
-            camera.pan(delta.x as f64, delta.y as f64, rect.height() as f64);
-        } else if response.dragged_by(egui::PointerButton::Primary)
-            && (!tool.enabled || poses.is_some())
-        {
-            camera.orbit(delta.x as f64, delta.y as f64);
-        }
-        if response.hovered() {
-            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
-            camera.zoom((scroll as f64 * 0.002).exp() * pinch as f64);
-        }
-        if response.has_focus() && !egui::Popup::is_any_open(ui.ctx()) {
-            let plain_arrow_pressed = ui.input(|i| {
-                !i.modifiers.any()
-                    && [
-                        egui::Key::ArrowLeft,
-                        egui::Key::ArrowRight,
-                        egui::Key::ArrowUp,
-                        egui::Key::ArrowDown,
-                    ]
-                    .into_iter()
-                    .any(|key| i.key_pressed(key))
-            });
-            ui.memory_mut(|memory| {
-                memory.set_focus_lock_filter(
-                    response.id,
-                    egui::EventFilter {
-                        horizontal_arrows: true,
-                        vertical_arrows: true,
-                        tab: false,
-                        ..Default::default()
-                    },
-                );
-                // On the first pass after focus is requested the filter is not
-                // yet active at begin_pass. Prevent its arrow direction from
-                // moving focus at end_pass, even if the user typed immediately.
-                if plain_arrow_pressed {
-                    memory.move_focus(egui::FocusDirection::None);
-                }
-            });
-            ui.input(|i| {
-                let step = if i.modifiers.shift { 28.0 } else { 20.0 };
-                let x = (i.key_pressed(egui::Key::ArrowRight) as i32
-                    - i.key_pressed(egui::Key::ArrowLeft) as i32) as f64
-                    * step;
-                let y = (i.key_pressed(egui::Key::ArrowDown) as i32
-                    - i.key_pressed(egui::Key::ArrowUp) as i32) as f64
-                    * step;
-                if i.modifiers.shift {
-                    camera.pan(x, y, rect.height() as f64);
-                } else {
-                    camera.orbit(x, y);
-                }
-                if i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals) {
-                    camera.zoom(1.2);
-                }
-                if i.key_pressed(egui::Key::Minus) {
-                    camera.zoom(1.0 / 1.2);
-                }
-            });
-        }
-    }
-    let pixels = ui.ctx().pixels_per_point();
-    let size = [
-        (rect.width() * pixels).round().max(1.0) as u32,
-        (rect.height() * pixels).round().max(1.0) as u32,
-    ];
-    let faces = tool
-        .drag
-        .as_ref()
-        .and_then(|drag| {
-            drag.snap.and_then(|snap| match snap {
-                DragSnap::Grid => None,
-                DragSnap::Face(snap) => Some((
-                    drag.board_id,
-                    snap.source_face,
-                    snap.target_id,
-                    snap.target_face,
-                )),
-            })
-        })
-        .or(faces);
-    let (mesh, radius) = scene_with_faces(project, camera, selection, faces, poses);
-    ui.painter().add(egui_wgpu::Callback::new_paint_callback(
-        rect,
-        ViewportCallback {
-            size,
-            mesh,
-            uniform: camera.uniform(size, radius),
-        },
-    ));
-    if let Some(drag) = &tool.drag {
-        if matches!(drag.snap, Some(DragSnap::Grid))
-            && let Some(pose) = drag.last_pose
-            && let Some(point) =
-                camera.project([pose.translation_mm[0], pose.translation_mm[1], 0.0], rect)
-            && rect.contains(point)
-        {
-            // At distant zoom levels the rendered grid omits fine lines. Mark
-            // the exact candidate intersection so the target remains visible.
-            let painter = ui.painter().with_clip_rect(rect);
-            let color = egui::Color32::from_rgb(240, 72, 170);
-            painter.circle_stroke(point, 7.0, egui::Stroke::new(2.0, color));
-            painter.line_segment(
-                [
-                    point + egui::vec2(-11.0, 0.0),
-                    point + egui::vec2(11.0, 0.0),
-                ],
-                egui::Stroke::new(2.0, color),
-            );
-            painter.line_segment(
-                [
-                    point + egui::vec2(0.0, -11.0),
-                    point + egui::vec2(0.0, 11.0),
-                ],
-                egui::Stroke::new(2.0, color),
-            );
-        }
-        let label = if let Some(DragSnap::Face(snap)) = drag.snap {
-            let name = project
-                .boards
-                .iter()
-                .find(|b| b.id == snap.target_id)
-                .map_or("—", |b| b.name.as_str());
-            if pt {
-                format!("Encaixe: {name} · solte para aceitar")
-            } else {
-                format!("Snap: {name} · release to accept")
-            }
-        } else if let Some(DragSnap::Grid) = drag.snap {
-            if pt {
-                "Grade XY · solte para aceitar".into()
-            } else {
-                "XY grid · release to accept".into()
-            }
-        } else if ui.input(|i| i.modifiers.alt) {
-            if pt {
-                "Encaixe ignorado · solte para aceitar".into()
-            } else {
-                "Snap bypassed · release to accept".into()
-            }
-        } else if pt {
-            "Posição livre · solte para aceitar".into()
-        } else {
-            "Free position · release to accept".into()
-        };
-        ui.painter().text(
-            rect.left_top() + egui::vec2(12.0, 12.0),
-            egui::Align2::LEFT_TOP,
-            label,
-            egui::FontId::proportional(15.0),
-            egui::Color32::WHITE,
+        controls::show(
+            ui,
+            camera,
+            project,
+            selection,
+            tool,
+            modal,
+            pt,
+            poses.is_some(),
         );
-    }
-    action
+        false
+    };
+    let (rect, interaction) = canvas::interact_with_selection(
+        ui,
+        camera,
+        project,
+        selection,
+        tool,
+        modal || overlay_blocked,
+        inverse_scroll_zoom,
+        poses.is_some(),
+    );
+    tool.prepare_capture_snap(project, camera, rect, selection);
+    scene_render::paint(
+        ui,
+        project,
+        camera,
+        selection,
+        tool,
+        faces,
+        poses,
+        material_tint,
+        rect,
+    );
+    annotations::paint(
+        ui,
+        camera,
+        project,
+        selection,
+        tool,
+        rect,
+        pt,
+        measurement_scope,
+        measurement_frame,
+    );
+    hardware_annotations::paint(
+        ui,
+        camera,
+        project,
+        selection,
+        rect,
+        poses,
+        installation_id,
+        pt,
+    );
+    interaction
 }
 
 #[cfg(test)]
@@ -1828,8 +1259,389 @@ mod tests {
     use plan_my_cabinet::commands::ProjectEditor;
     use plan_my_cabinet::domain::{Assembly, Board, BoardGrain, Material};
     use plan_my_cabinet::i18n::Language;
+    use plan_my_cabinet::measurements::{Frame, Scope};
     use plan_my_cabinet::money::Currency;
     use plan_my_cabinet::units::{Length, Pose, Quaternion};
+
+    #[test]
+    fn hardware_camera_overlay_preserves_canvas_height_and_blocks_pointer_pick() {
+        for pt in [false, true] {
+            let ctx = egui::Context::default();
+            let project = plan_my_cabinet::reference_fixture::project();
+            let mut camera = Camera::reference_baseline();
+            let mut selection = Selection::default();
+            let mut tool = MoveTool::default();
+            let mut point = egui::Pos2::ZERO;
+            for frame in 0..5 {
+                let events = if frame < 3 {
+                    vec![]
+                } else {
+                    vec![
+                        egui::Event::PointerMoved(point),
+                        egui::Event::PointerButton {
+                            pos: point,
+                            button: egui::PointerButton::Primary,
+                            pressed: frame == 3,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ]
+                };
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(750.0, 800.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let before = ui.available_rect_before_wrap();
+                        let blocked = controls::hardware_overlay(
+                            ui,
+                            &mut camera,
+                            &project,
+                            &selection,
+                            &mut tool,
+                            false,
+                            pt,
+                            false,
+                        );
+                        let (rect, action) = canvas::interact_with_selection(
+                            ui,
+                            &mut camera,
+                            &project,
+                            &mut selection,
+                            &mut tool,
+                            blocked,
+                            false,
+                            false,
+                        );
+                        assert!((rect.height() - before.height()).abs() < 1.0);
+                        assert!(
+                            action.selection.is_none(),
+                            "camera overlay must not pick the scene"
+                        );
+                    },
+                );
+                for shape in &output.shapes {
+                    if let egui::Shape::Text(text) = &shape.shape
+                        && text.galley.text() == if pt { "Frontal" } else { "Front" }
+                    {
+                        point = text.pos + text.galley.size() * 0.5;
+                    }
+                }
+                output.drop_without_applying_deltas();
+            }
+            assert_ne!(point, egui::Pos2::ZERO);
+            assert_eq!(camera.preset, Preset::Front);
+        }
+    }
+
+    #[test]
+    fn measure_tool_switches_are_guarded_read_only_and_keep_scope_and_frame() {
+        use crate::actions::{self, ActionId as A, Request, Unavailable};
+        let editor = ProjectEditor::new(plan_my_cabinet::reference_fixture::project()).unwrap();
+        let original = editor.project().clone();
+        let revision = original.revision;
+        let undo = editor.can_undo();
+        let root = editor.project().assemblies[0].id;
+        let mut selection = Selection::default();
+        selection.choose(Some(root), false);
+        let scope = Scope::Overall;
+        let frame = Frame::Object(root);
+        let mut camera = Camera::default();
+        let mut tool = MoveTool::default();
+        for (action, expected) in [
+            (A::ViewMeasure, ToolMode::Measure),
+            (A::ViewNavigate, ToolMode::Navigate),
+            (A::ViewMove, ToolMode::Move),
+            (A::ViewMeasure, ToolMode::Measure),
+        ] {
+            actions::viewport_control(
+                Request::new(action),
+                &mut camera,
+                &mut tool,
+                editor.project(),
+                &selection,
+                false,
+                false,
+            )
+            .unwrap();
+            assert_eq!(tool.mode, expected);
+            assert_eq!((scope, frame), (Scope::Overall, Frame::Object(root)));
+        }
+        let localizer = plan_my_cabinet::i18n::Localizer::new(Language::En);
+        let (label, value) =
+            measurement_readout(editor.project(), &selection, scope, frame, &localizer);
+        assert!(label.contains("Overall") && label.contains(&root.to_string()[..8]));
+        assert!(value.contains("X × Y × Z") && value.contains("mm"));
+        for (modal, preview) in [(true, false), (false, true)] {
+            assert_eq!(
+                actions::viewport_control(
+                    Request::new(A::ViewNavigate),
+                    &mut camera,
+                    &mut tool,
+                    editor.project(),
+                    &selection,
+                    modal,
+                    preview,
+                ),
+                Err(if modal {
+                    Unavailable::ModalOpen
+                } else {
+                    Unavailable::Busy
+                })
+            );
+            assert_eq!(tool.mode, ToolMode::Measure);
+        }
+        assert_eq!(editor.project(), &original);
+        assert_eq!(editor.project().revision, revision);
+        assert_eq!(editor.can_undo(), undo);
+    }
+
+    #[test]
+    fn measurement_readout_uses_nested_rotated_bounds_and_discloses_missing_hardware() {
+        use plan_my_cabinet::domain::{Hardware, HardwareKind};
+        let mut project = Project::new("Measure", Currency::Brl);
+        let root = Uuid::new_v4();
+        let nested = Uuid::new_v4();
+        let panel = Uuid::new_v4();
+        let foot = Uuid::new_v4();
+        let turn = Quaternion::normalized(1.0, 0.0, 0.0, 1.0).unwrap();
+        project.assemblies.push(Assembly {
+            id: root,
+            name: "Root".into(),
+            parent_id: None,
+            pose: Pose::new([100.0, 0.0, 0.0], turn).unwrap(),
+        });
+        project.assemblies.push(Assembly {
+            id: nested,
+            name: "Nested".into(),
+            parent_id: Some(root),
+            pose: Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+        });
+        let mut part = board(panel, [0.0, 0.0, 100.0], Some(nested));
+        part.length = Length::from_micrometres(100_000);
+        part.width = Length::from_micrometres(50_000);
+        let material_id = part.material_id;
+        project.materials.push(Material {
+            id: material_id,
+            name: "Panel".into(),
+            default_thickness: part.thickness,
+            default_grain: BoardGrain::Unrestricted,
+        });
+        project.boards.push(part);
+        project.hardware.push(Hardware {
+            id: foot,
+            name: "Foot".into(),
+            parent_id: Some(root),
+            pose: Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+            kind: HardwareKind::Placeholder {
+                dimensions: [
+                    Length::from_micrometres(10_000),
+                    Length::from_micrometres(10_000),
+                    Length::from_micrometres(20_000),
+                ],
+            },
+        });
+        let mut selection = Selection::default();
+        selection.choose(Some(root), false);
+        selection.choose(Some(panel), true); // Explicit descendant must not be counted twice.
+        selection.hidden.insert(nested); // Hiding must not change measurement.
+        let localizer = plan_my_cabinet::i18n::Localizer::new(Language::En);
+        let original = project.clone();
+        let (_, body) = measurement_readout(
+            &project,
+            &selection,
+            Scope::Body,
+            Frame::Object(root),
+            &localizer,
+        );
+        let (_, overall) = measurement_readout(
+            &project,
+            &selection,
+            Scope::Overall,
+            Frame::Object(root),
+            &localizer,
+        );
+        assert!(body.contains("100.000 × 50.000 × 20.000 mm"), "{body}");
+        assert!(
+            overall.contains("100.000 × 50.000 × 120.000 mm"),
+            "{overall}"
+        );
+        let (_, world) =
+            measurement_readout(&project, &selection, Scope::Body, Frame::World, &localizer);
+        assert!(world.contains("50.000 × 100.000 × 20.000 mm"), "{world}");
+        project.hardware[0].kind = HardwareKind::Catalog {
+            catalog_id: Uuid::new_v4(),
+        };
+        let (heading, unknown) = measurement_readout(
+            &project,
+            &selection,
+            Scope::Overall,
+            Frame::Object(root),
+            &localizer,
+        );
+        assert!(heading.contains("Overall") && heading.contains("Root"));
+        assert!(unknown.contains("unavailable") && unknown.contains("hardware"));
+        let (_, body_again) = measurement_readout(
+            &project,
+            &selection,
+            Scope::Body,
+            Frame::Object(root),
+            &localizer,
+        );
+        assert_eq!(body, body_again);
+        project.display_unit = plan_my_cabinet::units::Unit::Inch;
+        let pt = plan_my_cabinet::i18n::Localizer::new(Language::PtBr);
+        let (label, imperial) =
+            measurement_readout(&project, &selection, Scope::Body, Frame::Object(root), &pt);
+        assert!(label.contains("Referencial"));
+        assert!(imperial.contains("in") && imperial.contains(','));
+        assert_eq!(original.boards[0].pose, project.boards[0].pose);
+    }
+
+    #[test]
+    fn capture_snap_uses_real_candidates_and_never_edits_the_fixture() {
+        let editor = ProjectEditor::new(plan_my_cabinet::reference_fixture::project()).unwrap();
+        let before = editor.project().clone();
+        let revision = editor.project().revision;
+        let undo = editor.can_undo();
+        let camera = Camera::reference_baseline();
+        let rect = egui::Rect::from_min_size(egui::pos2(330.0, 110.0), egui::vec2(740.0, 380.0));
+        for mode in [CaptureSnap::Face, CaptureSnap::Grid] {
+            let mut tool = MoveTool::default();
+            let mut selection = Selection::default();
+            selection
+                .hidden
+                .insert(plan_my_cabinet::reference_fixture::DOORS_ID);
+            tool.configure_capture_snap(mode);
+            tool.prepare_capture_snap(editor.project(), &camera, rect, &mut selection);
+            let evidence = tool.capture_evidence().unwrap().unwrap();
+            let drag = tool.drag.as_ref().unwrap();
+            assert_eq!(evidence["candidate"], mode.as_str());
+            assert_eq!(evidence["face_precedes_grid_when_both"], true);
+            assert_eq!(evidence["grid_when_face_disabled"], true);
+            assert_eq!(evidence["alt_bypass"], true);
+            assert_ne!(evidence["source_id"], evidence["target_id"]);
+            assert_eq!(selection.active, Some(drag.board_id));
+            let (mesh, _) = scene_with_faces(
+                editor.project(),
+                &camera,
+                &selection,
+                scene_render::highlighted_faces(&tool, None),
+                Some(&HashMap::from([(drag.board_id, drag.last_pose.unwrap())])),
+                true,
+            );
+            if mode == CaptureSnap::Face {
+                assert!(matches!(drag.snap, Some(DragSnap::Face(_))));
+                assert!(
+                    mesh.lines
+                        .chunks_exact(6)
+                        .any(|v| v[3..] == [0.15, 0.95, 0.95])
+                );
+                assert!(
+                    mesh.lines
+                        .chunks_exact(6)
+                        .any(|v| v[3..] == [1.0, 0.25, 0.8])
+                );
+            } else {
+                assert!(matches!(drag.snap, Some(DragSnap::Grid)));
+                assert!(scene_render::highlighted_faces(&tool, None).is_none());
+                assert!(
+                    camera
+                        .project(
+                            [
+                                drag.last_pose.unwrap().translation_mm[0],
+                                drag.last_pose.unwrap().translation_mm[1],
+                                0.0
+                            ],
+                            rect
+                        )
+                        .is_some_and(|p| rect.contains(p))
+                );
+            }
+        }
+        assert_eq!(editor.project(), &before);
+        assert_eq!(editor.project().revision, revision);
+        assert_eq!(editor.can_undo(), undo);
+    }
+
+    #[test]
+    fn tint_is_only_face_presentation_and_hidden_geometry_casts_no_shadow() {
+        use plan_my_cabinet::domain::SrgbColor;
+        let mut project = Project::new("Tint", Currency::Brl);
+        let board_id = Uuid::new_v4();
+        let part = board(board_id, [0.0; 3], None);
+        let material_id = part.material_id;
+        project.materials.push(Material {
+            id: material_id,
+            name: "Veneer".into(),
+            default_thickness: part.thickness,
+            default_grain: BoardGrain::Unrestricted,
+        });
+        project.boards.push(part);
+        project
+            .material_colors
+            .insert(material_id, SrgbColor([185, 125, 83]));
+        let before = project.clone();
+        let fingerprint = plan_my_cabinet::export::fingerprint(&project);
+        let camera = Camera::default();
+        let selection = Selection::default();
+        let (tinted, _) = scene_with_faces(&project, &camera, &selection, None, None, true);
+        let (neutral, _) = scene_with_faces(&project, &camera, &selection, None, None, false);
+        assert_ne!(tinted.faces, neutral.faces);
+        assert_eq!(tinted.lines, neutral.lines);
+        assert_eq!(tinted.shadow, neutral.shadow);
+        assert!(!tinted.shadow.is_empty());
+        project.material_colors.remove(&material_id);
+        let (fallback, _) = scene_with_faces(&project, &camera, &selection, None, None, true);
+        assert_eq!(neutral.faces, fallback.faces);
+        project
+            .material_colors
+            .insert(material_id, SrgbColor([185, 125, 83]));
+        assert_eq!(
+            project, before,
+            "rendering and preference choice never edit the model"
+        );
+        assert_eq!(plan_my_cabinet::export::fingerprint(&project), fingerprint);
+        let mut hidden = Selection::default();
+        hidden.hidden.insert(board_id);
+        let (mesh, _) = scene_with_faces(&project, &camera, &hidden, None, None, true);
+        assert!(mesh.faces.is_empty());
+        assert!(mesh.shadow.is_empty());
+        assert_eq!(
+            mesh.lines,
+            scene_with_faces(&project, &camera, &Selection::default(), None, None, true)
+                .0
+                .lines[..mesh.lines.len()]
+        );
+    }
+
+    #[test]
+    fn active_warm_face_and_secondary_edges_keep_material_identity() {
+        let mut project = Project::new("Edges", Currency::Brl);
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        project.boards.push(board(a, [0.0; 3], None));
+        project.boards.push(board(b, [200.0, 0.0, 0.0], None));
+        let camera = Camera::default();
+        let mut selection = Selection::default();
+        let (plain, _) = scene(&project, &camera, &selection);
+        selection.choose(Some(a), false);
+        selection.choose(Some(b), true);
+        let (selected, _) = scene(&project, &camera, &selection);
+        // Each box has 36 vertices of six floats. Only the active board's
+        // faces receive the presentation-only amber mix; secondary selection
+        // keeps its material fill and cyan edge.
+        let first_box = 36 * 6;
+        assert_eq!(&plain.faces[..first_box], &selected.faces[..first_box]);
+        assert_ne!(&plain.faces[first_box..], &selected.faces[first_box..]);
+        assert_ne!(plain.lines, selected.lines);
+        assert_eq!(highlight_color(&project, a, &selection), [0.16, 0.59, 0.67]);
+        assert_eq!(highlight_color(&project, b, &selection), [0.79, 0.45, 0.12]);
+    }
 
     #[test]
     fn scene_override_moves_only_target_mesh_and_exit_recovers_identical_closed_mesh() {
@@ -1840,18 +1652,18 @@ mod tests {
         project.boards.push(board(fixed, [200.0, 0.0, 0.0], None));
         let camera = Camera::default();
         let selection = Selection::default();
-        let (closed, _) = scene_with_faces(&project, &camera, &selection, None, None);
+        let (closed, _) = scene_with_faces(&project, &camera, &selection, None, None, true);
         let poses = HashMap::from([(
             moving,
             Pose::new([50.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap(),
         )]);
-        let (open, _) = scene_with_faces(&project, &camera, &selection, None, Some(&poses));
+        let (open, _) = scene_with_faces(&project, &camera, &selection, None, Some(&poses), true);
         // Grid and axes precede the two board boxes; only the first box changes.
         let board_floats = 36 * 6;
         assert_ne!(open.faces[..board_floats], closed.faces[..board_floats]);
         assert_eq!(open.faces[board_floats..], closed.faces[board_floats..]);
         assert_eq!(
-            scene_with_faces(&project, &camera, &selection, None, None)
+            scene_with_faces(&project, &camera, &selection, None, None, true)
                 .0
                 .faces,
             closed.faces
@@ -1868,12 +1680,12 @@ mod tests {
         let mut camera = Camera::default();
         let mut selection = Selection::default();
         let mut tool = MoveTool {
-            enabled: true,
+            mode: ToolMode::Move,
             ..Default::default()
         };
         let poses = HashMap::from([(id, Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap())]);
         let mut frame = |events| {
-            let mut action = None;
+            let mut action = ViewportInteraction::default();
             ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -1893,14 +1705,19 @@ mod tests {
                             &mut tool,
                             false,
                             Language::En,
+                            false,
+                            true,
                             None,
                             Some(&poses),
+                            plan_my_cabinet::measurements::Scope::Body,
+                            plan_my_cabinet::measurements::Frame::World,
                         );
                     });
                 },
             )
             .drop_without_applying_deltas();
-            assert!(action.is_none());
+            assert!(action.drag.is_none());
+            assert!(action.selection.is_none());
         };
         let pos = egui::pos2(400.0, 330.0);
         let button = |pos, pressed| egui::Event::PointerButton {
@@ -1919,6 +1736,173 @@ mod tests {
     }
 
     #[test]
+    fn canvas_proposes_picks_and_background_clicks_without_changing_selection() {
+        let ctx = egui::Context::default();
+        let id = Uuid::from_u128(42);
+        let mut project = Project::new("Click proposals", Currency::Brl);
+        project.boards.push(board(id, [0.0; 3], None));
+        let mut camera = Camera::default();
+        camera.set_preset(Preset::Top);
+        camera.target = [50.0, 50.0, 10.0];
+        camera.distance = 400.0;
+        let mut selection = Selection::default();
+        let existing = Uuid::from_u128(43);
+        selection.choose(Some(existing), false);
+        let mut tool = MoveTool::default();
+        #[allow(clippy::too_many_arguments)] // Exercises each independent viewport input explicitly.
+        fn frame(
+            ctx: &egui::Context,
+            camera: &mut Camera,
+            project: &Project,
+            selection: &mut Selection,
+            tool: &mut MoveTool,
+            events: Vec<egui::Event>,
+            modifiers: egui::Modifiers,
+            modal: bool,
+            preview_active: bool,
+        ) -> (egui::Rect, ViewportInteraction) {
+            let mut rect = egui::Rect::NOTHING;
+            let mut result = ViewportInteraction::default();
+            let mut events = events;
+            events.insert(0, egui::Event::ModifiersChanged(modifiers));
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        (rect, result) = canvas::interact_with_selection(
+                            ui,
+                            camera,
+                            project,
+                            selection,
+                            tool,
+                            modal,
+                            false,
+                            preview_active,
+                        );
+                    });
+                },
+            )
+            .drop_without_applying_deltas();
+            (rect, result)
+        }
+        macro_rules! draw {
+            ($events:expr, $modifiers:expr, $modal:expr, $preview:expr) => {
+                frame(
+                    &ctx,
+                    &mut camera,
+                    &project,
+                    &mut selection,
+                    &mut tool,
+                    $events,
+                    $modifiers,
+                    $modal,
+                    $preview,
+                )
+            };
+        }
+        let (rect, _) = draw!(vec![], egui::Modifiers::NONE, false, false);
+        let center = rect.center();
+        let background = rect.left_top() + egui::vec2(8.0, 8.0);
+        let click = |pos, pressed, modifiers| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        };
+        draw!(
+            vec![click(center, true, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            false
+        );
+        let (_, result) = draw!(
+            vec![click(center, false, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            false
+        );
+        assert_eq!(
+            result.selection,
+            Some(SelectionProposal {
+                picked: Some(id),
+                additive: false
+            })
+        );
+        assert!(result.drag.is_none());
+        assert_eq!(selection.active, Some(existing));
+        assert_eq!(selection.ids, HashSet::from([existing]));
+
+        let shift = egui::Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        draw!(vec![click(center, true, shift)], shift, false, false);
+        let (_, result) = draw!(vec![click(center, false, shift)], shift, false, false);
+        assert_eq!(
+            result.selection,
+            Some(SelectionProposal {
+                picked: Some(id),
+                additive: true
+            })
+        );
+        draw!(
+            vec![click(background, true, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            false
+        );
+        let (_, result) = draw!(
+            vec![click(background, false, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            false
+        );
+        assert_eq!(
+            result.selection,
+            Some(SelectionProposal {
+                picked: None,
+                additive: false
+            })
+        );
+        assert_eq!(selection.ids, HashSet::from([existing]));
+        assert_eq!(selection.active, Some(existing));
+
+        draw!(
+            vec![click(center, true, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            true,
+            false
+        );
+        let (_, result) = draw!(
+            vec![click(center, false, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            true,
+            false
+        );
+        assert!(result.selection.is_none());
+        draw!(
+            vec![click(center, true, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            true
+        );
+        let (_, result) = draw!(
+            vec![click(center, false, egui::Modifiers::NONE)],
+            egui::Modifiers::NONE,
+            false,
+            true
+        );
+        assert!(result.selection.is_none());
+    }
+
+    #[test]
     fn rectangular_board_faces_have_full_area_and_edges_follow_box_axes() {
         let corners = std::array::from_fn(|i| {
             [
@@ -1928,7 +1912,7 @@ mod tests {
             ]
         });
         let mut mesh = Mesh::default();
-        mesh.box_mesh(corners, [1.0; 3]);
+        mesh.box_mesh(corners, [1.0; 3], [0.5; 3]);
         let triangle_area = |vertices: &[f32]| {
             let a = [vertices[0], vertices[1], vertices[2]];
             let b = [vertices[6], vertices[7], vertices[8]];
@@ -2017,6 +2001,136 @@ mod tests {
         assert_ne!(
             screen_snap(&project, &camera, rect, source, free).map(|c| c.target_id),
             Some(target)
+        );
+    }
+
+    #[test]
+    fn independent_snap_modes_alt_and_spacing_leave_committed_poses_alone() {
+        let source = Uuid::new_v4();
+        let target = Uuid::new_v4();
+        let mut project = Project::new("Snap options", Currency::Brl);
+        project.boards.push(board(source, [0.0; 3], None));
+        project.boards.push(board(target, [160.0, 0.0, 0.0], None));
+        project.grid_spacing = Length::from_micrometres(20_000);
+        let mut tool = MoveTool::default();
+        assert!(tool.face_snap && tool.grid_snap);
+        tool.face_snap = false;
+        tool.grid_snap = true;
+        assert!(!tool.take_grid_edit_request());
+        for board in &project.boards {
+            project.materials.push(Material {
+                id: board.material_id,
+                name: board.name.clone(),
+                default_thickness: board.thickness,
+                default_grain: BoardGrain::Unrestricted,
+            });
+        }
+        let before = project.clone();
+        let mut camera = Camera::default();
+        camera.set_preset(Preset::Front);
+        camera.target = [100.0, 50.0, 10.0];
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let start = Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap();
+        let seed = Pose::new([60.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
+        let candidate =
+            plan_my_cabinet::placement::snap_candidates(&project, source, seed, 1_000.0)
+                .unwrap()
+                .into_iter()
+                .find(|c| visible_face(&project, &camera, rect, source, c))
+                .unwrap();
+        let mut translation = candidate.world_pose.translation_mm;
+        translation[0] += 2.0;
+        let free = Pose::new(translation, Quaternion::IDENTITY).unwrap();
+        let choose = |project: &Project, face, grid, alt| {
+            drag_target_with_modes_visible(
+                project,
+                &camera,
+                rect,
+                source,
+                free,
+                start,
+                alt,
+                face,
+                grid,
+                &Selection::default(),
+            )
+        };
+        assert!(matches!(
+            choose(&project, true, true, false).1,
+            Some(DragSnap::Face(_))
+        ));
+        let (grid_pose, grid_snap) = choose(&project, false, true, false);
+        assert!(matches!(grid_snap, Some(DragSnap::Grid)));
+        assert_eq!(
+            grid_pose.translation_mm[0],
+            (free.translation_mm[0] / 20.0).round() * 20.0
+        );
+        assert!(matches!(
+            choose(&project, true, false, false).1,
+            Some(DragSnap::Face(_))
+        ));
+        assert!(matches!(choose(&project, false, false, false), (pose, None) if pose == free));
+        for (face, grid) in [(true, true), (true, false), (false, true), (false, false)] {
+            assert!(matches!(choose(&project, face, grid, true), (pose, None) if pose == free));
+        }
+        assert!(matches!(
+            choose(&project, true, true, false).1,
+            Some(DragSnap::Face(_))
+        ));
+        assert_eq!(project, before);
+        let probe = Pose::new([43.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
+        let grid_at = |project: &Project| {
+            let (pose, candidate) = drag_target_with_modes_visible(
+                project,
+                &camera,
+                rect,
+                source,
+                probe,
+                start,
+                false,
+                false,
+                true,
+                &Selection::default(),
+            );
+            assert!(matches!(candidate, Some(DragSnap::Grid)));
+            pose.translation_mm[0]
+        };
+        assert_eq!(grid_at(&project), 40.0);
+        let mut editor = ProjectEditor::new(project).unwrap();
+        let old_poses: Vec<_> = editor.project().boards.iter().map(|b| b.pose).collect();
+        editor
+            .set_grid_spacing(Length::from_micrometres(30_000))
+            .unwrap();
+        assert_eq!(
+            editor
+                .project()
+                .boards
+                .iter()
+                .map(|b| b.pose)
+                .collect::<Vec<_>>(),
+            old_poses
+        );
+        assert_eq!(editor.project().grid_spacing.micrometres(), 30_000);
+        assert_eq!(grid_at(editor.project()), 30.0);
+        assert!(matches!(
+            choose(editor.project(), false, true, false).1,
+            Some(DragSnap::Grid)
+        ));
+        assert_eq!(
+            choose(editor.project(), false, true, false)
+                .0
+                .translation_mm[0],
+            (free.translation_mm[0] / 30.0).round() * 30.0
+        );
+        editor.undo().unwrap();
+        assert_eq!(
+            editor
+                .project()
+                .boards
+                .iter()
+                .map(|b| b.pose)
+                .collect::<Vec<_>>(),
+            old_poses
         );
     }
 
@@ -2110,6 +2224,7 @@ mod tests {
         project.grid_spacing = Length::from_micrometres(1);
         let mut fine = Mesh::default();
         add_grid(&mut fine, &project, &camera);
+        assert!(scene_render::grid_display_interval(&project, &camera) > 0.000001);
         assert!(fine.lines.len() / 12 <= 202);
         assert!(
             fine.lines
@@ -2138,7 +2253,7 @@ mod tests {
         camera.set_preset(Preset::Front);
         camera.target = [50.0, 25.0, 10.0];
         let mut tool = MoveTool {
-            enabled: true,
+            mode: ToolMode::Move,
             ..Default::default()
         };
         fn frame(
@@ -2148,8 +2263,9 @@ mod tests {
             selection: &mut Selection,
             tool: &mut MoveTool,
             events: Vec<egui::Event>,
-        ) {
+        ) -> egui::Rect {
             let mut result = None;
+            let mut canvas_rect = egui::Rect::NOTHING;
             ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -2161,16 +2277,10 @@ mod tests {
                 },
                 |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        result = show_move(
-                            ui,
-                            camera,
-                            editor.preview().unwrap_or(editor.project()),
-                            selection,
-                            tool,
-                            false,
-                            Language::En,
-                            None,
-                            None,
+                        let project = editor.preview().unwrap_or(editor.project());
+                        controls::show(ui, camera, project, selection, tool, false, false, false);
+                        (canvas_rect, result) = canvas::interact(
+                            ui, camera, project, selection, tool, false, false, false,
                         );
                     });
                 },
@@ -2198,6 +2308,7 @@ mod tests {
                 }
                 _ => {}
             }
+            canvas_rect
         }
         macro_rules! draw {
             ($events:expr) => {
@@ -2217,9 +2328,9 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        draw!(vec![]);
-        let pos = egui::pos2(400.0, 330.0);
-        let moved = egui::pos2(455.0, 330.0);
+        let rect = draw!(vec![]);
+        let pos = camera.project([50.0, 50.0, 10.0], rect).unwrap();
+        let moved = pos + egui::vec2(55.0, 0.0);
         draw!(vec![button(pos, true)]);
         draw!(vec![egui::Event::PointerMoved(moved)]);
         assert!(editor.preview().is_some());
@@ -2628,6 +2739,28 @@ mod tests {
             ctx.memory(|m| m.focused()),
             Some(egui::Id::new("other-field"))
         );
+        camera.target = [120.0, 70.0, 30.0];
+        keyboard_frame(
+            &ctx,
+            &mut camera,
+            vec![key(egui::Key::F, egui::Modifiers::NONE)],
+        );
+        assert_eq!(
+            camera.target,
+            [120.0, 70.0, 30.0],
+            "text focus isolates frame shortcut"
+        );
+        ctx.memory_mut(|m| m.request_focus(viewport_id));
+        keyboard_frame(&ctx, &mut camera, vec![]);
+        keyboard_frame(
+            &ctx,
+            &mut camera,
+            vec![key(egui::Key::F, egui::Modifiers::NONE)],
+        );
+        assert_eq!(
+            camera.target, [0.0; 3],
+            "focused empty viewport frames scene"
+        );
     }
 
     #[test]
@@ -2650,48 +2783,273 @@ mod tests {
     #[test]
     fn framing_tall_and_wide_bounds_keeps_all_corners_in_view() {
         let mut camera = Camera::default();
-        for (b, aspect) in [
-            (
-                Bounds {
-                    min: [-100.0, -100.0, 0.0],
-                    max: [100.0, 100.0, 2000.0],
-                },
-                0.25,
-            ),
-            (
-                Bounds {
-                    min: [-2000.0, -100.0, 0.0],
-                    max: [2000.0, 100.0, 100.0],
-                },
-                4.0,
-            ),
-        ] {
-            camera.frame(b, aspect);
-            let (right, up, forward) = camera.basis();
-            for x in [b.min[0], b.max[0]] {
-                for y in [b.min[1], b.max[1]] {
-                    for z in [b.min[2], b.max[2]] {
-                        let p = [
-                            x - camera.target[0],
-                            y - camera.target[1],
-                            z - camera.target[2],
-                        ];
-                        let dot = |axis: [f64; 3]| {
-                            axis.into_iter().zip(p).map(|(a, b)| a * b).sum::<f64>()
-                        };
-                        let depth = camera.distance + dot(forward);
-                        assert!(depth > 0.0);
-                        let vertical = if camera.projection == Projection::Perspective {
-                            depth
-                        } else {
-                            camera.distance
-                        } * (FOV / 2.0).tan();
-                        assert!(dot(up).abs() < vertical);
-                        assert!(dot(right).abs() < vertical * aspect);
+        for projection in [Projection::Perspective, Projection::Orthographic] {
+            camera.projection = projection;
+            for preset in [Preset::Isometric, Preset::Front, Preset::Right, Preset::Top] {
+                camera.set_preset(preset);
+                for (b, aspect) in [
+                    (
+                        Bounds {
+                            min: [-100.0, -100.0, 0.0],
+                            max: [100.0, 100.0, 2000.0],
+                        },
+                        0.25,
+                    ),
+                    (
+                        Bounds {
+                            min: [-2000.0, -100.0, 0.0],
+                            max: [2000.0, 100.0, 100.0],
+                        },
+                        4.0,
+                    ),
+                ] {
+                    camera.frame(b, aspect);
+                    let (right, up, forward) = camera.basis();
+                    for x in [b.min[0], b.max[0]] {
+                        for y in [b.min[1], b.max[1]] {
+                            for z in [b.min[2], b.max[2]] {
+                                let p = [
+                                    x - camera.target[0],
+                                    y - camera.target[1],
+                                    z - camera.target[2],
+                                ];
+                                let dot = |axis: [f64; 3]| {
+                                    axis.into_iter().zip(p).map(|(a, b)| a * b).sum::<f64>()
+                                };
+                                let depth = camera.distance + dot(forward);
+                                assert!(depth > 0.0);
+                                let vertical = if camera.projection == Projection::Perspective {
+                                    depth
+                                } else {
+                                    camera.distance
+                                } * (FOV / 2.0).tan();
+                                assert!(dot(up).abs() < vertical);
+                                assert!(dot(right).abs() < vertical * aspect);
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn guarded_camera_actions_match_shader_projection_and_picking_without_project_edits() {
+        use crate::actions::{self, ActionId as A, Argument, Request, Unavailable};
+        let id = Uuid::new_v4();
+        let mut project = Project::new("Camera", Currency::Brl);
+        project.boards.push(board(id, [150.0, -80.0, 30.0], None));
+        let source = &project.boards[0];
+        project.materials.push(Material {
+            id: source.material_id,
+            name: "Wood".into(),
+            default_thickness: source.thickness,
+            default_grain: BoardGrain::Unrestricted,
+        });
+        let editor = ProjectEditor::new(project).unwrap();
+        let original = editor.project().boards[0].pose;
+        let revision = editor.project().revision;
+        let mut selection = Selection::default();
+        selection.choose(Some(id), false);
+        let mut tool = MoveTool::default();
+        let mut camera = Camera {
+            viewport_aspect: 800.0 / 600.0,
+            ..Camera::default()
+        };
+        let rect = egui::Rect::from_min_size(egui::pos2(72.0, 95.0), egui::vec2(800.0, 600.0));
+        for projection in [Projection::Perspective, Projection::Orthographic] {
+            actions::viewport_control(
+                Request::new(A::ViewProjection).argument(Argument::Projection(projection)),
+                &mut camera,
+                &mut tool,
+                editor.project(),
+                &selection,
+                false,
+                false,
+            )
+            .unwrap();
+            for preset in [Preset::Isometric, Preset::Front, Preset::Right, Preset::Top] {
+                actions::viewport_control(
+                    Request::new(A::ViewPreset).argument(Argument::Preset(preset)),
+                    &mut camera,
+                    &mut tool,
+                    editor.project(),
+                    &selection,
+                    false,
+                    false,
+                )
+                .unwrap();
+                actions::viewport_control(
+                    Request::new(A::ViewFrame),
+                    &mut camera,
+                    &mut tool,
+                    editor.project(),
+                    &selection,
+                    false,
+                    false,
+                )
+                .unwrap();
+                let corners = board_corners(editor.project(), &editor.project().boards[0]).unwrap();
+                for point in corners {
+                    let screen = camera.project(point, rect).unwrap();
+                    assert!(
+                        rect.contains(screen),
+                        "{projection:?} {preset:?}: {screen:?}"
+                    );
+                    // Evaluate the same uniform and perspective divide used by the native WGSL vertex shader.
+                    let uniform = camera.uniform([800, 600], 4000.0);
+                    let floats: Vec<f32> = uniform
+                        .chunks_exact(4)
+                        .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
+                        .collect();
+                    let relative =
+                        std::array::from_fn::<_, 3, _>(|i| (point[i] - camera.target[i]) as f32);
+                    let d = std::array::from_fn::<_, 3, _>(|i| relative[i] - floats[12 + i]);
+                    let axis_dot =
+                        |base: usize| (0..3).map(|i| d[i] * floats[base + i]).sum::<f32>();
+                    let depth = axis_dot(8);
+                    let w = if projection == Projection::Perspective {
+                        depth
+                    } else {
+                        1.0
+                    };
+                    let gpu = egui::pos2(
+                        rect.center().x + axis_dot(0) * floats[16] / w * rect.width() / 2.0,
+                        rect.center().y - axis_dot(4) * floats[17] / w * rect.height() / 2.0,
+                    );
+                    assert!(
+                        (screen - gpu).length() < 0.01,
+                        "{projection:?} {preset:?}: {screen:?} vs {gpu:?}"
+                    );
+                }
+                let center = world_pose(editor.project(), &editor.project().boards[0])
+                    .unwrap()
+                    .transform_point([50.0, 50.0, 10.0])
+                    .unwrap();
+                let screen = camera.project(center, rect).unwrap();
+                assert_eq!(
+                    pick_visible(editor.project(), &camera, screen, rect, &selection),
+                    Some(id)
+                );
+            }
+        }
+        assert_eq!(
+            actions::viewport_control(
+                Request::new(A::ViewMove),
+                &mut camera,
+                &mut tool,
+                editor.project(),
+                &selection,
+                true,
+                false
+            ),
+            Err(Unavailable::ModalOpen),
+        );
+        assert_eq!(tool.mode, ToolMode::Navigate);
+        actions::viewport_control(
+            Request::new(A::ViewMove),
+            &mut camera,
+            &mut tool,
+            editor.project(),
+            &selection,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(tool.mode, ToolMode::Move);
+        assert_eq!(
+            actions::viewport_control(
+                Request::new(A::ViewNavigate),
+                &mut camera,
+                &mut tool,
+                editor.project(),
+                &selection,
+                false,
+                true
+            ),
+            Err(Unavailable::Busy),
+        );
+        assert_eq!(tool.mode, ToolMode::Move);
+        assert_eq!(editor.project().boards[0].pose, original);
+        assert_eq!(editor.project().revision, revision);
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn top_frame_uses_nested_assembly_bounds_and_rejects_hidden_selection() {
+        use crate::actions::{self, ActionId as A, Argument, Request, Unavailable};
+        let group = Uuid::new_v4();
+        let mut project = Project::new("Assembly frame", Currency::Brl);
+        let mut panel = board(Uuid::new_v4(), [40.0, 10.0, 25.0], Some(group));
+        panel.width = Length::from_micrometres(840_000);
+        project.materials.push(Material {
+            id: panel.material_id,
+            name: "Panel".into(),
+            default_thickness: panel.thickness,
+            default_grain: BoardGrain::Unrestricted,
+        });
+        project.boards.push(panel);
+        project.assemblies.push(Assembly {
+            id: group,
+            name: "Tall assembly".into(),
+            parent_id: None,
+            pose: Pose::new(
+                [300.0, -250.0, 110.0],
+                Quaternion::normalized(1.0, 0.0, 0.0, 1.0).unwrap(),
+            )
+            .unwrap(),
+        });
+        let editor = ProjectEditor::new(project).unwrap();
+        let mut selection = Selection::default();
+        selection.choose(Some(group), false);
+        let mut camera = Camera {
+            viewport_aspect: 0.65,
+            ..Camera::default()
+        };
+        let mut tool = MoveTool::default();
+        actions::viewport_control(
+            Request::new(A::ViewPreset).argument(Argument::Preset(Preset::Top)),
+            &mut camera,
+            &mut tool,
+            editor.project(),
+            &selection,
+            false,
+            false,
+        )
+        .unwrap();
+        actions::viewport_control(
+            Request::new(A::ViewFrame),
+            &mut camera,
+            &mut tool,
+            editor.project(),
+            &selection,
+            false,
+            false,
+        )
+        .unwrap();
+        let b = bounds_visible(editor.project(), &selection.ids, &selection).unwrap();
+        assert_eq!(camera.target, b.center());
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(390.0, 600.0));
+        for point in board_corners(editor.project(), &editor.project().boards[0]).unwrap() {
+            assert!(rect.contains(camera.project(point, rect).unwrap()));
+        }
+        selection.hidden.insert(group);
+        let before = (camera.target, camera.distance);
+        assert_eq!(
+            actions::viewport_control(
+                Request::new(A::ViewFrame),
+                &mut camera,
+                &mut tool,
+                editor.project(),
+                &selection,
+                false,
+                false
+            ),
+            Err(Unavailable::NoSelection),
+        );
+        assert_eq!((camera.target, camera.distance), before);
+        assert_eq!(editor.project().revision, 0);
+        assert!(!editor.can_undo());
     }
 
     #[test]
@@ -2806,7 +3164,8 @@ mod tests {
         assert!(!mesh.faces.is_empty());
         selection.choose(Some(id), false);
         let (highlighted, _) = scene(&project, &camera, &selection);
-        assert_ne!(mesh.faces, highlighted.faces);
+        assert_eq!(mesh.faces, highlighted.faces);
+        assert_ne!(mesh.lines, highlighted.lines);
         selection.hidden.insert(id);
         assert_eq!(
             pick_visible(&project, &camera, pointer, rect, &selection),
@@ -2814,5 +3173,6 @@ mod tests {
         );
         let (hidden, _) = scene(&project, &camera, &selection);
         assert!(hidden.faces.is_empty());
+        assert!(hidden.shadow.is_empty());
     }
 }

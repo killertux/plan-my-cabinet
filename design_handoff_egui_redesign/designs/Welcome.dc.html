@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:48px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">8a</span>
+    <span style="font-size:18px;font-weight:600">Welcome &amp; recovery</span>
+  </div>
+  <div style="font-size:13px;color:#6E655A;max-width:1100px">Shown on launch and after closing a project. Recovery appears in the page as a clear three-way choice, not as a blocking popup. Templates are a proposed feature.</div>
+
+  <div data-screen-label="Welcome" style="width:1100px;height:700px;display:flex;background:#F4F1EC;font-family:'Noto Sans',sans-serif;color:#2A2520;font-size:13px;overflow:hidden;border-radius:10px;box-shadow:0 1px 0 #D4CDC1,0 20px 50px rgba(60,45,25,.18)">
+    <div style="width:340px;flex:none;background:#FBFAF7;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;padding:28px 24px 20px;gap:24px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:42px;height:42px;border-radius:10px;background:#2A2520;color:#F4C27A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:24px;height:24px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+        <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:17px;font-weight:600">Plan My Cabinet</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">v0.9 · macOS arm64</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="height:40px;display:flex;align-items:center;gap:10px;padding:0 14px;border-radius:8px;background:#2A2520;color:#FBFAF7;font-weight:500"><span style="display:block;width:16px;height:16px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span><span style="flex:1">New project</span><span style="font:11px 'JetBrains Mono',monospace;opacity:.6">⌘N</span></div>
+        <div style="height:40px;display:flex;align-items:center;gap:10px;padding:0 14px;border-radius:8px;background:#ECE8E1;font-weight:500"><span style="display:block;width:16px;height:16px;background:currentColor;mask:url(icons/folder.svg) center/contain no-repeat"></span><span style="flex:1">Open project…</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">⌘O</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">START FROM A TEMPLATE</span>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <div style="padding:10px 8px;border-radius:8px;border:1px solid #E6E0D6;background:#FFFFFF;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:34px;height:30px;border:1.5px solid #6E655A;border-radius:2px;display:flex"><span style="flex:1;border-right:1px solid #6E655A"></span><span style="flex:1"></span></div><span style="font-size:11.5px">Base</span></div>
+          <div style="padding:10px 8px;border-radius:8px;border:1px solid #E6E0D6;background:#FFFFFF;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:34px;height:22px;margin:4px 0;border:1.5px solid #6E655A;border-radius:2px"></div><span style="font-size:11.5px">Wall</span></div>
+          <div style="padding:10px 8px;border-radius:8px;border:1px solid #E6E0D6;background:#FFFFFF;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:34px;height:30px;border:1.5px solid #6E655A;border-radius:2px;display:flex;flex-direction:column"><span style="flex:1;border-bottom:1px solid #6E655A"></span><span style="flex:1;border-bottom:1px solid #6E655A"></span><span style="flex:1"></span></div><span style="font-size:11.5px">Drawers</span></div>
+        </div>
+        <span style="font-size:11.5px;color:#8C8276;line-height:1.45">Sets width, height, depth and material, then creates the boards as normal editable parts.</span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+        <div style="display:flex;align-items:center;gap:10px;color:#5A5248"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/globe.svg) center/contain no-repeat"></span><span style="flex:1">Language</span><span style="display:flex;align-items:center;gap:6px;color:#2A2520">English<span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></span></div>
+        <div style="display:flex;align-items:center;gap:10px;color:#5A5248"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/sliders.svg) center/contain no-repeat"></span><span style="flex:1">Preferences</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">⌘,</span></div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:24px 28px;gap:18px">
+      <div style="padding:16px 18px;border-radius:12px;background:#FFFFFF;border:1px solid #EBD2B0;box-shadow:0 1px 0 #F6E3CB;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="width:34px;height:34px;flex:none;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/save.svg) center/contain no-repeat"></span></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+            <span style="font-size:14.5px;font-weight:600">Unsaved work found for Kitchen base 800</span>
+            <span style="font-size:12.5px;color:#5A5248;line-height:1.5">The app closed with 14 unsaved edits. The saved file hasn't been touched.</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-left:46px">
+          <div style="padding:10px 12px;border-radius:8px;background:#F4F1EC;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:#6E655A">Saved file</span><span style="font:12.5px 'JetBrains Mono',monospace">rev 41 · 24/09 18:12</span></div>
+          <div style="padding:10px 12px;border-radius:8px;background:#FCF4E7;border:1px solid #EBD2B0;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:#8A5418">Recovery snapshot</span><span style="font:12.5px 'JetBrains Mono',monospace;color:#5C3309">rev 42 · 25/09 14:32</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding-left:46px">
+          <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500">Recover edits</div>
+          <div style="height:32px;display:flex;align-items:center;padding:0 14px;border-radius:7px;background:#ECE8E1;border:1px solid #DDD7CD">Decide later</div>
+          <div style="height:32px;display:flex;align-items:center;padding:0 12px;border-radius:7px;color:#B4412F">Discard snapshot</div>
+          <span style="flex:1"></span>
+          <span style="font-size:11.5px;color:#8C8276">Recovered work stays unsaved until you save</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:15px;font-weight:600;flex:1">Recent projects</span>
+        <div style="width:220px;height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:7px;color:#8C8276"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/search.svg) center/contain no-repeat"></span>Filter</div>
+      </div>
+      <div style="display:flex;flex-direction:column;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:10px;overflow:hidden">
+        <sc-for list="{{ recents }}" as="p" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;border-bottom:1px solid #EDE8E0">
+            <div style="width:64px;height:46px;flex:none;border-radius:6px;background:repeating-linear-gradient(135deg,#EFEBE3 0 6px,#E4DED3 6px 7px);border:1px solid #DDD7CD;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px"><span style="font:8px 'JetBrains Mono',monospace;color:#8C8276">3D</span></div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-weight:500">{{ p.name }}</span>
+              <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.path }}</span>
+            </div>
+            <span style="width:130px;font-size:12px;color:#6E655A">{{ p.stats }}</span>
+            <span style="width:120px"><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:{{ p.chipBg }};color:{{ p.chipInk }};white-space:nowrap">{{ p.status }}</span></span>
+            <span style="width:84px;text-align:right;font-size:12px;color:#6E655A">{{ p.when }}</span>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;color:#8C8276">
+          <div style="width:64px;height:46px;flex:none;border-radius:6px;border:1px dashed #CFC7B9"></div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">Garage shelving</span><span style="font:11px 'JetBrains Mono',monospace">file not found · /Volumes/USB/garage.pmcab</span></div>
+          <a href="#" style="font-size:12px">Locate…</a>
+          <a href="#" style="font-size:12px;color:#8C8276">Remove</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      recents: [
+        { name: 'Kitchen base 800', path: '~/Projects/kitchen/kitchen-base.pmcab', stats: '9 boards · 2 sheets', status: 'Recovery available', chipBg: '#F6E3CB', chipInk: '#7A4410', when: 'Yesterday' },
+        { name: 'Wardrobe 2300', path: '~/Projects/bedroom/wardrobe.pmcab', stats: '24 boards · 5 sheets', status: 'Shop-ready sent', chipBg: '#E4EEE3', chipInk: '#3F6B45', when: '12 Sep' },
+        { name: 'Bathroom vanity', path: '~/Projects/vanity.pmcab', stats: '11 boards · 1 sheet', status: 'Draft', chipBg: '#ECE8E1', chipInk: '#5A5248', when: '3 Sep' },
+        { name: 'Bookcase test', path: '~/Desktop/bookcase.pmcab', stats: '7 boards · no stock', status: 'Draft', chipBg: '#ECE8E1', chipInk: '#5A5248', when: '28 Aug' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

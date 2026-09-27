@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:48px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">3a</span>
+    <span style="font-size:18px;font-weight:600">Cut plan workspace</span>
+  </div>
+  <div style="font-size:13px;color:#6E655A;max-width:1440px">Sheets on the left, the selected sheet drawn to scale with numbered cuts, offcuts and kerf, and the cut sequence + estimate on the right. Clicking a part links to the same board in Design. Repair mode reuses this canvas with drag + staged changes.</div>
+
+  <div data-screen-label="Cut plan" style="width:1440px;height:900px;display:flex;background:#F4F1EC;font-family:'Noto Sans',sans-serif;color:#2A2520;font-size:13px;overflow:hidden;border-radius:10px;box-shadow:0 1px 0 #D4CDC1,0 20px 50px rgba(60,45,25,.18)">
+    <div style="width:60px;flex:none;background:#F4F1EC;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px">
+      <div style="width:32px;height:32px;border-radius:8px;background:#2A2520;color:#F4C27A;display:flex;align-items:center;justify-content:center;margin-bottom:12px"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/cube.svg) center/contain no-repeat"></span>Design</div>
+      <div style="position:relative;width:48px;padding:7px 0 5px;border-radius:8px;background:#F6E3CB;color:#8A4F0E;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;font-weight:500"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sheet.svg) center/contain no-repeat"></span>Cut plan<span style="position:absolute;top:5px;right:9px;width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/hinge.svg) center/contain no-repeat"></span>Hardware</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Handoff</div>
+      <div style="flex:1"></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/globe.svg) center/contain no-repeat"></span></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sliders.svg) center/contain no-repeat"></span></div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="height:46px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px 0 16px;background:#FBFAF7;border-bottom:1px solid #DDD7CD">
+        <span style="color:#6E655A">Projects</span><span style="color:#B5AC9F">/</span><span style="font-weight:600">Kitchen base 800</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span><span style="color:#6E655A;font-size:11.5px;white-space:nowrap">unsaved</span>
+        <div style="flex:1"></div>
+        <div style="width:440px;height:30px;display:flex;align-items:center;gap:9px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;color:#8C8276"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/search.svg) center/contain no-repeat"></span><span style="flex:1">Search commands, parts, materials…</span><span style="font:11px 'JetBrains Mono',monospace;padding:1px 6px;border:1px solid #E6E0D6;border-radius:4px">⌘K</span></div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:2px;color:#5A5248">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/undo.svg) center/contain no-repeat"></span></div>
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px;opacity:.4"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/redo.svg) center/contain no-repeat"></span></div>
+        </div>
+        <div style="height:30px;display:flex;align-items:center;padding:0 12px;border-radius:7px;background:#ECE8E1;border:1px solid #E6E0D6">Save</div>
+        <div style="height:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:600"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Export</div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:256px minmax(0,1fr) 308px">
+        <!-- left: sheets -->
+        <div style="background:#FBFAF7;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600"><span style="flex:1">SHEETS · PRIORITY ORDER</span><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;gap:10px;padding:8px;border-radius:8px;background:#F6E3CB">
+              <div style="position:relative;width:60px;height:40px;flex:none;background:#FFFFFF;border:1px solid #B06A1C">
+                <sc-for list="{{ thumb }}" as="p" hint-placeholder-count="6"><div style="position:absolute;left:{{ p.l }};top:{{ p.t }};width:{{ p.w }};height:{{ p.h }};background:#E9C48E"></div></sc-for>
+              </div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:center;gap:6px"><span style="font:600 12px 'JetBrains Mono',monospace;color:#8A4F0E">S1</span><span style="font-weight:500;color:#5C3309">MDF White 18</span></div>
+                <span style="font:11px 'JetBrains Mono',monospace;color:#8A5418">2750×1830 · 6 parts</span>
+                <div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:4px;border-radius:2px;background:#EBD2B0;overflow:hidden"><div style="width:36%;height:100%;background:#B06A1C"></div></div><span style="font-size:11px;color:#8A5418">36%</span></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;padding:8px;border-radius:8px">
+              <div style="position:relative;width:60px;height:40px;flex:none;background:#FFFFFF;border:1px solid #CFC7B9">
+                <div style="position:absolute;left:0;top:0;width:26%;height:65%;background:#D8C3A6"></div><div style="position:absolute;left:27%;top:0;width:26%;height:65%;background:#D8C3A6"></div>
+              </div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:center;gap:6px"><span style="font:600 12px 'JetBrains Mono',monospace;color:#6E655A">S2</span><span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">MDF Oak 18</span></div>
+                <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">2750×1830 · 2 parts</span>
+                <div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:4px;border-radius:2px;background:#ECE8E1;overflow:hidden"><div style="width:11%;height:100%;background:#8C8276"></div></div><span style="font-size:11px;color:#8C8276">11%</span></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;padding:8px;border-radius:8px;color:#8C8276">
+              <div style="width:60px;height:40px;flex:none;display:flex;align-items:center;justify-content:center"><div style="width:30px;height:20px;background:#FFFFFF;border:1px dashed #BFB5A5"></div></div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:center;gap:6px"><span style="font:600 12px 'JetBrains Mono',monospace">O1</span><span style="font-weight:500;color:#5A5248;white-space:nowrap">MDF White 18</span><span style="font-size:10.5px;padding:0 6px;border-radius:8px;background:#E4EEE3;color:#3F6B45">owned</span></div>
+                <span style="font:11px 'JetBrains Mono',monospace">900×600 · unused</span>
+              </div>
+            </div>
+          </div>
+          <div style="height:1px;background:#DDD7CD;margin:10px 0 0"></div>
+          <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600"><span style="flex:1">NEEDS STOCK</span><span style="font:600 11px 'JetBrains Mono',monospace;color:#B7791F">1</span></div>
+          <div style="margin:0 8px;padding:10px;border-radius:8px;background:#FFFFFF;border:1px solid #EBD2B0;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:7px"><span style="display:block;width:14px;height:14px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span><span style="font-weight:500;flex:1">Back panel</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">764×684×3</span></div>
+            <span style="font-size:12px;color:#6E655A;line-height:1.45">No HDF 3 mm stock declared. Add a sheet or place it manually.</span>
+            <div style="display:flex;gap:6px">
+              <div style="height:28px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:6px;background:#2A2520;color:#FBFAF7;font-size:12px;font-weight:500"><span style="display:block;width:13px;height:13px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span>Add HDF sheet</div>
+              <div style="height:28px;display:flex;align-items:center;padding:0 10px;border-radius:6px;background:#ECE8E1;font-size:12px">Reveal</div>
+            </div>
+          </div>
+          <div style="flex:1"></div>
+          <div style="padding:10px 12px;border-top:1px solid #E6E0D6;display:flex;gap:6px">
+            <div style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:7px;background:#ECE8E1;font-weight:500;white-space:nowrap"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span>Sheet or offcut</div>
+          </div>
+        </div>
+
+        <!-- center: sheet canvas -->
+        <div style="position:relative;background:#ECE8E1;overflow:hidden;display:flex;flex-direction:column">
+          <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px">
+            <div style="display:flex;align-items:center;gap:4px;padding:3px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px">
+              <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:#8C8276;transform:rotate(180deg)"><span style="display:block;width:13px;height:13px;background:currentColor;mask:url(icons/chevright.svg) center/contain no-repeat"></span></div>
+              <span style="font:600 12.5px 'JetBrains Mono',monospace;padding:0 4px">S1</span><span style="white-space:nowrap">MDF White 18 · 2750 × 1830</span>
+              <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:#5A5248"><span style="display:block;width:13px;height:13px;background:currentColor;mask:url(icons/chevright.svg) center/contain no-repeat"></span></div>
+            </div>
+            <div style="display:flex;gap:2px;padding:3px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px;font-size:12.5px;color:#5A5248">
+              <div style="padding:5px 11px;border-radius:6px;background:#2A2520;color:#FBFAF7;font-weight:500">View</div>
+              <div style="padding:5px 11px;display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/move.svg) center/contain no-repeat"></span>Repair</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex;gap:2px;padding:3px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px;font-size:12.5px;color:#5A5248">
+              <div style="padding:5px 10px;border-radius:6px;background:#ECE8E1;color:#2A2520;font-weight:500">Cuts</div>
+              <div style="padding:5px 10px;border-radius:6px;background:#ECE8E1;color:#2A2520;font-weight:500">Offcuts</div>
+              <div style="padding:5px 10px">Grain</div>
+              <div style="padding:5px 10px">IDs</div>
+            </div>
+            <div style="height:36px;display:flex;align-items:center;gap:7px;padding:0 11px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:9px"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/frame.svg) center/contain no-repeat"></span><span style="font:12px 'JetBrains Mono',monospace">Fit</span></div>
+          </div>
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:8px 24px 40px">
+            <div style="position:relative;width:{{ W }}px;height:{{ H }}px;background:#F7F5F0;box-shadow:0 0 0 1px #BFB5A5,0 6px 20px rgba(60,45,25,.14)">
+              <sc-for list="{{ offcuts }}" as="o" hint-placeholder-count="4">
+                <div style="position:absolute;left:{{ o.x }}px;top:{{ o.y }}px;width:{{ o.w }}px;height:{{ o.h }}px;background:repeating-linear-gradient(135deg,#EFEBE3 0 6px,#E7E2D8 6px 7px);display:flex;align-items:center;justify-content:center">
+                  <span style="font:11px 'JetBrains Mono',monospace;color:#8C8276;background:#F7F5F0;padding:1px 6px;border-radius:4px">{{ o.label }}</span>
+                </div>
+              </sc-for>
+              <sc-for list="{{ parts }}" as="p" hint-placeholder-count="5">
+                <div style="position:absolute;left:{{ p.x }}px;top:{{ p.y }}px;width:{{ p.w }}px;height:{{ p.h }}px;background:#E9E3D7;border:1px solid #9C907E;display:flex;flex-direction:{{ p.dir }};align-items:center;justify-content:center;gap:{{ p.gap }};overflow:hidden">
+                  <span style="font-weight:500;font-size:12.5px;white-space:nowrap">{{ p.name }}</span>
+                  <span style="font:11px 'JetBrains Mono',monospace;color:#6E655A;white-space:nowrap">{{ p.dims }}</span>
+                </div>
+              </sc-for>
+              <div style="position:absolute;left:{{ sel.x }}px;top:{{ sel.y }}px;width:{{ sel.w }}px;height:{{ sel.h }}px;background:#F4C27A;border:2px solid #8A4F0E;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
+                <span style="font-weight:600;font-size:13.5px;color:#3E2305">Shelf</span>
+                <span style="font:11.5px 'JetBrains Mono',monospace;color:#5C3309">764 × 537</span>
+                <span style="font:10.5px 'JetBrains Mono',monospace;color:#8A4F0E">b-7f3a</span>
+                <span style="position:absolute;right:8px;bottom:6px;display:flex;align-items:center;gap:4px;font-size:10.5px;color:#8A4F0E"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/grain.svg) center/contain no-repeat"></span>grain</span>
+              </div>
+              <sc-for list="{{ cuts }}" as="c" hint-placeholder-count="9">
+                <div style="position:absolute;left:{{ c.x }}px;top:{{ c.y }}px;width:{{ c.w }}px;height:{{ c.h }}px;background:#C4453A;opacity:.85"></div>
+                <div style="position:absolute;left:{{ c.bx }}px;top:{{ c.by }}px;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#FBFAF7;border:1.5px solid #C4453A;color:#A5362C;display:flex;align-items:center;justify-content:center;font:600 10px 'JetBrains Mono',monospace">{{ c.n }}</div>
+              </sc-for>
+              <div style="position:absolute;left:0;top:-22px;width:100%;display:flex;align-items:center;gap:6px;font:11px 'JetBrains Mono',monospace;color:#6E655A"><span style="flex:1;height:1px;background:#BFB5A5"></span>2750<span style="flex:1;height:1px;background:#BFB5A5"></span></div>
+              <div style="position:absolute;left:-24px;top:0;height:100%;display:flex;flex-direction:column;align-items:center;gap:6px;font:11px 'JetBrains Mono',monospace;color:#6E655A"><span style="flex:1;width:1px;background:#BFB5A5"></span><span style="writing-mode:vertical-rl;transform:rotate(180deg)">1830</span><span style="flex:1;width:1px;background:#BFB5A5"></span></div>
+              <div style="position:absolute;left:0;bottom:-26px;display:flex;align-items:center;gap:6px;font-size:11px;color:#6E655A"><span style="width:10px;height:10px;border-radius:50%;background:#FBFAF7;border:1.5px solid #C4453A"></span>Origin X 0 · Y 0 (bottom-left in PDF)</div>
+            </div>
+          </div>
+          <div style="position:absolute;left:14px;bottom:12px;display:flex;gap:16px;font-size:11.5px;color:#6E655A">
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;background:#E9E3D7;border:1px solid #9C907E"></span>Part</span>
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;background:repeating-linear-gradient(135deg,#EFEBE3 0 3px,#D8D1C4 3px 4px)"></span>Reusable offcut</span>
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:3px;background:#C4453A"></span>Kerf 5 mm</span>
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;background:#FBE3E0;border:1px dashed #C4453A"></span>Conflict</span>
+          </div>
+        </div>
+
+        <!-- right: sequence + summary -->
+        <div style="background:#FBFAF7;border-left:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:14px 14px 12px;border-bottom:1px solid #DDD7CD;display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="display:block;width:15px;height:15px;background:#6E655A;mask:url(icons/sheet.svg) center/contain no-repeat"></span><span style="font-size:15px;font-weight:600;flex:1">Sheet S1</span><span style="font-size:11px;padding:1px 8px;border-radius:9px;background:#F6E3CB;color:#7A4410">To purchase</span></div>
+            <span style="font-size:11.5px;color:#6E655A">MDF White 18 · grain along X · no trims · BRL 289,90</span>
+          </div>
+          <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="padding:8px 10px;border-radius:7px;background:#F4F1EC;display:flex;flex-direction:column;gap:1px"><span style="font-size:11px;color:#6E655A">Utilization</span><span style="font:500 15px 'JetBrains Mono',monospace">36%</span></div>
+            <div style="padding:8px 10px;border-radius:7px;background:#F4F1EC;display:flex;flex-direction:column;gap:1px"><span style="font-size:11px;color:#6E655A">Physical cuts</span><span style="font:500 15px 'JetBrains Mono',monospace">9</span></div>
+            <div style="padding:8px 10px;border-radius:7px;background:#F4F1EC;display:flex;flex-direction:column;gap:1px"><span style="font-size:11px;color:#6E655A">Reusable offcuts</span><span style="font:500 15px 'JetBrains Mono',monospace">3.1 m²</span></div>
+            <div style="padding:8px 10px;border-radius:7px;background:#F4F1EC;display:flex;flex-direction:column;gap:1px"><span style="font-size:11px;color:#6E655A">Kerf loss</span><span style="font:500 15px 'JetBrains Mono',monospace">0.05 m²</span></div>
+          </div>
+          <div style="padding:6px 14px 6px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">CUT SEQUENCE</span><span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#3F7D4E"><span style="display:block;width:12px;height:12px;background:currentColor;mask:url(icons/check.svg) center/contain no-repeat"></span>Verified full-span</span></div>
+          <div style="flex:1;min-height:0;overflow:hidden;padding:0 8px;display:flex;flex-direction:column;gap:1px">
+            <sc-for list="{{ seq }}" as="s" hint-placeholder-count="9">
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 8px;border-radius:6px">
+                <span style="width:24px;height:20px;flex:none;border-radius:5px;background:#FBE9E6;color:#A5362C;display:flex;align-items:center;justify-content:center;font:600 10.5px 'JetBrains Mono',monospace">{{ s.n }}</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                  <span style="font-size:12.5px">{{ s.what }}</span>
+                  <span style="font:10.5px 'JetBrains Mono',monospace;color:#8C8276">{{ s.detail }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="border-top:1px solid #DDD7CD;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">OPTIMIZE ALL SHEETS</span><span style="font-size:11px;color:#6E655A">current = best found</span></div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;white-space:nowrap">Lowest new spending<span style="display:block;width:11px;height:11px;background:#6E655A;mask:url(icons/chevdown.svg) center/contain no-repeat"></span></div>
+              <div style="height:32px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:500"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/bolt.svg) center/contain no-repeat"></span>Search</div>
+            </div>
+            <span style="font-size:11px;color:#8C8276;line-height:1.45">Respects grain, kerf, trims and locked placements. Best found within budget, not a guaranteed optimum.</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:#FBFAF7;border-top:1px solid #DDD7CD;font-size:11.5px;color:#6E655A;white-space:nowrap">
+        <span style="display:flex;align-items:center;gap:5px"><span style="display:block;width:12px;height:12px;background:#3F7D4E;mask:url(icons/check.svg) center/contain no-repeat"></span>Kerf 5 mm confirmed</span>
+        <span>2 of 3 sheets used · 12 cuts</span>
+        <span style="display:flex;align-items:center;gap:5px;color:#8A5A12"><span style="display:block;width:12px;height:12px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>1 part needs stock</span>
+        <span style="flex:1"></span>
+        <span>Est. new spending <span style="font-family:'JetBrains Mono',monospace;color:#2A2520">BRL 579,80</span> + cut fee unknown</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const s = 0.28, K = 5, W = Math.round(2750 * s), H = Math.round(1830 * s);
+    const R = (x, y, w, h) => ({ x: +(x * s).toFixed(1), y: +(y * s).toFixed(1), w: +(w * s).toFixed(1), h: +(h * s).toFixed(1) });
+    const P = [
+      ['Left side', 0, 0, 720, 560], ['Right side', 725, 0, 720, 560], ['Bottom', 1450, 0, 764, 560],
+      ['Top rail front', 769, 565, 764, 100], ['Top rail back', 769, 670, 764, 100],
+    ];
+    const parts = P.map(([name, x, y, w, h]) => ({ name, dims: `${w} × ${h}`, dir: h * s < 40 ? 'row' : 'column', gap: h * s < 40 ? '8px' : '2px', ...R(x, y, w, h) }));
+    const offcuts = [
+      { label: '531 × 560', ...R(2219, 0, 531, 560) },
+      { label: '1212 × 537', ...R(1538, 565, 1212, 537) },
+      { label: '764 × 327', ...R(769, 775, 764, 327) },
+      { label: '2750 × 723', ...R(0, 1107, 2750, 723) },
+    ];
+    const hc = (n, y, x0, x1) => { const r = R(x0, y, x1 - x0, K); return { n, ...r, h: Math.max(r.h, 1.6), bx: r.x + 14, by: r.y + r.h / 2 }; };
+    const vc = (n, x, y0, y1) => { const r = R(x, y0, K, y1 - y0); return { n, ...r, w: Math.max(r.w, 1.6), bx: r.x + r.w / 2, by: r.y + 14 }; };
+    const cuts = [
+      hc('C1', 560, 0, 2750), hc('C2', 1102, 0, 2750),
+      vc('C3', 720, 0, 560), vc('C4', 1445, 0, 560), vc('C5', 2214, 0, 560),
+      vc('C6', 764, 565, 1102), vc('C7', 1533, 565, 1102),
+      hc('C8', 665, 769, 1533), hc('C9', 770, 769, 1533),
+    ];
+    cuts[7].bx = cuts[7].x + cuts[7].w + 14; cuts[8].bx = cuts[8].x + cuts[8].w + 14; cuts[6].by = cuts[6].y + cuts[6].h - 14;
+    const seq = [
+      { n: 'C1', what: 'Rip full sheet at Y 560', detail: 'P0 → P1 2750×560 · P2 2750×1265' },
+      { n: 'C2', what: 'Rip P2 at Y 537', detail: 'P2 → P3 2750×537 · offcut 2750×723' },
+      { n: 'C3', what: 'Cross-cut P1 at X 720', detail: 'Left side · P4 2025×560' },
+      { n: 'C4', what: 'Cross-cut P4 at X 720', detail: 'Right side · P5 1300×560' },
+      { n: 'C5', what: 'Cross-cut P5 at X 764', detail: 'Bottom · offcut 531×560' },
+      { n: 'C6', what: 'Cross-cut P3 at X 764', detail: 'Shelf · P6 1981×537' },
+      { n: 'C7', what: 'Cross-cut P6 at X 764', detail: 'P7 764×537 · offcut 1212×537' },
+      { n: 'C8', what: 'Rip P7 at Y 100', detail: 'Top rail front · P8 764×432' },
+      { n: 'C9', what: 'Rip P8 at Y 100', detail: 'Top rail back · offcut 764×327' },
+    ];
+    const T = (x, y, w, h) => ({ l: (x / 27.5).toFixed(1) + '%', t: (y / 18.3).toFixed(1) + '%', w: (w / 27.5).toFixed(1) + '%', h: (h / 18.3).toFixed(1) + '%' });
+    const thumb = [...P.map(p => T(p[1], p[2], p[3], p[4])), T(0, 565, 764, 537)];
+    return { W, H, parts, offcuts, cuts, seq, thumb, sel: R(0, 565, 764, 537) };
+  }
+}
+</script>
+</body>
+</html>

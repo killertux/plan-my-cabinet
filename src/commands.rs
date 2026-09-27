@@ -6,7 +6,7 @@
 use crate::domain::{DomainError, Project, validate_grid_spacing};
 use crate::export::{ExportError, ExportRecord, ExportSettings, ExportSnapshot, ExportStatus};
 use crate::money::{Money, MoneyError};
-use crate::units::{Length, UnitError};
+use crate::units::{Length, Unit, UnitError};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EditError<E> {
@@ -26,9 +26,17 @@ pub struct ProjectEditor {
 }
 
 impl ProjectEditor {
+    /// Untitled recovery has no saved-file baseline. Preserve the recovered
+    /// revision and values without inventing a command or marking them saved.
+    pub fn from_untitled_recovery(project: Project) -> Result<Self, DomainError> {
+        let mut editor = Self::new(project)?;
+        editor.saved = None;
+        Ok(editor)
+    }
     /// A loaded document must be validated before it becomes the active project.
-    pub fn new(project: Project) -> Result<Self, DomainError> {
+    pub fn new(mut project: Project) -> Result<Self, DomainError> {
         project.validate()?;
+        project.assign_missing_stock_aliases()?;
         Ok(Self {
             saved: Some(project.clone()),
             project,
@@ -40,6 +48,21 @@ impl ProjectEditor {
 
     pub fn project(&self) -> &Project {
         &self.project
+    }
+
+    /// Change portable display presentation without making a manufacturing edit
+    /// or an undo step. Existing undo/redo snapshots inherit the chosen display
+    /// unit so a subsequent unrelated undo cannot silently change the user's
+    /// current unit choice. The saved snapshot remains the on-disk version: a
+    /// future explicit save may persist this preference in the project file.
+    pub fn set_display_unit(&mut self, unit: Unit) {
+        self.project.display_unit = unit;
+        for snapshot in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            snapshot.display_unit = unit;
+        }
+        if let Some(preview) = &mut self.preview {
+            preview.display_unit = unit;
+        }
     }
 
     /// Snapshots always use committed data, never an in-progress preview.
@@ -84,9 +107,6 @@ impl ProjectEditor {
     pub fn set_cutting_kerf(&mut self, kerf: Length) -> Result<bool, EditError<UnitError>> {
         kerf.positive().map_err(EditError::Command)?;
         self.transact(|project| {
-            if project.cutting_kerf != kerf {
-                project.confirmed_shop_kerf = None;
-            }
             project.cutting_kerf = kerf;
             Ok(())
         })
@@ -94,8 +114,24 @@ impl ProjectEditor {
 
     /// Acknowledges the currently configured shop kerf, not the feasibility of any layout.
     pub fn confirm_shop_kerf(&mut self) -> Result<bool, EditError<UnitError>> {
+        let confirmed_unix_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| EditError::Command(UnitError::InvalidNumber))?
+            .as_millis()
+            .try_into()
+            .map_err(|_| EditError::Command(UnitError::InvalidNumber))?;
+        self.confirm_shop_kerf_at(confirmed_unix_ms)
+    }
+
+    /// Timestamp injection keeps provenance tests independent of the wall clock.
+    /// The date is recorded only by an explicit confirmation, never on file load.
+    pub fn confirm_shop_kerf_at(
+        &mut self,
+        confirmed_unix_ms: u64,
+    ) -> Result<bool, EditError<UnitError>> {
         self.transact(|project| -> Result<(), UnitError> {
             project.confirmed_shop_kerf = Some(project.cutting_kerf);
+            project.confirmed_shop_kerf_unix_ms = Some(confirmed_unix_ms);
             Ok(())
         })
     }
@@ -164,9 +200,39 @@ impl ProjectEditor {
         if candidate.id != self.project.id {
             return Err(EditError::ProjectIdentityChanged);
         }
+        if candidate.cutting_kerf != self.project.cutting_kerf {
+            candidate.confirmed_shop_kerf = None;
+            candidate.confirmed_shop_kerf_unix_ms = None;
+        }
         // Revision belongs to the editor, not to callers or preview data.
         candidate.revision = self.project.revision;
         candidate.export_records = self.project.export_records.clone();
+        for (&id, alias) in &self.project.stock_aliases {
+            if candidate.stock.iter().any(|piece| piece.id == id)
+                && candidate.stock_aliases.get(&id) != Some(alias)
+            {
+                return Err(EditError::InvalidProject(DomainError::InvalidStockAlias));
+            }
+        }
+        if candidate
+            .stock_aliases
+            .keys()
+            .any(|id| !self.project.stock_aliases.contains_key(id))
+        {
+            return Err(EditError::InvalidProject(DomainError::InvalidStockAlias));
+        }
+        candidate
+            .stock_aliases
+            .retain(|id, _| candidate.stock.iter().any(|piece| piece.id == *id));
+        candidate.next_stock_s_alias = candidate
+            .next_stock_s_alias
+            .max(self.project.next_stock_s_alias);
+        candidate.next_stock_o_alias = candidate
+            .next_stock_o_alias
+            .max(self.project.next_stock_o_alias);
+        candidate
+            .assign_missing_stock_aliases()
+            .map_err(EditError::InvalidProject)?;
         candidate.validate().map_err(EditError::InvalidProject)?;
         if candidate == self.project {
             return Ok(false);
@@ -227,6 +293,12 @@ impl ProjectEditor {
         let mut before = before.clone();
         before.revision = revision;
         before.export_records = self.project.export_records.clone();
+        before.next_stock_s_alias = before
+            .next_stock_s_alias
+            .max(self.project.next_stock_s_alias);
+        before.next_stock_o_alias = before
+            .next_stock_o_alias
+            .max(self.project.next_stock_o_alias);
         self.undo.pop();
         self.redo.push(self.project.clone());
         self.project = before;
@@ -246,11 +318,50 @@ impl ProjectEditor {
         let mut after = after.clone();
         after.revision = revision;
         after.export_records = self.project.export_records.clone();
+        after.next_stock_s_alias = after
+            .next_stock_s_alias
+            .max(self.project.next_stock_s_alias);
+        after.next_stock_o_alias = after
+            .next_stock_o_alias
+            .max(self.project.next_stock_o_alias);
         self.redo.pop();
         self.undo.push(self.project.clone());
         self.project = after;
         self.preview = None;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod display_unit_tests {
+    use super::*;
+
+    #[test]
+    fn display_unit_switch_does_not_advance_revision_or_history_and_survives_unrelated_undo() {
+        let mut editor =
+            ProjectEditor::new(Project::new("Units", crate::money::Currency::Brl)).unwrap();
+        let original = editor.project().clone();
+        editor
+            .set_grid_spacing(Length::from_micrometres(20_000))
+            .unwrap();
+        let revision = editor.project().revision;
+        let can_undo = editor.can_undo();
+        editor.set_display_unit(Unit::Foot);
+        assert_eq!(editor.project().display_unit, Unit::Foot);
+        assert_eq!(editor.project().revision, revision);
+        assert_eq!(editor.can_undo(), can_undo);
+        assert_eq!(editor.project().grid_spacing.micrometres(), 20_000);
+        editor.undo().unwrap();
+        assert_eq!(editor.project().display_unit, Unit::Foot);
+        assert_eq!(editor.project().grid_spacing, original.grid_spacing);
+        editor.redo().unwrap();
+        assert_eq!(editor.project().display_unit, Unit::Foot);
+        assert_eq!(editor.project().grid_spacing.micrometres(), 20_000);
+        let after_redo_revision = editor.project().revision;
+        editor.set_display_unit(Unit::M);
+        assert_eq!(editor.project().revision, after_redo_revision);
+        editor.set_display_unit(Unit::Mm);
+        assert_eq!(editor.project().revision, after_redo_revision);
     }
 }
 
@@ -347,8 +458,8 @@ mod tests {
 
     #[test]
     fn batch_edit_undoes_all_records_and_revisions_are_monotonic() {
-        let original = fixture();
-        let mut editor = ProjectEditor::new(original.clone()).unwrap();
+        let mut editor = ProjectEditor::new(fixture()).unwrap();
+        let original = editor.project().clone();
         assert_eq!(editor.saved_revision(), Some(0));
         assert!(!editor.is_dirty());
         assert_eq!(

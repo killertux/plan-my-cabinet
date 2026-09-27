@@ -3,6 +3,7 @@
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -131,9 +132,27 @@ def write(path, contents):
     path.write_text(contents, encoding="utf-8")
 
 
-def notices(directory, target):
+def font_notices(directory):
+    """Inventory the six embedded static faces and ship both upstream OFL texts."""
     directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / "assets/fonts/OFL.txt", directory / "NotoSans-OFL.txt")
+    shutil.copyfile(ROOT / "assets/fonts/JetBrainsMono-OFL.txt", directory / "JetBrainsMono-OFL.txt")
+    lines = ["Embedded font inventory | SIL Open Font License 1.1",
+             "Static upstream faces; no runtime font downloads.",
+             "File | Weight | SHA-256 | License", ""]
+    for family in ("NotoSans", "JetBrainsMono"):
+        for weight, value in (("Regular", 400), ("Medium", 500), ("SemiBold", 600)):
+            filename = f"{family}-{weight}.ttf"
+            data = (ROOT / "assets/fonts" / filename).read_bytes()
+            if not data:
+                raise RuntimeError(f"empty bundled font: {filename}")
+            lines.append(f"{filename} | {value} | {hashlib.sha256(data).hexdigest()} | {family}-OFL.txt")
+    write(directory / "fonts.txt", "\n".join(lines) + "\n")
+    shutil.copyfile(ROOT / "docs/redesign-typography.md", directory / "redesign-typography.md")
+
+
+def notices(directory, target):
+    font_notices(directory)
     shutil.copyfile(ROOT / "docs/hinge-source-review.md", directory / "hinge-source-review.md")
     dependency_notices(directory, target)
     write(directory / "RUNTIME.txt", RUNTIME)

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#E7E5E1;font-family:'Noto Sans',sans-serif;color:#2A2520}a{color:#9A5B12;text-decoration:none}a:hover{color:#6E3F08;text-decoration:underline}*{box-sizing:border-box}</style>
+</helmet>
+<div style="padding:48px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="background:#2A2520;color:#F4C27A;font:600 13px 'JetBrains Mono',monospace;padding:4px 9px;border-radius:6px">4a</span>
+    <span style="font-size:18px;font-weight:600">Stock &amp; materials workspace</span>
+  </div>
+  <div style="font-size:13px;color:#6E655A;max-width:1440px">New "Stock" item on the rail. Materials on the left; physical stock grouped by material in priority order (drag to reorder, which feeds first-fit); inspector edits the selected piece, with measured size, grain, trims, ownership and price. Missing stock shows up where you'd look for it.</div>
+
+  <div data-screen-label="Stock and materials" style="width:1440px;height:900px;display:flex;background:#F4F1EC;font-family:'Noto Sans',sans-serif;color:#2A2520;font-size:13px;overflow:hidden;border-radius:10px;box-shadow:0 1px 0 #D4CDC1,0 20px 50px rgba(60,45,25,.18)">
+    <div style="width:60px;flex:none;background:#F4F1EC;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px">
+      <div style="width:32px;height:32px;border-radius:8px;background:#2A2520;color:#F4C27A;display:flex;align-items:center;justify-content:center;margin-bottom:12px"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/board.svg) center/contain no-repeat"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/cube.svg) center/contain no-repeat"></span>Design</div>
+      <div style="position:relative;width:48px;padding:7px 0 5px;border-radius:8px;background:#F6E3CB;color:#8A4F0E;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;font-weight:500"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/material.svg) center/contain no-repeat"></span>Stock<span style="position:absolute;top:5px;right:9px;width:7px;height:7px;border-radius:50%;background:#C9731F"></span></div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sheet.svg) center/contain no-repeat"></span>Cut plan</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/hinge.svg) center/contain no-repeat"></span>Hardware</div>
+      <div style="width:48px;padding:7px 0 5px;border-radius:8px;color:#6E655A;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Handoff</div>
+      <div style="flex:1"></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/globe.svg) center/contain no-repeat"></span></div>
+      <div style="width:40px;height:40px;border-radius:8px;color:#6E655A;display:flex;align-items:center;justify-content:center"><span style="display:block;width:19px;height:19px;background:currentColor;mask:url(icons/sliders.svg) center/contain no-repeat"></span></div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="height:46px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px 0 16px;background:#FBFAF7;border-bottom:1px solid #DDD7CD">
+        <span style="color:#6E655A">Projects</span><span style="color:#B5AC9F">/</span><span style="font-weight:600">Kitchen base 800</span><span style="width:7px;height:7px;border-radius:50%;background:#C9731F"></span><span style="color:#6E655A;font-size:11.5px;white-space:nowrap">unsaved</span>
+        <div style="flex:1"></div>
+        <div style="width:440px;height:30px;display:flex;align-items:center;gap:9px;padding:0 10px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:7px;color:#8C8276"><span style="display:block;width:14px;height:14px;background:currentColor;mask:url(icons/search.svg) center/contain no-repeat"></span><span style="flex:1">Search commands, parts, materials…</span><span style="font:11px 'JetBrains Mono',monospace;padding:1px 6px;border:1px solid #E6E0D6;border-radius:4px">⌘K</span></div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:2px;color:#5A5248">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/undo.svg) center/contain no-repeat"></span></div>
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px;opacity:.4"><span style="display:block;width:17px;height:17px;background:currentColor;mask:url(icons/redo.svg) center/contain no-repeat"></span></div>
+        </div>
+        <div style="height:30px;display:flex;align-items:center;padding:0 12px;border-radius:7px;background:#ECE8E1;border:1px solid #E6E0D6">Save</div>
+        <div style="height:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-radius:7px;background:#2A2520;color:#FBFAF7;font-weight:600"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/export.svg) center/contain no-repeat"></span>Export</div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:256px minmax(0,1fr) 316px">
+        <!-- materials -->
+        <div style="background:#FBFAF7;border-right:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:36px;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600"><span style="flex:1">MATERIALS</span><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px">
+              <span style="width:10px;height:28px;border-radius:3px;background:#E1DBCF"></span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-weight:500">All stock</span><span style="font-size:11px;color:#8C8276">4 pieces · 3 materials</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;background:#F6E3CB">
+              <span style="width:10px;height:28px;border-radius:3px;background:#F1F0EC;border:1px solid #C9C3B8"></span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-weight:500;color:#5C3309">MDF White</span><span style="font:11px 'JetBrains Mono',monospace;color:#8A5418">18 mm · 6 boards · 3 pcs</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px">
+              <span style="width:10px;height:28px;border-radius:3px;background:#B98B5E"></span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-weight:500">MDF Oak veneer</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">18 mm · 2 boards · 1 pc</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px">
+              <span style="width:10px;height:28px;border-radius:3px;background:#7A6246"></span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-weight:500">HDF</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">3 mm · 1 board · 0 pcs</span></div>
+              <span style="display:block;width:14px;height:14px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>
+            </div>
+          </div>
+          <div style="height:1px;background:#DDD7CD;margin:12px 0 0"></div>
+          <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+            <span style="font-size:11px;letter-spacing:.08em;color:#6E655A;font-weight:600">MATERIAL · MDF WHITE</span>
+            <div style="display:grid;grid-template-columns:92px 1fr;row-gap:8px;align-items:center">
+              <span style="color:#6E655A">Thickness</span><span style="font-family:'JetBrains Mono',monospace">18 mm</span>
+              <span style="color:#6E655A">Default grain</span><span>Along length</span>
+              <span style="color:#6E655A">Used by</span><span>6 boards</span>
+            </div>
+            <div style="height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:#ECE8E1;font-weight:500">Edit material…</div>
+            <span style="font-size:11px;color:#8C8276;line-height:1.45">Editing asks whether to preserve or update existing boards.</span>
+          </div>
+        </div>
+
+        <!-- stock table -->
+        <div style="display:flex;flex-direction:column;min-width:0;background:#F4F1EC">
+          <div style="padding:18px 20px 12px;display:flex;align-items:flex-end;gap:12px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+              <span style="font-size:20px;font-weight:600;letter-spacing:-.01em">Project stock</span>
+              <span style="font-size:12.5px;color:#6E655A">Sheets and offcuts you own or plan to buy. First-fit tries them top to bottom.</span>
+            </div>
+            <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:8px;background:#FBFAF7;border:1px solid #E6E0D6;white-space:nowrap"><span style="color:#6E655A">Cut fee</span><span style="color:#8A5A12">unknown</span><a href="#" style="font-size:12px">Set</a></div>
+            <div style="height:34px;display:flex;align-items:center;gap:7px;padding:0 14px;border-radius:8px;background:#2A2520;color:#FBFAF7;font-weight:500;white-space:nowrap"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span>Add sheet or offcut</div>
+          </div>
+          <div style="margin:0 20px;background:#FBFAF7;border:1px solid #E6E0D6;border-radius:10px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:30px 40px 60px minmax(0,1.4fr) 84px 60px 108px 84px 110px;align-items:center;height:34px;padding:0 10px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#8C8276;font-weight:600;border-bottom:1px solid #E6E0D6">
+              <span></span><span>#</span><span>ID</span><span>Measured L × W × T</span><span>Grain</span><span>Trims</span><span>Ownership</span><span style="text-align:right">Price</span><span style="padding-left:14px">On plan</span>
+            </div>
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#F4F1EC;border-bottom:1px solid #EDE8E0;font-size:12px"><span style="width:10px;height:10px;border-radius:2px;background:#F1F0EC;border:1px solid #C9C3B8"></span><span style="font-weight:600">MDF White 18</span><span style="color:#8C8276">3 pieces</span></div>
+            <div style="display:grid;grid-template-columns:30px 40px 60px minmax(0,1.4fr) 84px 60px 108px 84px 110px;align-items:center;height:40px;padding:0 10px;background:#F6E3CB;border-bottom:1px solid #EBD2B0;color:#3E2305">
+              <span style="font:13px 'JetBrains Mono',monospace;color:#B06A1C;letter-spacing:-2px">⋮⋮</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#8A5418">1</span>
+              <span style="font:600 12px 'JetBrains Mono',monospace">S1</span>
+              <span style="font-family:'JetBrains Mono',monospace">2750 × 1830 × 18</span>
+              <span>X</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#8A5418">0</span>
+              <span><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:#FBFAF7;color:#7A4410">To purchase</span></span>
+              <span style="font-family:'JetBrains Mono',monospace;text-align:right">289,90</span>
+              <span style="padding-left:14px;display:flex;align-items:center;gap:6px"><span style="flex:1;max-width:44px;height:4px;border-radius:2px;background:#EBD2B0;overflow:hidden"><span style="display:block;width:36%;height:100%;background:#B06A1C"></span></span><span style="font-size:11.5px">6 parts</span></span>
+            </div>
+            <sc-for list="{{ whiteRows }}" as="r" hint-placeholder-count="2">
+              <div style="display:grid;grid-template-columns:30px 40px 60px minmax(0,1.4fr) 84px 60px 108px 84px 110px;align-items:center;height:40px;padding:0 10px;border-bottom:1px solid #EDE8E0">
+                <span style="font:13px 'JetBrains Mono',monospace;color:#BFB5A5;letter-spacing:-2px">⋮⋮</span>
+                <span style="font-family:'JetBrains Mono',monospace;color:#8C8276">{{ r.pri }}</span>
+                <span style="font:600 12px 'JetBrains Mono',monospace">{{ r.id }}</span>
+                <span style="font-family:'JetBrains Mono',monospace">{{ r.dims }}</span>
+                <span style="color:#5A5248">{{ r.grain }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;color:#8C8276">{{ r.trims }}</span>
+                <span><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:{{ r.chipBg }};color:{{ r.chipInk }}">{{ r.own }}</span></span>
+                <span style="font-family:'JetBrains Mono',monospace;text-align:right;color:{{ r.priceInk }}">{{ r.price }}</span>
+                <span style="padding-left:14px;font-size:11.5px;color:#8C8276;white-space:nowrap">{{ r.use }}</span>
+              </div>
+            </sc-for>
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#F4F1EC;border-bottom:1px solid #EDE8E0;font-size:12px"><span style="width:10px;height:10px;border-radius:2px;background:#B98B5E"></span><span style="font-weight:600">MDF Oak veneer 18</span><span style="color:#8C8276">1 piece</span></div>
+            <div style="display:grid;grid-template-columns:30px 40px 60px minmax(0,1.4fr) 84px 60px 108px 84px 110px;align-items:center;height:40px;padding:0 10px;border-bottom:1px solid #EDE8E0">
+              <span style="font:13px 'JetBrains Mono',monospace;color:#BFB5A5;letter-spacing:-2px">⋮⋮</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#8C8276">1</span>
+              <span style="font:600 12px 'JetBrains Mono',monospace">S2</span>
+              <span style="font-family:'JetBrains Mono',monospace">2750 × 1830 × 18</span>
+              <span style="color:#5A5248">X</span>
+              <span style="font-family:'JetBrains Mono',monospace;color:#8C8276">10</span>
+              <span><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:#F6E3CB;color:#7A4410">To purchase</span></span>
+              <span style="font-family:'JetBrains Mono',monospace;text-align:right">289,90</span>
+              <span style="padding-left:14px;display:flex;align-items:center;gap:6px"><span style="flex:1;max-width:44px;height:4px;border-radius:2px;background:#ECE8E1;overflow:hidden"><span style="display:block;width:11%;height:100%;background:#8C8276"></span></span><span style="font-size:11.5px;color:#5A5248">2 parts</span></span>
+            </div>
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#F4F1EC;border-bottom:1px solid #EDE8E0;font-size:12px"><span style="width:10px;height:10px;border-radius:2px;background:#7A6246"></span><span style="font-weight:600">HDF 3</span><span style="color:#8C8276">no stock</span></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:#FCF4E7">
+              <span style="display:block;width:16px;height:16px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>
+              <span style="flex:1;color:#5C3E10">Back panel (764 × 684 × 3) can't be allocated until an HDF 3 piece is declared.</span>
+              <div style="height:28px;display:flex;align-items:center;gap:6px;padding:0 11px;border-radius:6px;background:#2A2520;color:#FBFAF7;font-size:12px;font-weight:500;white-space:nowrap"><span style="display:block;width:13px;height:13px;background:currentColor;mask:url(icons/plus.svg) center/contain no-repeat"></span>Add HDF sheet</div>
+            </div>
+          </div>
+          <div style="margin:14px 20px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">
+            <div style="padding:12px 14px;border-radius:10px;background:#FBFAF7;border:1px solid #E6E0D6;display:flex;flex-direction:column;gap:3px"><span style="font-size:11.5px;color:#6E655A">To purchase (used)</span><span style="font:500 17px 'JetBrains Mono',monospace">BRL 579,80</span><span style="font-size:11px;color:#8C8276">S1, S2 · S3 unused, not counted</span></div>
+            <div style="padding:12px 14px;border-radius:10px;background:#FBFAF7;border:1px solid #E6E0D6;display:flex;flex-direction:column;gap:3px"><span style="font-size:11.5px;color:#6E655A">Cutting</span><span style="font:500 17px 'JetBrains Mono',monospace;color:#8A5A12">12 cuts × ?</span><span style="font-size:11px;color:#8C8276">Set a cut fee to complete the estimate</span></div>
+            <div style="padding:12px 14px;border-radius:10px;background:#FBFAF7;border:1px solid #E6E0D6;display:flex;flex-direction:column;gap:3px"><span style="font-size:11.5px;color:#6E655A">Owned pieces consumed</span><span style="font:500 17px 'JetBrains Mono',monospace">0 of 1</span><span style="font-size:11px;color:#8C8276">O1 is free to use in this plan</span></div>
+          </div>
+          <div style="margin:10px 20px 0;font-size:11.5px;color:#8C8276">Estimate excludes taxes, delivery, setup fees and stacking discounts. Blank price = unknown; 0 = known free.</div>
+        </div>
+
+        <!-- inspector -->
+        <div style="background:#FBFAF7;border-left:1px solid #DDD7CD;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:14px 14px 12px;border-bottom:1px solid #DDD7CD;display:flex;align-items:center;gap:10px">
+            <div style="width:34px;height:34px;border-radius:8px;background:#F6E3CB;color:#9A5B12;display:flex;align-items:center;justify-content:center"><span style="display:block;width:18px;height:18px;background:currentColor;mask:url(icons/sheet.svg) center/contain no-repeat"></span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">Sheet S1</span><span style="font:11px 'JetBrains Mono',monospace;color:#8C8276">st-2c81 · priority 1</span></div>
+            <div style="display:flex;gap:2px;color:#6E655A">
+              <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/duplicate.svg) center/contain no-repeat"></span></div>
+              <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px"><span style="display:block;width:15px;height:15px;background:currentColor;mask:url(icons/trash.svg) center/contain no-repeat"></span></div>
+            </div>
+          </div>
+          <div style="padding:12px 14px 4px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">MEASURED SIZE</div>
+          <div style="padding:0 14px;display:grid;grid-template-columns:88px 1fr;row-gap:4px;align-items:center;font-family:'JetBrains Mono',monospace">
+            <span style="color:#6E655A;font-family:'Noto Sans'">Length (X)</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">2750<span style="color:#8C8276">mm</span></div>
+            <span style="color:#6E655A;font-family:'Noto Sans'">Width (Y)</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">1830<span style="color:#8C8276">mm</span></div>
+            <span style="color:#6E655A;font-family:'Noto Sans'">Thickness</span><div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">18<span style="color:#8C8276">mm</span></div>
+          </div>
+          <div style="padding:14px 14px 4px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">GRAIN</div>
+          <div style="padding:0 14px"><div style="display:flex;gap:2px;padding:2px;background:#ECE8E1;border-radius:7px;font-size:12px;color:#5A5248"><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;color:#2A2520;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">Along X</span><span style="flex:1;text-align:center;padding:4px 0">Along Y</span><span style="flex:1;text-align:center;padding:4px 0">None</span><span style="flex:1;text-align:center;padding:4px 0">Unknown</span></div></div>
+          <div style="padding:14px 14px 4px;display:flex;justify-content:space-between"><span style="font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">EDGE TRIMS</span><span style="font-size:11px;color:#6E655A">total loss incl. kerf</span></div>
+          <div style="padding:4px 14px 0;display:grid;grid-template-columns:62px 1fr 62px;grid-template-rows:28px 70px 28px;gap:6px;align-items:center;font:12px 'JetBrains Mono',monospace">
+            <span></span><div style="height:28px;display:flex;align-items:center;justify-content:center;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">0 <span style="color:#8C8276;margin-left:4px;font-family:'Noto Sans';font-size:11px">top</span></div><span></span>
+            <div style="height:28px;display:flex;align-items:center;justify-content:center;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">0</div>
+            <div style="height:70px;background:repeating-linear-gradient(90deg,#EFEBE3 0 8px,#E7E1D5 8px 9px);border:1.5px solid #9C907E;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-size:11px;color:#6E655A">usable 2750 × 1830</div>
+            <div style="height:28px;display:flex;align-items:center;justify-content:center;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">0</div>
+            <span></span><div style="height:28px;display:flex;align-items:center;justify-content:center;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px">0 <span style="color:#8C8276;margin-left:4px;font-family:'Noto Sans';font-size:11px">bottom</span></div><span></span>
+          </div>
+          <div style="padding:14px 14px 4px;font-size:10.5px;letter-spacing:.09em;color:#8C8276;font-weight:600">COST</div>
+          <div style="padding:0 14px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;gap:2px;padding:2px;background:#ECE8E1;border-radius:7px;font-size:12px;color:#5A5248"><span style="flex:1;text-align:center;padding:4px 0">Owned</span><span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF7;color:#2A2520;font-weight:500;box-shadow:0 1px 1px rgba(60,45,25,.12)">To purchase</span></div>
+            <div style="height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#F4F1EC;border:1px solid #E6E0D6;border-radius:6px"><span style="font-family:'JetBrains Mono',monospace">289,90</span><span style="color:#8C8276;font-size:12px">BRL / piece</span></div>
+          </div>
+          <div style="flex:1"></div>
+          <div style="margin:14px;padding:12px;border:1px solid #E6E0D6;border-radius:9px;background:#FFFFFF;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between"><span style="font-weight:600">On the plan</span><span style="font:11px 'JetBrains Mono',monospace;color:#6E655A">36% · 9 cuts</span></div>
+            <span style="font-size:12px;color:#6E655A;line-height:1.5">Left side, Right side, Bottom, Shelf, Top rail front, Top rail back</span>
+            <a href="#" style="font-size:12px">Open in cut plan →</a>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:#FBFAF7;border-top:1px solid #DDD7CD;font-size:11.5px;color:#6E655A;white-space:nowrap">
+        <span style="display:flex;align-items:center;gap:5px"><span style="display:block;width:12px;height:12px;background:#3F7D4E;mask:url(icons/check.svg) center/contain no-repeat"></span>Kerf 5 mm confirmed</span>
+        <span>Currency BRL · mm</span>
+        <span style="display:flex;align-items:center;gap:5px;color:#8A5A12"><span style="display:block;width:12px;height:12px;background:#B7791F;mask:url(icons/warning.svg) center/contain no-repeat"></span>1 part needs stock</span>
+        <span style="flex:1"></span>
+        <span>Est. new spending <span style="font-family:'JetBrains Mono',monospace;color:#2A2520">BRL 579,80</span> + cut fee unknown</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      whiteRows: [
+        { pri: '2', id: 'O1', dims: '900 × 600 × 18.2', grain: 'Unknown', trims: '0', own: 'Owned', chipBg: '#E4EEE3', chipInk: '#3F6B45', price: '—', priceInk: '#8C8276', use: 'unused' },
+        { pri: '3', id: 'S3', dims: '2750 × 1830 × 18', grain: 'X', trims: '0', own: 'To purchase', chipBg: '#F6E3CB', chipInk: '#7A4410', price: '289,90', priceInk: '#2A2520', use: 'spare' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "00000000-0000-0000-0000-000000000001",
+  "name": "Armário / legacy precision",
+  "revision": 17,
+  "display_unit": "Inch",
+  "grid_spacing": 12700,
+  "cutting_kerf": 3125,
+  "confirmed_shop_kerf": 3125,
+  "currency": "Brl",
+  "cut_fee": {"currency": "Brl", "minor_units": 125},
+  "materials": [{"id": "00000000-0000-0000-0000-000000000002", "name": "Compensado", "default_thickness": 19000, "default_grain": "Length"}],
+  "boards": [{
+    "id": "00000000-0000-0000-0000-000000000003", "name": "Prateleira", "material_id": "00000000-0000-0000-0000-000000000002",
+    "length": 100001, "width": 50003, "thickness": 18200, "grain_override": "Width", "parent_id": "00000000-0000-0000-0000-000000000008",
+    "pose": {"translation_mm": [1.0005, -2.000000125, 3.123456789], "rotation": {"w": 0.8804509063256237, "x": 0.17609018126512477, "y": 0.2641352718976871, "z": 0.35218036253024954}}
+  }],
+  "assemblies": [{
+    "id": "00000000-0000-0000-0000-000000000008", "name": "Rotated parent", "parent_id": null,
+    "pose": {"translation_mm": [1.0005, -2.000000125, 3.123456789], "rotation": {"w": 0.8804509063256237, "x": 0.17609018126512477, "y": 0.2641352718976871, "z": 0.35218036253024954}}
+  }],
+  "stock": [{
+    "id": "00000000-0000-0000-0000-000000000004", "name": "Chapa", "material_id": "00000000-0000-0000-0000-000000000002",
+    "length": 200001, "width": 150003, "thickness": 18200, "grain": "AlongX", "source": "ToPurchase",
+    "price": {"currency": "Brl", "minor_units": 20005}, "priority": 3, "trim": [1001, 2002, 3003, 4004]
+  }],
+  "allocations": [{
+    "id": "00000000-0000-0000-0000-000000000005", "board_id": "00000000-0000-0000-0000-000000000003", "stock_id": "00000000-0000-0000-0000-000000000004",
+    "origin": [10001, 20002], "quarter_turn": true, "locked": true
+  }],
+  "catalog": [{
+    "id": "00000000-0000-0000-0000-000000000006",
+    "name": "FGVTN Click 3D Slow Reta / Calço 0 (complete kit)",
+    "product_id": "51MX153DRV00100", "plate_id": "52MX15FG11003D",
+    "source": "https://www.fgvtn.com.br/site/novopdf/Catalogo_Geral.pdf",
+    "revision": "May 2025 catalog; modified 2026-09-16; SHA-256 e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2",
+    "installation_dimensions": {},
+    "verified_hinge": {
+      "printed_page": 23, "pdf_page": 14,
+      "source_sha256": "e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2",
+      "attribution": "FGVTN General Catalog, Click 3D Slow, printed p. 23",
+      "plate_height": 0,
+      "overlay_by_cup_edge": [{"cup_edge_setback": 3000, "overlay": 15000}, {"cup_edge_setback": 4000, "overlay": 16000}, {"cup_edge_setback": 5000, "overlay": 17000}, {"cup_edge_setback": 6000, "overlay": 18000}],
+      "door_thickness_min": 15000, "door_thickness_max": 22000, "cup_diameter": 35000, "cup_depth": 11300,
+      "plate_hole_pitch": 32000, "plate_front_offset": 37000, "opening_limit_degrees": 105, "screw_details": "Unavailable"
+    }
+  }],
+  "hardware": [{
+    "id": "00000000-0000-0000-0000-000000000007", "name": "Pinned hinge", "parent_id": "00000000-0000-0000-0000-000000000008",
+    "pose": {"translation_mm": [1.0005, -2.000000125, 3.123456789], "rotation": {"w": 0.8804509063256237, "x": 0.17609018126512477, "y": 0.2641352718976871, "z": 0.35218036253024954}},
+    "kind": {"Catalog": {"catalog_id": "00000000-0000-0000-0000-000000000006"}}
+  }],
+  "hinge_installations": [],
+  "door_joints": [],
+  "export_records": [{
+    "project_id": "00000000-0000-0000-0000-000000000001", "revision": 17,
+    "wood_sha256": "1bc9d4e02168d7878f044ae119a86c3fdb5cc50b67c7062437c0ef38fce33e7a",
+    "packet_sha256": "d33bffee61dc0cb8e6318254ddc4f933238dcd471f37bdf4a42bbb43dd14718e",
+    "settings": {"language": "PtBr", "units": "Inch"}, "path": "exports/legacy-cabinet.pdf", "completed_unix_ms": 1700000000123,
+    "file_sha256": "09fc2dadcc743c8086225d45beef3cb91ac153e9abf5cbb477773ff042779ba1"
+  }]
+}
