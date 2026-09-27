@@ -638,13 +638,14 @@ mod tests {
             app.session = crate::WorkspaceSession::new(app.editor.project());
             let before = app.editor.project().clone();
             dialog.mount(&mut app);
-            assert!(app.modal_open());
+            assert!(dialog == Dialog::Palette || app.modal_open());
             assert_eq!(app.editor.project(), &before);
             assert!(match dialog {
                 Dialog::Board | Dialog::Material => app.dialog.is_some(),
                 Dialog::Position | Dialog::Face => app.placement.is_some(),
                 Dialog::Resize => app.batch_dimension.is_some(),
                 Dialog::Unsaved => app.project_files.prompt.is_some(),
+                Dialog::Palette => app.palette.open,
             });
         }
         assert!(parse(&["--capture-baseline", "out", "--capture-dialog", "unknown"]).is_err());
