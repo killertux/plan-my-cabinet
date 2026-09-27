@@ -340,7 +340,7 @@ pub fn section_bar<R>(ui: &mut Ui, label: &str, actions: impl FnOnce(&mut Ui) ->
 pub fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
     ui.painter().hline(
-        rect.x_range().expand(40.0),
+        rect.x_range(),
         rect.center().y,
         Stroke::new(1.0, BORDER),
     );

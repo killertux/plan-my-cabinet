@@ -307,6 +307,11 @@ impl ActionId {
         localizer.text(self.descriptor().key)
     }
 
+    /// The workspace or surface this action belongs to, for display.
+    pub(crate) fn route_name(self, language: Language) -> &'static str {
+        self.descriptor().route.name(language)
+    }
+
     pub(crate) fn keywords(self, language: Language) -> &'static str {
         let entry = self.descriptor();
         match language {

@@ -1046,3 +1046,4 @@ material-color = Display colour
 material-color-hint = Only tints the 3D view and sheet diagrams.
 shell-next-step = Next: { $step }
 shell-next-step-hint = Design → Stock → Cut plan → Hardware → Handoff
+palette-keys = ↑↓ move · ⏎ run · Esc close

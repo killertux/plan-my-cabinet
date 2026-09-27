@@ -1049,3 +1049,4 @@ material-color = Cor de exibição
 material-color-hint = Só muda a cor na vista 3D e nos diagramas.
 shell-next-step = Próximo: { $step }
 shell-next-step-hint = Projeto 3D → Estoque → Plano de corte → Ferragens → Entrega
+palette-keys = ↑↓ mover · ⏎ executar · Esc fechar

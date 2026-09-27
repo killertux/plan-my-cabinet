@@ -7,6 +7,7 @@ use plan_my_cabinet::i18n::Localizer;
 use crate::DesktopApp;
 use crate::actions::{ActionId as A, Request, Target, Unavailable};
 use crate::pending_navigation::{Outcome, Route};
+use crate::theme_widgets as tw;
 use crate::workspace_state::{Destination, Workspace};
 
 const QUERY_ID: &str = "command-palette-query";
@@ -94,7 +95,7 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
             rows.push(ResultRow {
                 group: Group::Actions,
                 label,
-                detail: descriptor.stable_id.into(),
+                detail: id.route_name(localizer.language()).into(),
                 route: ResultRoute::Action(Request::new(id)),
             });
         }
@@ -104,13 +105,23 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
     if query.is_empty() {
         return rows;
     }
+    let mm = |length: plan_my_cabinet::units::Length| {
+        let value = length.micrometres() as f64 / 1000.0;
+        let text = format!("{value:.1}");
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    };
     for board in &project.boards {
         let id = board.id.to_string();
         if matches_query(&query, &[&board.name, &id]) {
             rows.push(ResultRow {
                 group: Group::Boards,
                 label: board.name.clone(),
-                detail: id,
+                detail: format!(
+                    "{} × {} × {}",
+                    mm(board.length),
+                    mm(board.width),
+                    mm(board.thickness)
+                ),
                 route: ResultRoute::Entity(Destination::Board(board.id)),
             });
         }
@@ -121,7 +132,7 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
             rows.push(ResultRow {
                 group: Group::Materials,
                 label: material.name.clone(),
-                detail: id,
+                detail: format!("{} mm", mm(material.default_thickness)),
                 route: ResultRoute::Entity(Destination::Material(material.id)),
             });
         }
@@ -133,7 +144,7 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
             rows.push(ResultRow {
                 group: Group::Stock,
                 label: stock.name.clone(),
-                detail: format!("{alias} · {id}"),
+                detail: format!("{alias} · {}×{}", mm(stock.length), mm(stock.width)),
                 route: ResultRoute::Entity(Destination::Sheet(stock.id)),
             });
         }
@@ -157,7 +168,7 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
             rows.push(ResultRow {
                 group: Group::Installations,
                 label,
-                detail: id,
+                detail: localizer.text("navigation-hardware"),
                 route: ResultRoute::Entity(Destination::Installation(installation.id)),
             });
         }
@@ -189,7 +200,7 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
             rows.push(ResultRow {
                 group: Group::Relationships,
                 label,
-                detail: id,
+                detail: localizer.text("navigation-hardware"),
                 route: ResultRoute::Relationship(joint.id),
             });
         }
@@ -365,57 +376,194 @@ impl DesktopApp {
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
         let escape = !popup_before
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-        let title = self.localizer.text("palette-title");
         let hint = self.localizer.text("palette-hint");
         let mut clicked = None;
         let mut query_changed = false;
-        let modal = egui::Modal::new(Id::new("command-palette")).show(ctx, |ui| {
-            ui.set_width(520.0_f32.min((ctx.content_rect().width() - 32.0).max(1.0)));
-            ui.heading(title);
-            if ui
-                .add(
-                    egui::TextEdit::singleline(&mut self.palette.query)
-                        .id(Id::new(QUERY_ID))
-                        .hint_text(hint),
-                )
-                .changed()
-            {
-                self.palette.selected = 0;
-                self.palette.error = None;
-                query_changed = true;
-            }
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .max_height((ctx.content_rect().height() - 160.0).max(80.0))
-                .show(ui, |ui| {
-                    if rows.is_empty() {
-                        ui.label(self.localizer.text("palette-no-results"));
-                    }
-                    let mut group = None;
-                    for (index, row) in rows.iter().enumerate() {
-                        if group != Some(row.group) {
-                            group = Some(row.group);
-                            ui.strong(self.localizer.text(row.group.key()));
-                        }
-                        let unavailable = self.palette_availability(row.route).err();
-                        let response = ui.add_enabled(
-                            unavailable.is_none(),
-                            egui::Button::new(format!("{}  ·  {}", row.label, row.detail))
-                                .selected(index == self.palette.selected),
+        let width = 560.0_f32.min((ctx.content_rect().width() - 32.0).max(1.0));
+        let modal = egui::Modal::new(Id::new("command-palette"))
+            .backdrop_color(egui::Color32::from_rgba_unmultiplied(42, 37, 32, 64))
+            .frame(
+                egui::Frame::new()
+                    .fill(tw::PANEL)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER))
+                    .corner_radius(12)
+                    .shadow(egui::Shadow {
+                        offset: [0, 18],
+                        blur: 44,
+                        spread: 0,
+                        color: egui::Color32::from_rgba_unmultiplied(60, 45, 25, 46),
+                    }),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(16, 12))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(crate::icons::icon(crate::icons::Icon::Search, tw::FAINT, 17.0));
+                            let edit_width = ui.available_width() - 44.0;
+                            if ui
+                                .add(
+                                    egui::TextEdit::singleline(&mut self.palette.query)
+                                        .id(Id::new(QUERY_ID))
+                                        .hint_text(hint)
+                                        .frame(egui::Frame::NONE)
+                                        .font(egui::FontId::proportional(15.0))
+                                        .desired_width(edit_width),
+                                )
+                                .changed()
+                            {
+                                self.palette.selected = 0;
+                                self.palette.error = None;
+                                query_changed = true;
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                tw::keycap(ui, "Esc");
+                            });
+                        });
+                    });
+                tw::divider(ui);
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() * 0.6).clamp(120.0, 440.0))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                if rows.is_empty() {
+                                    ui.add_space(18.0);
+                                    ui.vertical_centered(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.localizer.text("palette-no-results"),
+                                            )
+                                            .color(tw::MUTED),
+                                        );
+                                    });
+                                    ui.add_space(18.0);
+                                }
+                                let mut group = None;
+                                for (index, row) in rows.iter().enumerate() {
+                                    if group != Some(row.group) {
+                                        group = Some(row.group);
+                                        ui.add_space(4.0);
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(ui.available_width(), 24.0),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.add_space(8.0);
+                                                ui.label(
+                                                    tw::semibold(
+                                                        ui,
+                                                        self.localizer
+                                                            .text(row.group.key())
+                                                            .to_uppercase(),
+                                                        10.5,
+                                                    )
+                                                    .color(tw::FAINT),
+                                                );
+                                            },
+                                        );
+                                    }
+                                    let unavailable = self.palette_availability(row.route).err();
+                                    let selected = index == self.palette.selected;
+                                    let icon = match row.group {
+                                        Group::Actions => crate::icons::Icon::Command,
+                                        Group::Boards => crate::icons::Icon::Board,
+                                        Group::Materials => crate::icons::Icon::Material,
+                                        Group::Stock => crate::icons::Icon::Sheet,
+                                        Group::Installations => crate::icons::Icon::Hinge,
+                                        Group::Relationships => crate::icons::Icon::Door,
+                                    };
+                                    let (response, ()) = tw::list_row(
+                                        ui,
+                                        Id::new(("palette-row", index)),
+                                        34.0,
+                                        if selected {
+                                            tw::RowState::Active
+                                        } else {
+                                            tw::RowState::Normal
+                                        },
+                                        unavailable.is_none(),
+                                        &row.label,
+                                        |ui| {
+                                            ui.add_space(2.0);
+                                            ui.add(crate::icons::icon(
+                                                icon,
+                                                if selected { tw::ACCENT_DARK } else { tw::MUTED },
+                                                15.0,
+                                            ));
+                                            let ink = if unavailable.is_some() {
+                                                tw::FAINT
+                                            } else if selected {
+                                                tw::ACCENT_INK
+                                            } else {
+                                                tw::TEXT
+                                            };
+                                            let label_width = (ui.available_width() * 0.62).max(80.0);
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(label_width, 28.0),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(&row.label).color(ink),
+                                                        )
+                                                        .truncate()
+                                                        .selectable(false),
+                                                    );
+                                                },
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    ui.add_space(4.0);
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            tw::mono(&row.detail, 11.5).color(tw::FAINT),
+                                                        )
+                                                        .truncate()
+                                                        .selectable(false),
+                                                    );
+                                                },
+                                            );
+                                        },
+                                    );
+                                    if let Some(reason) = unavailable {
+                                        response.on_hover_text(reason.reason(self.localizer.language()));
+                                    } else if response.clicked() {
+                                        clicked = Some(index);
+                                    }
+                                }
+                            });
+                    });
+                if let Some(error) = &self.palette.error {
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(16, 6))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(error).size(12.0).color(tw::WARN_INK));
+                        });
+                }
+                egui::Frame::new()
+                    .fill(tw::APP)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                    .corner_radius(egui::CornerRadius {
+                        nw: 0,
+                        ne: 0,
+                        sw: 12,
+                        se: 12,
+                    })
+                    .inner_margin(egui::Margin::symmetric(16, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.label(
+                            egui::RichText::new(self.localizer.text("palette-keys"))
+                                .size(11.5)
+                                .color(tw::FAINT),
                         );
-                        if let Some(reason) = unavailable {
-                            response
-                                .on_disabled_hover_text(reason.reason(self.localizer.language()));
-                            ui.small(reason.reason(self.localizer.language()));
-                        } else if response.clicked() {
-                            clicked = Some(index);
-                        }
-                    }
-                });
-            if let Some(error) = &self.palette.error {
-                ui.colored_label(crate::theme_widgets::WARN_INK, error);
-            }
-        });
+                    });
+            });
         if self.palette.needs_focus {
             ctx.memory_mut(|m| m.request_focus(Id::new(QUERY_ID)));
             self.palette.needs_focus = false;
@@ -544,10 +692,13 @@ mod tests {
             .filter(|r| r.group == Group::Boards)
             .collect();
         assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.detail == first.to_string()));
+        assert!(
+            rows.iter()
+                .any(|r| r.route == ResultRoute::Entity(Destination::Board(first)))
+        );
         let selected = rows
             .iter()
-            .find(|r| r.detail == second.to_string())
+            .find(|r| r.route == ResultRoute::Entity(Destination::Board(second)))
             .unwrap();
         assert_eq!(app.invoke_palette(selected).unwrap(), Outcome::Navigated);
         assert_eq!(app.selection.active, Some(second));

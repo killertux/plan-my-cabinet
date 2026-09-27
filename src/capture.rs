@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 pub const HELP: &str = "Usage: plan-my-cabinet [--capture-baseline|--capture-gallery NEW_DIRECTORY \
     [--capture-size WIDTHxHEIGHT] [--capture-scale 90|100|115|130] \
-    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved]]\n\
+    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved|palette]]\n\
     Baseline captures a selected application workspace or the isolated empty Welcome; gallery captures offline UI primitives.\n\
     A capture is evidence to review, not automatic redesign acceptance.\n\
     Writes capture.ppm and manifest.json without opening user projects.\n\
@@ -30,16 +30,18 @@ pub enum Dialog {
     Resize,
     Material,
     Unsaved,
+    Palette,
 }
 
 impl Dialog {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Board,
         Self::Position,
         Self::Face,
         Self::Resize,
         Self::Material,
         Self::Unsaved,
+        Self::Palette,
     ];
 
     pub fn name(self) -> &'static str {
@@ -50,6 +52,7 @@ impl Dialog {
             Self::Resize => "resize",
             Self::Material => "material",
             Self::Unsaved => "unsaved",
+            Self::Palette => "palette",
         }
     }
 
@@ -60,7 +63,10 @@ impl Dialog {
         if self == Self::Resize {
             app.selection.choose(Some(RIGHT_SIDE_ID), true);
         }
-        if self == Self::Unsaved {
+        if self == Self::Palette {
+            app.palette.open(&eframe::egui::Context::default());
+            app.palette.query = "sh".into();
+        } else if self == Self::Unsaved {
             app.project_files.prompt = Some(crate::project_ui::Prompt::Dirty(
                 crate::project_ui::NextAction::New,
             ));
@@ -71,7 +77,7 @@ impl Dialog {
                 Self::Face => A::PlaceFace,
                 Self::Resize => A::BatchDimensions,
                 Self::Material => A::NewMaterial,
-                Self::Unsaved => unreachable!(),
+                Self::Unsaved | Self::Palette => unreachable!(),
             };
             let request = if matches!(self, Self::Position | Self::Face) {
                 Request::with(action, Target::Board(LEFT_SIDE_ID))
@@ -184,7 +190,7 @@ impl Config {
                 }
                 "--capture-dialog" => {
                     config.dialog = Some(Dialog::ALL.into_iter().find(|dialog| dialog.name() == value)
-                        .ok_or("Capture dialog must be board, position, face, resize, material, or unsaved")?);
+                        .ok_or("Capture dialog must be board, position, face, resize, material, unsaved or palette")?);
                 }
                 "--capture-page" => {
                     let page = value
