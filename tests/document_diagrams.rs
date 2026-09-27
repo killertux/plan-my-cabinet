@@ -228,11 +228,12 @@ fn dense_bilingual_cut_callouts_and_continuations_retain_witness_identity() {
                 .find(|(_, node)| node.kind == CutKind::Part(id(100 + n)))
                 .unwrap()
                 .0;
+            // Parts are keyed by short part numbers; machine identifiers never print.
             assert!(whole.contains(&format!(
-                "P{node}: Prateleira número {n:02} — ação [{}]",
-                id(100 + n)
+                "Prateleira número {n:02} — ação (P{node})"
             )));
-            assert!(whole.contains(&id(1000 + n).to_string()));
+            assert!(!whole.contains(&id(100 + n).to_string()));
+            assert!(!whole.contains(&id(1000 + n).to_string()));
         }
     }
 }
@@ -353,7 +354,7 @@ fn only_prepared_valid_hinge_guidance_emits_numeric_references() {
         assert!(!invalid_text.contains(&Localizer::new(language).text("pdf-cup-center")));
         let disabled = all(&build_workshop_document(&withheld, sections(false, false)).unwrap());
         assert!(disabled.contains(&Localizer::new(language).text("pdf-install-cup-outside")));
-        assert!(!disabled.contains(&Localizer::new(language).text("pdf-hinge-installation")));
+        assert!(!disabled.contains(&Localizer::new(language).text("pdf-hardware")));
 
         let mut unsupported = hinge_fixture();
         unsupported.hinge_installations[0].overlay = mm(99);

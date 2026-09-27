@@ -315,10 +315,10 @@ fn rectangular_cabinet_release_walkthrough() {
             assert!(text.status.success());
             let text = String::from_utf8(text.stdout).unwrap();
             for label in match language {
-                Language::En => ["NOT A CUTTING TEMPLATE", "Hinge installation", "Hardware"],
+                Language::En => ["NOT A CUTTING TEMPLATE", "Hinge", "Hardware"],
                 Language::PtBr => [
                     "NÃO É GABARITO DE CORTE",
-                    "Instalação da dobradiça",
+                    "Dobradiça",
                     "Ferragens",
                 ],
             } {

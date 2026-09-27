@@ -67,10 +67,103 @@ fn money(value: Option<Money>, language: Language) -> String {
 }
 
 fn stock_ref(project: &Project, id: Uuid) -> String {
-    format!("{} [{id}]", project.stock_alias(id).unwrap_or("?"))
+    project.stock_alias(id).unwrap_or("?").to_owned()
 }
 
-fn issue_text(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Unit) -> String {
+/// Short, human part and hinge numbers used consistently across the packet:
+/// the parts list, sheet diagrams, cut keys and issues all say `#3`, so the
+/// shop can match a label on a sheet to its row without machine identifiers.
+pub(crate) struct Labels {
+    parts: BTreeMap<Uuid, usize>,
+    hinges: BTreeMap<Uuid, usize>,
+}
+
+impl Labels {
+    fn new(project: &Project) -> Self {
+        let parts = part_groups(project)
+            .into_values()
+            .flatten()
+            .enumerate()
+            .map(|(index, board)| (board.id, index + 1))
+            .collect();
+        let hinges = project
+            .hinge_installations
+            .iter()
+            .enumerate()
+            .map(|(index, installation)| (installation.id, index + 1))
+            .collect();
+        Self { parts, hinges }
+    }
+
+    fn part(&self, id: Uuid) -> String {
+        self.parts
+            .get(&id)
+            .map_or_else(|| "#?".into(), |n| format!("#{n}"))
+    }
+
+    fn named_part(&self, project: &Project, id: Uuid) -> String {
+        project.boards.iter().find(|b| b.id == id).map_or_else(
+            || self.part(id),
+            |board| format!("{} {}", self.part(id), board.name),
+        )
+    }
+
+    fn hinge(&self, project: &Project, loc: &Localizer, id: Uuid) -> String {
+        let number = self.hinges.get(&id).copied().unwrap_or(0);
+        let installation = project.hinge_installations.iter().find(|i| i.id == id);
+        let name = |board: Option<Uuid>| {
+            board
+                .and_then(|b| project.boards.iter().find(|x| x.id == b))
+                .map_or("—", |b| b.name.as_str())
+        };
+        format!(
+            "{} {number} ({} › {})",
+            loc.text("pdf-hinge-installation"),
+            name(installation.map(|i| i.door_board_id)),
+            name(installation.map(|i| i.mounting_board_id))
+        )
+    }
+}
+
+type PartKey = (String, Uuid, i64, i64, i64, u8);
+
+/// Name keeps distinct design labels distinct; physical grouping additionally
+/// requires identical material, finished dimensions and effective grain.
+fn part_groups(project: &Project) -> BTreeMap<PartKey, Vec<&crate::domain::Board>> {
+    let mut groups: BTreeMap<PartKey, Vec<_>> = BTreeMap::new();
+    for board in &project.boards {
+        let grain = project
+            .materials
+            .iter()
+            .find(|m| m.id == board.material_id)
+            .map(|m| board.effective_grain(m));
+        groups
+            .entry((
+                board.name.clone(),
+                board.material_id,
+                board.length.micrometres(),
+                board.width.micrometres(),
+                board.thickness.micrometres(),
+                match grain {
+                    Some(BoardGrain::Length) => 0,
+                    Some(BoardGrain::Width) => 1,
+                    Some(BoardGrain::Unrestricted) => 2,
+                    None => 3,
+                },
+            ))
+            .or_default()
+            .push(board);
+    }
+    groups
+}
+
+fn issue_text(
+    issue: &ExportIssue,
+    project: &Project,
+    labels: &Labels,
+    loc: &Localizer,
+    unit: Unit,
+) -> String {
     match issue {
         ExportIssue::Board {
             id,
@@ -78,7 +171,8 @@ fn issue_text(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Uni
             stock_id,
             reasons,
         } => format!(
-            "{name} [{id}] — {}{}",
+            "{} {name} — {}{}",
+            labels.part(*id),
             reasons
                 .iter()
                 .map(|reason| loc.text(reason.key()))
@@ -109,8 +203,8 @@ fn issue_text(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Uni
             loc.text("export-price-unknown"),
             stock_id.map_or_else(|| loc.text("export-cut-fee"), |id| stock_ref(project, id))
         ),
-        ExportIssue::Hardware { id, name, reason } => format!(
-            "{name} [{id}]: {} — {}",
+        ExportIssue::Hardware { name, reason, .. } => format!(
+            "{name}: {} — {}",
             loc.text(match reason {
                 HardwareIssue::MissingCatalog(_) => "pdf-hardware-missing-catalog",
                 HardwareIssue::UnverifiedInstallation => "pdf-hardware-unverified",
@@ -118,8 +212,9 @@ fn issue_text(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Uni
             }),
             loc.text("pdf-installation-withheld")
         ),
-        ExportIssue::Installation { id, name, reason } => format!(
-            "{name} [{id}]: {} — {}",
+        ExportIssue::Installation { id, reason, .. } => format!(
+            "{}: {} — {}",
+            labels.hinge(project, loc, *id),
             loc.text(match reason {
                 crate::hinge_installation::InstallationIssue::MissingPart(_) =>
                     "pdf-install-missing-part",
@@ -139,10 +234,10 @@ fn issue_text(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Uni
             loc.text("pdf-installation-withheld")
         ),
         ExportIssue::JointNeedsReview {
-            id,
-            installation_id,
+            installation_id, ..
         } => format!(
-            "{installation_id} [{id}]: {} — {}",
+            "{}: {} — {}",
+            labels.hinge(project, loc, *installation_id),
             loc.text("pdf-joint-review"),
             loc.text("pdf-installation-withheld")
         ),
@@ -239,6 +334,7 @@ fn sheet_pages(
     tree: &CutTree,
     stock: &Stock,
     project: &Project,
+    labels: &Labels,
     loc: &Localizer,
     unit: Unit,
 ) -> Result<(), WorkshopDocumentError> {
@@ -380,11 +476,11 @@ fn sheet_pages(
             false,
         )?;
     }
-    for (id, node) in tree.nodes().iter().enumerate() {
-        if let CutKind::Part(_) = node.kind {
+    for node in tree.nodes() {
+        if let CutKind::Part(board_id) = node.kind {
             let box_rect = rect(node.rectangle);
             builder.box_at(box_rect, Some(Stroke::STANDARD), None)?;
-            let label = format!("P{id}");
+            let label = labels.part(board_id);
             let width = builder.measure(&label, TextStyle::CAPTION)?;
             if box_rect.width > width + 2.0 && box_rect.height > TextStyle::CAPTION.leading_mm + 2.0
             {
@@ -469,22 +565,9 @@ fn sheet_pages(
     builder.paragraph(&loc.text("pdf-part-key"))?;
     for (id, node) in tree.nodes().iter().enumerate() {
         if let CutKind::Part(board_id) = node.kind {
-            let board = project
-                .boards
-                .iter()
-                .find(|b| b.id == board_id)
-                .expect("verified part");
-            let allocation = project
-                .allocations
-                .iter()
-                .find(|a| a.board_id == board_id)
-                .expect("verified allocation");
             builder.paragraph(&format!(
-                "P{id}: {} [{}] · {} [{}] · {} × {}",
-                board.name,
-                board.id,
-                stock_ref(project, allocation.stock_id),
-                allocation.id,
+                "{} (P{id}): {} × {}",
+                labels.named_part(project, board_id),
                 length(node.rectangle.extent[0], unit, language),
                 length(node.rectangle.extent[1], unit, language)
             ))?;
@@ -511,7 +594,7 @@ fn sheet_pages(
     }
     for (id, node) in tree.nodes().iter().enumerate() {
         let kind = match node.kind {
-            CutKind::Part(board) => format!("{} {board}", loc.text("pdf-part")),
+            CutKind::Part(board) => labels.named_part(project, board),
             CutKind::Offcut => loc.text("pdf-offcut"),
             CutKind::Waste => loc.text("pdf-waste"),
             CutKind::Split { .. } => continue,
@@ -528,6 +611,7 @@ fn sheet_pages(
 fn hardware_pages(
     builder: &mut DocumentBuilder,
     prepared: &PreparedExport,
+    labels: &Labels,
     loc: &Localizer,
     unit: Unit,
 ) -> Result<(), WorkshopDocumentError> {
@@ -548,13 +632,7 @@ fn hardware_pages(
                 .iter()
                 .find(|c| c.id == *catalog_id)
                 .map_or_else(
-                    || {
-                        format!(
-                            "{} {catalog_id} {}",
-                            loc.text("pdf-catalog"),
-                            loc.text("pdf-missing")
-                        )
-                    },
+                    || format!("{} {}", loc.text("pdf-catalog"), loc.text("pdf-missing")),
                     |c| {
                         format!(
                             "{} / {} / {}",
@@ -565,35 +643,16 @@ fn hardware_pages(
                     },
                 ),
         };
-        builder.paragraph(&format!(
-            "{} [{}] — {description}",
-            hardware.name, hardware.id
-        ))?;
+        builder.paragraph(&format!("{} — {description}", hardware.name))?;
         if prepared
             .withheld_installation_guidance
             .contains(&hardware.id)
         {
-            withheld_reason(builder, prepared, hardware.id, loc, unit)?;
+            withheld_reason(builder, prepared, labels, hardware.id, loc, unit)?;
         }
     }
     for installation in &project.hinge_installations {
-        let door = project
-            .boards
-            .iter()
-            .find(|b| b.id == installation.door_board_id);
-        let mount = project
-            .boards
-            .iter()
-            .find(|b| b.id == installation.mounting_board_id);
-        builder.paragraph(&format!(
-            "{} [{}] — {} [{}] / {} [{}]",
-            loc.text("pdf-hinge-installation"),
-            installation.id,
-            door.map_or("—", |b| b.name.as_str()),
-            installation.door_board_id,
-            mount.map_or("—", |b| b.name.as_str()),
-            installation.mounting_board_id
-        ))?;
+        builder.paragraph(&labels.hinge(project, loc, installation.id))?;
         let guidance = prepared
             .installation_guidance
             .iter()
@@ -603,7 +662,7 @@ fn hardware_pages(
             .contains(&installation.id)
             || guidance.is_none()
         {
-            withheld_reason(builder, prepared, installation.id, loc, unit)?;
+            withheld_reason(builder, prepared, labels, installation.id, loc, unit)?;
             continue;
         }
         let g = guidance.expect("checked above");
@@ -680,6 +739,7 @@ fn hardware_pages(
 fn withheld_reason(
     builder: &mut DocumentBuilder,
     prepared: &PreparedExport,
+    labels: &Labels,
     id: Uuid,
     loc: &Localizer,
     unit: Unit,
@@ -696,7 +756,7 @@ fn withheld_reason(
             } => *installation_id == id,
             _ => false,
         })
-        .map(|issue| issue_text(issue, prepared.snapshot.project(), loc, unit))
+        .map(|issue| issue_text(issue, prepared.snapshot.project(), labels, loc, unit))
         .collect();
     if reasons.is_empty() {
         builder.notice(&format!(
@@ -727,12 +787,13 @@ pub fn build_workshop_document(
     let language = settings.language;
     let loc = Localizer::new(language);
     let estimate = estimate(prepared)?;
+    let labels = Labels::new(project);
     let draft = prepared.mode == ExportMode::Draft;
     let mut notices: Vec<String> = prepared
         .wood_issues
         .iter()
         .chain(&prepared.notices)
-        .map(|issue| issue_text(issue, project, &loc, settings.units))
+        .map(|issue| issue_text(issue, project, &labels, &loc, settings.units))
         .collect();
     let has_hinges = !project.hinge_installations.is_empty()
         || !project.door_joints.is_empty()
@@ -786,12 +847,7 @@ pub fn build_workshop_document(
     }
     let mut builder = DocumentBuilder::new(PageContext {
         project: project.name.clone(),
-        revision: format!(
-            "{} {} · {}",
-            loc.text("pdf-revision"),
-            prepared.snapshot.revision(),
-            project.id
-        ),
+        revision: format!("{} {}", loc.text("pdf-revision"), prepared.snapshot.revision()),
         packet: format!(
             "{} · {}",
             loc.text("pdf-packet"),
@@ -818,14 +874,13 @@ pub fn build_workshop_document(
     })?;
     builder.section(&format!("{} — {}", project.name, loc.text("pdf-packet")))?;
     builder.paragraph(&format!(
-        "{}: {} · {}: {} · {}: {} · ID: {}",
+        "{}: {} · {}: {} · {}: {}",
         loc.text("pdf-project"),
         project.name,
         loc.text("pdf-revision"),
         prepared.snapshot.revision(),
         loc.text("pdf-currency"),
         project.currency.code(),
-        project.id
     ))?;
     builder.paragraph(&format!(
         "{}: {} · {}: {} · {}: {}",
@@ -871,34 +926,37 @@ pub fn build_workshop_document(
             .map_or_else(|| loc.text("pdf-missing"), |n| n.to_string())
     ))?;
     // Scope survives every optional toggle, including all-off and empty input.
-    for material in &project.materials {
-        let aliases = project
-            .stock
-            .iter()
-            .filter(|s| s.material_id == material.id)
-            .map(|s| project.stock_alias(s.id).unwrap_or("?"))
-            .collect::<Vec<_>>()
-            .join(", ");
+    let scope = project
+        .materials
+        .iter()
+        .map(|material| {
+            let aliases = project
+                .stock
+                .iter()
+                .filter(|s| s.material_id == material.id)
+                .map(|s| project.stock_alias(s.id).unwrap_or("?"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "{} {} ({})",
+                material.name,
+                length(material.default_thickness, settings.units, language),
+                if aliases.is_empty() { "—" } else { &aliases }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if !scope.is_empty() {
         builder.paragraph(&format!(
-            "{} [{}] — {}: {}",
-            material.name,
-            material.id,
-            loc.text("pdf-stock"),
-            if aliases.is_empty() { "—" } else { &aliases }
-        ))?;
-    }
-    for stock in &project.stock {
-        builder.paragraph(&format!(
-            "{} · {}",
-            stock_ref(project, stock.id),
-            stock.name
+            "{}: {scope}",
+            translated(language, "Materials and sheets", "Materiais e chapas")
         ))?;
     }
     if sections.parts_and_costs {
         builder.section(&loc.text("pdf-stock"))?;
         builder.table(
             &[
-                translated(language, "Material / ID", "Material / ID").into(),
+                translated(language, "Material", "Material").into(),
                 translated(language, "Thickness / grain", "Espessura / veio").into(),
                 translated(language, "Stock pieces", "Chapas").into(),
             ],
@@ -907,7 +965,7 @@ pub fn build_workshop_document(
                 .iter()
                 .map(|m| {
                     vec![
-                        format!("{} [{}]", m.name, m.id),
+                        m.name.clone(),
                         format!(
                             "{} · {}",
                             length(m.default_thickness, settings.units, language),
@@ -969,11 +1027,10 @@ pub fn build_workshop_document(
                 })
                 .collect::<Vec<_>>(),
         )?;
-        for stock in &project.stock {
+        for stock in project.stock.iter().filter(|s| s.trim.iter().any(|t| t.micrometres() != 0)) {
             builder.paragraph(&format!(
-                "{} · {} · {}: {} / {} / {} / {}",
+                "{} · {} (X- / X+ / Y- / Y+): {} / {} / {} / {}",
                 stock_ref(project, stock.id),
-                stock.name,
                 loc.text("pdf-trim"),
                 length(stock.trim[0], settings.units, language),
                 length(stock.trim[1], settings.units, language),
@@ -982,37 +1039,17 @@ pub fn build_workshop_document(
             ))?;
         }
         builder.section(&loc.text("pdf-parts"))?;
-        // Name keeps distinct design labels distinct; physical grouping additionally
-        // requires identical material, finished dimensions and effective grain.
-        let mut groups: BTreeMap<(String, Uuid, i64, i64, i64, u8), Vec<_>> = BTreeMap::new();
-        for board in &project.boards {
-            let grain = project
-                .materials
-                .iter()
-                .find(|m| m.id == board.material_id)
-                .map(|m| board.effective_grain(m));
-            groups
-                .entry((
-                    board.name.clone(),
-                    board.material_id,
-                    board.length.micrometres(),
-                    board.width.micrometres(),
-                    board.thickness.micrometres(),
-                    match grain {
-                        Some(BoardGrain::Length) => 0,
-                        Some(BoardGrain::Width) => 1,
-                        Some(BoardGrain::Unrestricted) => 2,
-                        None => 3,
-                    },
-                ))
-                .or_default()
-                .push(board);
-        }
+        let groups = part_groups(project);
         let rows = groups
             .iter()
             .map(|((name, material_id, l, w, t, grain), boards)| {
+                let numbers = boards
+                    .iter()
+                    .map(|b| labels.part(b.id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 vec![
-                    format!("{name} × {}", boards.len()),
+                    format!("{numbers} {name} × {}", boards.len()),
                     format!(
                         "{} · {}",
                         project
@@ -1044,26 +1081,43 @@ pub fn build_workshop_document(
             ],
             &rows,
         )?;
-        for boards in groups.values() {
-            for board in boards {
+        let placements = groups
+            .values()
+            .flatten()
+            .map(|board| {
                 let allocation = project.allocations.iter().find(|a| a.board_id == board.id);
-                builder.paragraph(&format!(
-                    "{} [{}] — {}: {}",
-                    board.name,
-                    board.id,
-                    loc.text("pdf-stock"),
+                vec![
+                    labels.named_part(project, board.id),
                     allocation.map_or_else(
                         || loc.text("board-unallocated"),
-                        |a| format!(
-                            "{} · {}: {}",
-                            stock_ref(project, a.stock_id),
-                            translated(language, "allocation", "alocação"),
-                            a.id
-                        )
-                    )
-                ))?;
-            }
-        }
+                        |a| stock_ref(project, a.stock_id),
+                    ),
+                    allocation.map_or_else(
+                        || "—".into(),
+                        |a| {
+                            format!(
+                                "X {} · Y {}{}",
+                                length(a.origin[0], settings.units, language),
+                                length(a.origin[1], settings.units, language),
+                                if a.quarter_turn {
+                                    translated(language, " · turned 90°", " · girada 90°")
+                                } else {
+                                    ""
+                                }
+                            )
+                        },
+                    ),
+                ]
+            })
+            .collect::<Vec<_>>();
+        builder.table(
+            &[
+                translated(language, "Part", "Peça").into(),
+                translated(language, "Sheet", "Chapa").into(),
+                translated(language, "Position on sheet", "Posição na chapa").into(),
+            ],
+            &placements,
+        )?;
         builder.section(&loc.text("pdf-cost"))?;
         builder.paragraph(&format!(
             "{}: {} · {}: {} · {}: {} · {}: {}",
@@ -1092,12 +1146,12 @@ pub fn build_workshop_document(
     if sections.sheets_and_cut_steps {
         for (id, tree) in &prepared.witnesses {
             if let Some(stock) = project.stock.iter().find(|s| s.id == *id) {
-                sheet_pages(&mut builder, tree, stock, project, &loc, settings.units)?;
+                sheet_pages(&mut builder, tree, stock, project, &labels, &loc, settings.units)?;
             }
         }
     }
     if sections.hinge_references {
-        hardware_pages(&mut builder, prepared, &loc, settings.units)?;
+        hardware_pages(&mut builder, prepared, &labels, &loc, settings.units)?;
     }
     Ok(builder.finish())
 }
