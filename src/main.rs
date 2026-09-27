@@ -56,7 +56,7 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell, workspace_state,
+    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell, workspace_state,
 };
 use actions::{ActionId as A, Argument, Request, Target};
 use modal_chrome::{ModalAction, ModalActions, ModalChrome, ModalThreeAction, ModalThreeActions};
@@ -405,16 +405,6 @@ struct DesktopApp {
     preferences: LocalPreferences,
     preferences_store: Option<PreferencesStore>,
     preferences_error: Option<String>,
-    settings_open: bool,
-    settings_resume_after_dialog: bool,
-    settings_state: SettingsState,
-    settings_worked_examples: bool,
-    settings_examples_chrome: Option<modal_chrome::ModalChrome>,
-    settings_message: Option<String>,
-    settings_cleanup: Option<CleanupUi>,
-    template_setup: Option<TemplateSetupUi>,
-    template_guard_pending: bool,
-    template_message: Option<String>,
     // The viewport renders through this slot; the active workspace owns its
     // camera between frames. Project replacement resets the session.
     camera: viewport::Camera,
@@ -426,39 +416,16 @@ struct DesktopApp {
     navigation_chrome: ModalChrome,
     navigation_error: Option<&'static str>,
     edit_drafts: EditDrafts,
-    pose_frame: CoordinateFrame,
-    pending_pose_frame: Option<CoordinateFrame>,
     pending_action: Option<Request>,
     pending_project_command: Option<project_ui::PendingProjectCommand>,
     palette: command_palette::Palette,
     palette_relationship_pending: Option<Uuid>,
-    move_tool: viewport::MoveTool,
     localizer: Localizer,
     editor: ProjectEditor,
     /// The one form dialog that may be open.
     modals: modals::Modals,
     suspended_board: Option<CreationDialog>,
-    board_creation_chrome: ModalChrome,
-    material_creation_chrome: ModalChrome,
-    material_edit_chrome: ModalChrome,
-    board_material_chrome: ModalChrome,
-    board_dimension_chrome: ModalChrome,
-    batch_dimension_chrome: ModalChrome,
-    placement_chrome: ModalChrome,
-    grid_chrome: ModalChrome,
-    door_motion: Option<(Uuid, f64)>,
-    catalog_update_notice: Option<String>,
-    sheet_repair: sheet_ui::RepairUi,
-    optimizer: optimization_ui::OptimizeUi,
     selection: viewport::Selection,
-    scene_active_seen: Option<Uuid>,
-    measurement_scope: Scope,
-    measurement_frame: Frame,
-    board_action_error: bool,
-    first_fit_notice: Option<FirstFit>,
-    material_conflicts: Vec<AllocationConflict>,
-    allocation_diagnostics: Option<(sheet_ui::DiagnosticsKey, Vec<BoardDiagnostic>)>,
-    design_stock_snapshot: Option<((Uuid, u64), StockReadModel)>,
     shell_estimate: Option<(
         (Uuid, u64),
         Result<
@@ -466,22 +433,15 @@ struct DesktopApp {
             plan_my_cabinet::cost_estimate::EstimateError,
         >,
     )>,
-    export_mode: ExportMode,
-    export_sections: ReceiptSections,
-    export_preview: DocumentPreviewState,
-    export_preparation: Option<ExportPreparationCache>,
-    export_candidate: Option<ExportPreparationCache>,
-    export_preparation_pending: Option<ExportPreparationJob>,
-    export_language: Language,
-    export_units: Unit,
-    export_activity: Option<ExportActivity>,
-    export_overwrite_chrome: ModalChrome,
-    export_picker_key: Option<ReviewedPacketKey>,
-    export_events: Option<Receiver<ExportEvent>>,
-    export_cancel: Option<Arc<AtomicBool>>,
-    export_message: Option<String>,
     project_files: project_ui::ProjectFiles,
     toasts: toasts::Toasts,
+    hardware: state::HardwareState,
+    cut_plan: state::CutPlanState,
+    design: state::DesignState,
+    chromes: state::DialogChromes,
+    template: state::TemplateHost,
+    settings: state::SettingsHost,
+    handoff: state::HandoffState,
 }
 
 impl Default for DesktopApp {
@@ -493,16 +453,6 @@ impl Default for DesktopApp {
             preferences: LocalPreferences::default(),
             preferences_store: None,
             preferences_error: None,
-            settings_open: false,
-            settings_resume_after_dialog: false,
-            settings_state: SettingsState::default(),
-            settings_worked_examples: false,
-            settings_examples_chrome: None,
-            settings_message: None,
-            settings_cleanup: None,
-            template_setup: None,
-            template_guard_pending: false,
-            template_message: None,
             camera: viewport::Camera::default(),
             session: WorkspaceSession::new(editor.project()),
             open_drawer: None,
@@ -515,81 +465,25 @@ impl Default for DesktopApp {
                 .alert(),
             navigation_error: None,
             edit_drafts: EditDrafts::default(),
-            pose_frame: CoordinateFrame::LocalParent,
-            pending_pose_frame: None,
             pending_action: None,
             pending_project_command: None,
             palette: command_palette::Palette::default(),
             palette_relationship_pending: None,
-            move_tool: viewport::MoveTool::default(),
             localizer: Localizer::new(Language::En),
             editor,
             modals: modals::Modals::default(),
             suspended_board: None,
-            board_creation_chrome: ModalChrome::new(egui::Id::new("board-creation-dialog"))
-                .width(480.0)
-                .icon(icons::Icon::Board)
-                .first_focus(egui::Id::new("board-creation-name")),
-            material_creation_chrome: ModalChrome::new(egui::Id::new("material-creation-dialog"))
-                .width(400.0)
-                .icon(icons::Icon::Material)
-                .first_focus(egui::Id::new("material-creation-name")),
-            material_edit_chrome: ModalChrome::new(egui::Id::new("material-edit-dialog"))
-                .width(480.0)
-                .icon(icons::Icon::Material)
-                .first_focus(egui::Id::new("material-edit-name")),
-            board_material_chrome: ModalChrome::new(egui::Id::new("board-material-dialog"))
-                .width(440.0)
-                .icon(icons::Icon::Material)
-                .first_focus(
-                    egui::Id::new("board-material-picker")
-                        .with("popup")
-                        .with("select"),
-                ),
-            board_dimension_chrome: ModalChrome::new(egui::Id::new("board-dimension-dialog"))
-                .width(440.0)
-                .icon(icons::Icon::Measure)
-                .first_focus(egui::Id::new("board-dimension-value")),
-            batch_dimension_chrome: ModalChrome::new(egui::Id::new("batch-dimension-dialog"))
-                .width(440.0)
-                .icon(icons::Icon::Measure)
-                .first_focus(egui::Id::new("batch-dimension-value")),
-            placement_chrome: ModalChrome::new(egui::Id::new("placement-dialog")).width(520.0),
-            grid_chrome: ModalChrome::new(egui::Id::new("grid-spacing-dialog"))
-                .width(420.0)
-                .icon(icons::Icon::Grid)
-                .first_focus(egui::Id::new("grid-spacing-value")),
-            door_motion: None,
-            catalog_update_notice: None,
-            sheet_repair: sheet_ui::RepairUi::default(),
-            optimizer: optimization_ui::OptimizeUi::default(),
             selection: viewport::Selection::default(),
-            scene_active_seen: None,
-            measurement_scope: Scope::Body,
-            measurement_frame: Frame::World,
-            board_action_error: false,
-            first_fit_notice: None,
-            material_conflicts: Vec::new(),
-            allocation_diagnostics: None,
-            design_stock_snapshot: None,
             shell_estimate: None,
-            export_mode: ExportMode::Draft,
-            export_sections: ReceiptSections::default(),
-            export_preview: DocumentPreviewState::default(),
-            export_preparation: None,
-            export_candidate: None,
-            export_preparation_pending: None,
-            export_language: Language::En,
-            export_units: Unit::Mm,
-            export_activity: None,
-            export_overwrite_chrome: ModalChrome::new(egui::Id::new("export-overwrite-dialog"))
-                .width(520.0),
-            export_picker_key: None,
-            export_events: None,
-            export_cancel: None,
-            export_message: None,
             project_files: project_ui::ProjectFiles::default(),
             toasts: toasts::Toasts::default(),
+            hardware: state::HardwareState::default(),
+            cut_plan: state::CutPlanState::default(),
+            design: state::DesignState::default(),
+            chromes: state::DialogChromes::default(),
+            template: state::TemplateHost::default(),
+            settings: state::SettingsHost::default(),
+            handoff: state::HandoffState::default(),
         }
     }
 }
@@ -1046,17 +940,17 @@ impl DesktopApp {
     }
 
     fn settings_project_action(&mut self, action: A) {
-        self.settings_open = false;
+        self.settings.open = false;
         if self.invoke(Request::new(action)).is_ok() {
-            self.settings_resume_after_dialog = true;
+            self.settings.resume_after_dialog = true;
         } else {
-            self.settings_open = true;
+            self.settings.open = true;
         }
     }
 
     fn apply_settings_intent(&mut self, ctx: &egui::Context, intent: SettingsIntent) {
         match intent {
-            SettingsIntent::Done => self.settings_open = false,
+            SettingsIntent::Done => self.settings.open = false,
             SettingsIntent::EditKerf => self.settings_project_action(A::EditKerf),
             SettingsIntent::ConfirmKerf => self.settings_project_action(A::ConfirmKerf),
             SettingsIntent::EditGrid => self.settings_project_action(A::EditGrid),
@@ -1076,12 +970,12 @@ impl DesktopApp {
             SettingsIntent::SetMaterialTint(enabled) => self.set_material_tint(enabled),
             SettingsIntent::SetScale(scale) => self.set_interface_scale(ctx, scale),
             SettingsIntent::HelpShortcuts => {
-                self.settings_state.section = SettingsSection::Shortcuts
+                self.settings.state.section = SettingsSection::Shortcuts
             }
             SettingsIntent::Source => ctx.open_url(egui::OpenUrl::new_tab(APP_SOURCE_URL)),
             SettingsIntent::WorkedExamples => {
-                self.settings_open = false;
-                self.settings_worked_examples = true;
+                self.settings.open = false;
+                self.settings.worked_examples = true;
             }
             SettingsIntent::ShowRecoveryFolder => {
                 let folder = self
@@ -1090,7 +984,7 @@ impl DesktopApp {
                     .clone()
                     .or_else(project_ui::user_data_dir)
                     .map(|root| root.join("recovery"));
-                self.settings_message = Some(match folder {
+                self.settings.message = Some(match folder {
                     Some(folder) if folder.is_dir() => {
                         #[cfg(target_os = "macos")]
                         let command = "open";
@@ -1132,14 +1026,14 @@ impl DesktopApp {
                 {
                     Some(dir) => match CleanupUi::open(&dir) {
                         Ok(review) => {
-                            self.settings_open = false;
-                            self.settings_cleanup = Some(review);
-                            self.settings_message = None;
+                            self.settings.open = false;
+                            self.settings.cleanup = Some(review);
+                            self.settings.message = None;
                         }
-                        Err(error) => self.settings_message = Some(error.to_string()),
+                        Err(error) => self.settings.message = Some(error.to_string()),
                     },
                     None => {
-                        self.settings_message =
+                        self.settings.message =
                             Some(self.localizer.text("settings-recovery-open-failed"))
                     }
                 }
@@ -1148,12 +1042,12 @@ impl DesktopApp {
     }
 
     fn show_settings(&mut self, ctx: &egui::Context) {
-        if let Some(cleanup) = &mut self.settings_cleanup {
+        if let Some(cleanup) = &mut self.settings.cleanup {
             match cleanup.show(ctx, &self.localizer) {
                 CleanupIntent::None => {}
                 CleanupIntent::Closed => {
-                    self.settings_cleanup = None;
-                    self.settings_open = true;
+                    self.settings.cleanup = None;
+                    self.settings.open = true;
                 }
                 CleanupIntent::OpenFolder(path) => {
                     #[cfg(target_os = "macos")]
@@ -1174,14 +1068,14 @@ impl DesktopApp {
                             .status()
                             .is_ok_and(|status| status.success())
                     {
-                        self.settings_message =
+                        self.settings.message =
                             Some(self.localizer.text("settings-recovery-open-failed"));
                     }
                 }
             }
             return;
         }
-        if self.settings_worked_examples {
+        if self.settings.worked_examples {
             let guide = if self.localizer.language() == Language::En {
                 include_str!("../docs/stock-en.md")
             } else {
@@ -1194,7 +1088,7 @@ impl DesktopApp {
                     "## Premissas de corte e exemplos"
                 })
                 .map_or(guide, |(_, text)| text);
-            let chrome = self.settings_examples_chrome.get_or_insert_with(|| {
+            let chrome = self.settings.examples_chrome.get_or_insert_with(|| {
                 modal_chrome::ModalChrome::new(egui::Id::new("settings-worked-examples"))
                     .width(760.0)
             });
@@ -1211,32 +1105,32 @@ impl DesktopApp {
             );
             if result.action == modal_chrome::ModalAction::Cancel {
                 chrome.close(ctx);
-                self.settings_examples_chrome = None;
-                self.settings_worked_examples = false;
-                self.settings_open = true;
+                self.settings.examples_chrome = None;
+                self.settings.worked_examples = false;
+                self.settings.open = true;
             }
             return;
         }
-        if self.settings_resume_after_dialog
+        if self.settings.resume_after_dialog
             && !self.other_modal_open()
             && !self.project_files.blocking()
             && self.navigation.pending().is_none()
         {
-            self.settings_resume_after_dialog = false;
-            self.settings_open = true;
+            self.settings.resume_after_dialog = false;
+            self.settings.open = true;
         }
-        if self.settings_open {
+        if self.settings.open {
             let project = (self.capture.is_some() || !self.project_files.welcome.visible)
                 .then(|| self.editor.project());
             let estimate = project.and_then(|p| plan_my_cabinet::cost_estimate::estimate(p).ok());
-            let intents = self.settings_state.show(
+            let intents = self.settings.state.show(
                 ctx,
                 &self.localizer,
                 project,
                 &self.preferences,
                 estimate.as_ref(),
                 self.preferences_error.as_deref(),
-                self.settings_message.as_deref(),
+                self.settings.message.as_deref(),
             );
             for intent in intents {
                 self.apply_settings_intent(ctx, intent);
@@ -1245,21 +1139,21 @@ impl DesktopApp {
     }
 
     fn show_template_setup(&mut self, ctx: &egui::Context) {
-        if self.template_guard_pending {
+        if self.template.guard_pending {
             if self.project_files.prompt.is_none()
                 && !self.project_files.blocking()
                 && self.navigation.pending().is_none()
                 && self.pending_project_command.is_none()
             {
-                self.template_guard_pending = false;
+                self.template.guard_pending = false;
             } else {
                 return;
             }
         }
-        let Some(setup) = &mut self.template_setup else {
+        let Some(setup) = &mut self.template.setup else {
             return;
         };
-        if let Some(message) = &self.template_message {
+        if let Some(message) = &self.template.message {
             egui::Area::new(egui::Id::new("template-setup-error"))
                 .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -12.0))
                 .show(ctx, |ui| {
@@ -1268,12 +1162,12 @@ impl DesktopApp {
         }
         match setup.show(ctx, &self.localizer) {
             Some(TemplateSetupIntent::Cancel) => {
-                self.template_setup = None;
-                self.template_message = None;
+                self.template.setup = None;
+                self.template.message = None;
             }
             Some(TemplateSetupIntent::Accept(accepted)) => {
                 setup.setup = accepted;
-                self.template_guard_pending = true;
+                self.template.guard_pending = true;
                 self.request_project_action(project_ui::NextAction::Template);
             }
             None => {}
@@ -1282,11 +1176,11 @@ impl DesktopApp {
 
     // Every mounted draft is owned by the app session, not either editing surface.
     fn navigation_edit(&mut self) -> Option<EditBlock> {
-        let (kind, target, can_commit) = if self.sheet_repair.active() {
+        let (kind, target, can_commit) = if self.cut_plan.repair.active() {
             (
                 EditKind::Preview,
                 self.session.focused_sheet.map(InspectorTarget::Sheet),
-                self.sheet_repair.can_accept(&mut self.editor),
+                self.cut_plan.repair.can_accept(&mut self.editor),
             )
         } else if let Some(draft) = self.modals.board_dimension() {
             let project = self.editor.project();
@@ -1392,16 +1286,16 @@ impl DesktopApp {
     }
 
     fn request_pose_frame(&mut self, frame: CoordinateFrame) {
-        if frame == self.pose_frame {
+        if frame == self.design.pose_frame {
             return;
         }
         if self.navigation_edit().is_none() {
-            self.pose_frame = frame;
+            self.design.pose_frame = frame;
         } else if matches!(
             self.request_navigation(NavigationRoute::Workspace(self.session.active)),
             Outcome::Prompt { .. }
         ) {
-            self.pending_pose_frame = Some(frame);
+            self.design.pending_pose_frame = Some(frame);
         }
     }
 
@@ -1440,9 +1334,9 @@ impl DesktopApp {
 
     fn after_navigation(&mut self, outcome: Outcome) {
         if outcome == Outcome::Navigated {
-            self.scene_active_seen = self.selection.active;
+            self.design.scene_active_seen = self.selection.active;
             if self.session.active != Workspace::Hardware {
-                self.door_motion = None;
+                self.hardware.door_motion = None;
             }
             self.navigation_error = None;
             if let Some(id) = self.palette_relationship_pending.take()
@@ -1490,7 +1384,7 @@ impl DesktopApp {
             self.navigation.pending().map(|intent| intent.route),
             Some(NavigationRoute::Workspace(_))
         );
-        let repair = &mut self.sheet_repair;
+        let repair = &mut self.cut_plan.repair;
         let modals = &mut self.modals;
         let drafts = &mut self.edit_drafts;
         let mut conflicts = None;
@@ -1545,7 +1439,7 @@ impl DesktopApp {
                     } else {
                         editor.cancel_preview();
                     }
-                    self.move_tool.cancel();
+                    self.design.move_tool.cancel();
                 } else if let Some(id) = draft_board {
                     if decision == NavigationDecision::Commit {
                         drafts
@@ -1571,7 +1465,7 @@ impl DesktopApp {
         match outcome {
             Ok(outcome) => {
                 if let Some(changes) = conflicts {
-                    self.material_conflicts = changes;
+                    self.cut_plan.material_conflicts = changes;
                 }
                 if outcome == Outcome::Navigated
                     && decision == NavigationDecision::Abandon
@@ -1593,8 +1487,8 @@ impl DesktopApp {
                     _ => None,
                 };
                 if outcome == Outcome::Navigated {
-                    if let Some(frame) = self.pending_pose_frame.take() {
-                        self.pose_frame = frame;
+                    if let Some(frame) = self.design.pending_pose_frame.take() {
+                        self.design.pose_frame = frame;
                     }
                     if let Some(request) = self.pending_action.take()
                         && self.invoke(request).is_err()
@@ -1614,7 +1508,7 @@ impl DesktopApp {
                 } else if self.navigation.pending().is_none() {
                     self.pending_action = None;
                     self.pending_project_command = None;
-                    self.pending_pose_frame = None;
+                    self.design.pending_pose_frame = None;
                 }
                 outcome
             }
@@ -1707,18 +1601,18 @@ impl DesktopApp {
             self.edit_drafts.clear();
             self.pending_action = None;
             self.pending_project_command = None;
-            self.pending_pose_frame = None;
+            self.design.pending_pose_frame = None;
             self.navigation_error = None;
             self.palette_relationship_pending = None;
             self.open_drawer = None;
             self.controls_horizontal_scroll = [0.0; 5];
             self.inspector_scroll = [egui::Vec2::ZERO; 5];
-            self.design_stock_snapshot = None;
+            self.design.stock_snapshot = None;
         }
         self.session.retain_existing(self.editor.project());
         self.selection.retain_objects(self.editor.project());
-        if self.scene_active_seen != self.selection.active {
-            self.scene_active_seen = self.selection.active;
+        if self.design.scene_active_seen != self.selection.active {
+            self.design.scene_active_seen = self.selection.active;
             self.session.inspector = self.selection.active.and_then(|id| {
                 self.editor
                     .project()
@@ -1734,15 +1628,16 @@ impl DesktopApp {
         let project = self.editor.project();
         let key = (project.id, project.revision);
         if self
-            .design_stock_snapshot
+            .design
+            .stock_snapshot
             .as_ref()
             .is_none_or(|(cached, _)| *cached != key)
         {
-            self.design_stock_snapshot = StockReadModel::build(project)
+            self.design.stock_snapshot = StockReadModel::build(project)
                 .ok()
                 .map(|model| (key, model));
         }
-        let stock = &self.design_stock_snapshot.as_ref()?.1;
+        let stock = &self.design.stock_snapshot.as_ref()?.1;
         DesignReadModel::build(
             project,
             stock,
@@ -1760,8 +1655,8 @@ impl DesktopApp {
     fn show_measurement(&mut self, ui: &mut egui::Ui) {
         ui.heading(self.localizer.text("measurement-heading"));
         ui.label(self.localizer.text("measurement-selection"));
-        let mut scope_choice = self.measurement_scope;
-        let mut frame_choice = self.measurement_frame;
+        let mut scope_choice = self.design.measurement_scope;
+        let mut frame_choice = self.design.measurement_frame;
         ui.add_enabled_ui(!self.modal_open(), |ui| {
             ui.vertical(|ui| {
                 ui.selectable_value(
@@ -1775,7 +1670,7 @@ impl DesktopApp {
                     self.localizer.text("measurement-overall"),
                 );
             });
-            let frame_label = match self.measurement_frame {
+            let frame_label = match self.design.measurement_frame {
                 Frame::World => self.localizer.text("placement-world"),
                 Frame::Object(id) => self
                     .editor
@@ -1828,21 +1723,21 @@ impl DesktopApp {
                     }
                 });
         });
-        if scope_choice != self.measurement_scope {
+        if scope_choice != self.design.measurement_scope {
             self.invoke_or_report(
                 Request::new(A::SetMeasurementScope).argument(Argument::Scope(scope_choice)),
             );
         }
-        if frame_choice != self.measurement_frame {
+        if frame_choice != self.design.measurement_frame {
             self.invoke_or_report(
                 Request::new(A::SetMeasurementFrame).argument(Argument::Frame(frame_choice)),
             );
         }
-        if let Frame::Object(id) = self.measurement_frame
+        if let Frame::Object(id) = self.design.measurement_frame
             && !self.editor.project().assemblies.iter().any(|a| a.id == id)
             && !self.editor.project().boards.iter().any(|b| b.id == id)
         {
-            self.measurement_frame = Frame::World;
+            self.design.measurement_frame = Frame::World;
         }
         let ids: Vec<_> = self.selection.ids.iter().copied().collect();
         let mut names: Vec<_> = ids
@@ -1886,8 +1781,8 @@ impl DesktopApp {
         let (heading, content) = viewport::measurement_readout(
             self.editor.project(),
             &self.selection,
-            self.measurement_scope,
-            self.measurement_frame,
+            self.design.measurement_scope,
+            self.design.measurement_frame,
             &self.localizer,
         );
         ui.label(heading);
@@ -1895,24 +1790,24 @@ impl DesktopApp {
     }
 
     fn other_modal_open(&self) -> bool {
-        self.settings_open
-            || self.settings_worked_examples
-            || self.settings_cleanup.is_some()
-            || (self.template_setup.is_some() && !self.template_guard_pending)
+        self.settings.open
+            || self.settings.worked_examples
+            || self.settings.cleanup.is_some()
+            || (self.template.setup.is_some() && !self.template.guard_pending)
             || self.modals.is_open()
-            || matches!(self.export_activity, Some(ExportActivity::Confirming(..)))
+            || matches!(self.handoff.activity, Some(ExportActivity::Confirming(..)))
     }
 
     fn modal_open(&self) -> bool {
-        self.external_modal_open() || self.optimizer.comparison_open()
+        self.external_modal_open() || self.cut_plan.optimizer.comparison_open()
     }
 
     fn external_modal_open(&self) -> bool {
         self.palette.open
             || self.navigation.pending().is_some()
             || self.other_modal_open()
-            || self.sheet_repair.active()
-            || self.door_motion.is_some()
+            || self.cut_plan.repair.active()
+            || self.hardware.door_motion.is_some()
             || self.project_files.blocking()
     }
 
@@ -1924,7 +1819,7 @@ impl DesktopApp {
             || self.navigation.pending().is_some()
             || self.other_modal_open()
             || self.project_files.blocking()
-            || self.optimizer.comparison_open()
+            || self.cut_plan.optimizer.comparison_open()
     }
 
     fn design_hud_available(&self) -> bool {
@@ -1936,8 +1831,8 @@ impl DesktopApp {
             // A draft can be dismissed by project replacement or a caller that
             // clears dialogs directly. Do not leave a modal layer or focus trap
             // alive after its owning draft is gone.
-            if self.grid_chrome.is_active() {
-                self.grid_chrome.close(ctx);
+            if self.chromes.grid.is_active() {
+                self.chromes.grid.close(ctx);
             }
             return;
         };
@@ -1956,21 +1851,21 @@ impl DesktopApp {
         } else {
             "grid-set-action"
         });
-        self.grid_chrome.set_icon(if draft.kerf {
+        self.chromes.grid.set_icon(if draft.kerf {
             icons::Icon::Cut
         } else {
             icons::Icon::Grid
         });
         let mut args = FluentArgs::new();
         args.set("value", format!("{} mm", short_mm(draft.original, locale)));
-        self.grid_chrome
+        self.chromes.grid
             .set_context(Some(self.localizer.format("dialog-current-value", Some(&args))));
-        self.grid_chrome.set_hint(Some(self.localizer.text(if draft.kerf {
+        self.chromes.grid.set_hint(Some(self.localizer.text(if draft.kerf {
             "cutting-kerf-dialog-hint"
         } else {
             "grid-dialog-hint"
         })));
-        let result = self.grid_chrome.show(
+        let result = self.chromes.grid.show(
             ctx,
             &title,
             ModalActions {
@@ -2099,7 +1994,7 @@ impl DesktopApp {
         );
         draft.focus_on_open = false;
         if actions::decision(A::CancelDialog, result.action == ModalAction::Cancel) {
-            self.grid_chrome.close(ctx);
+            self.chromes.grid.close(ctx);
             return;
         }
         if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm)
@@ -2112,7 +2007,7 @@ impl DesktopApp {
             })
             .is_ok()
             {
-                self.grid_chrome.close(ctx);
+                self.chromes.grid.close(ctx);
                 return;
             }
             draft.error = true;
@@ -2151,10 +2046,10 @@ impl DesktopApp {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        self.batch_dimension_chrome.set_context(Some(names));
-        self.batch_dimension_chrome
+        self.chromes.batch_dimension.set_context(Some(names));
+        self.chromes.batch_dimension
             .set_hint(Some(self.localizer.text("board-resize-atomic")));
-        let result = self.batch_dimension_chrome.show(
+        let result = self.chromes.batch_dimension.show(
             ctx,
             &title,
             ModalActions {
@@ -2469,7 +2364,7 @@ impl DesktopApp {
         );
         draft.focus_on_open = false;
         if actions::decision(A::CancelDialog, result.action == ModalAction::Cancel) {
-            self.batch_dimension_chrome.close(ctx);
+            self.chromes.batch_dimension.close(ctx);
             return;
         }
         let confirm = actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm);
@@ -2479,8 +2374,8 @@ impl DesktopApp {
         if let Some(preview) = accepted_preview {
             match self.editor.edit_batch_board_dimension(preview) {
                 Ok(conflicts) => {
-                    self.material_conflicts = conflicts;
-                    self.batch_dimension_chrome.close(ctx);
+                    self.cut_plan.material_conflicts = conflicts;
+                    self.chromes.batch_dimension.close(ctx);
                     return;
                 }
                 Err(plan_my_cabinet::commands::EditError::Command(error)) => {
@@ -2499,8 +2394,8 @@ impl DesktopApp {
             return;
         }
         let Some(mut draft) = self.modals.take_board_dimension() else {
-            if self.board_dimension_chrome.is_active() {
-                self.board_dimension_chrome.close(ctx);
+            if self.chromes.board_dimension.is_active() {
+                self.chromes.board_dimension.close(ctx);
             }
             return;
         };
@@ -2516,11 +2411,11 @@ impl DesktopApp {
         let title = self.localizer.text("board-edit-dimension");
         let cancel_label = self.localizer.text("cancel");
         let confirm_label = self.localizer.text("board-resize-one-action");
-        self.board_dimension_chrome
+        self.chromes.board_dimension
             .set_context(board.map(|board| board.name.clone()));
-        self.board_dimension_chrome
+        self.chromes.board_dimension
             .set_hint(Some(self.localizer.text("board-input-hint-short")));
-        let modal = self.board_dimension_chrome.show(
+        let modal = self.chromes.board_dimension.show(
             ctx,
             &title,
             ModalActions {
@@ -2745,7 +2640,7 @@ impl DesktopApp {
         let cancel = modal.action == ModalAction::Cancel;
         let confirm = modal.action == ModalAction::Confirm;
         if actions::decision(A::CancelDialog, cancel) {
-            self.board_dimension_chrome.close(ctx);
+            self.chromes.board_dimension.close(ctx);
             return;
         }
         if actions::decision(A::ConfirmDialog, confirm)
@@ -2753,8 +2648,8 @@ impl DesktopApp {
         {
             match self.editor.edit_board_dimension(preview) {
                 Ok(conflicts) => {
-                    self.material_conflicts = conflicts;
-                    self.board_dimension_chrome.close(ctx);
+                    self.cut_plan.material_conflicts = conflicts;
+                    self.chromes.board_dimension.close(ctx);
                     return;
                 }
                 Err(plan_my_cabinet::commands::EditError::Command(error)) => {
@@ -2768,8 +2663,8 @@ impl DesktopApp {
 
     fn show_board_material(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_board_material() else {
-            if self.board_material_chrome.is_active() {
-                self.board_material_chrome.close(ctx);
+            if self.chromes.board_material.is_active() {
+                self.chromes.board_material.close(ctx);
             }
             return;
         };
@@ -2780,13 +2675,13 @@ impl DesktopApp {
         let title = self.localizer.text("board-assign-material");
         let cancel_label = self.localizer.text("cancel");
         let confirm_label = self.localizer.text("board-assign-action");
-        self.board_material_chrome.set_context(board.map(|board| {
+        self.chromes.board_material.set_context(board.map(|board| {
             let mut args = FluentArgs::new();
             args.set("name", board.name.as_str());
             args.set("thickness", short_mm(board.thickness, locale));
             self.localizer.format("board-material-context", Some(&args))
         }));
-        let modal = self.board_material_chrome.show(
+        let modal = self.chromes.board_material.show(
             ctx,
             &title,
             ModalActions {
@@ -2915,7 +2810,7 @@ impl DesktopApp {
         let cancel = modal.action == ModalAction::Cancel;
         let confirm = modal.action == ModalAction::Confirm;
         if actions::decision(A::CancelDialog, cancel) {
-            self.board_material_chrome.close(ctx);
+            self.chromes.board_material.close(ctx);
             return;
         }
         if actions::decision(A::ConfirmDialog, confirm)
@@ -2927,8 +2822,8 @@ impl DesktopApp {
                 .assign_board_material(draft.board_id, material_id, draft.anchor)
             {
                 Ok(conflicts) => {
-                    self.material_conflicts = conflicts;
-                    self.board_material_chrome.close(ctx);
+                    self.cut_plan.material_conflicts = conflicts;
+                    self.chromes.board_material.close(ctx);
                     return;
                 }
                 Err(plan_my_cabinet::commands::EditError::Command(error)) => {
@@ -2942,8 +2837,8 @@ impl DesktopApp {
 
     fn show_material_edit(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_material_edit() else {
-            if self.material_edit_chrome.is_active() {
-                self.material_edit_chrome.close(ctx);
+            if self.chromes.material_edit.is_active() {
+                self.chromes.material_edit.close(ctx);
             }
             return;
         };
@@ -2962,9 +2857,9 @@ impl DesktopApp {
             .count();
         let mut args = FluentArgs::new();
         args.set("count", used_by as i64);
-        self.material_edit_chrome
+        self.chromes.material_edit
             .set_context(Some(self.localizer.format("material-edit-context", Some(&args))));
-        let modal = self.material_edit_chrome.show(
+        let modal = self.chromes.material_edit.show(
             ctx,
             &title,
             ModalActions {
@@ -3233,7 +3128,7 @@ impl DesktopApp {
         let cancel = modal.action == ModalAction::Cancel;
         let confirm = modal.action == ModalAction::Confirm;
         if actions::decision(A::CancelDialog, cancel) {
-            self.material_edit_chrome.close(ctx);
+            self.chromes.material_edit.close(ctx);
             return;
         }
         if actions::decision(A::ConfirmDialog, confirm)
@@ -3241,8 +3136,8 @@ impl DesktopApp {
         {
             match self.editor.apply_material_change(preview, choice) {
                 Ok(conflicts) => {
-                    self.material_conflicts = conflicts;
-                    self.material_edit_chrome.close(ctx);
+                    self.cut_plan.material_conflicts = conflicts;
+                    self.chromes.material_edit.close(ctx);
                     return;
                 }
                 Err(plan_my_cabinet::commands::EditError::Command(error)) => {
@@ -3256,11 +3151,11 @@ impl DesktopApp {
 
     fn show_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_creation() else {
-            if self.board_creation_chrome.is_active() {
-                self.board_creation_chrome.close(ctx);
+            if self.chromes.board_creation.is_active() {
+                self.chromes.board_creation.close(ctx);
             }
-            if self.material_creation_chrome.is_active() {
-                self.material_creation_chrome.close(ctx);
+            if self.chromes.material_creation.is_active() {
+                self.chromes.material_creation.close(ctx);
             }
             return;
         };
@@ -3275,9 +3170,9 @@ impl DesktopApp {
         };
         let is_board = draft.kind == DialogKind::Board;
         let chrome = if is_board {
-            &mut self.board_creation_chrome
+            &mut self.chromes.board_creation
         } else {
-            &mut self.material_creation_chrome
+            &mut self.chromes.material_creation
         };
         let title = self.localizer.text(if is_board {
             "board-new"
@@ -3724,7 +3619,7 @@ impl DesktopApp {
                         })
                         .is_ok()
                     {
-                        self.first_fit_notice = actual.map(|preview| preview.fit);
+                        self.design.first_fit_notice = actual.map(|preview| preview.fit);
                         chrome.close(ctx);
                         return;
                     }
@@ -3770,9 +3665,9 @@ impl DesktopApp {
     ) {
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        self.export_cancel = Some(cancel.clone());
-        self.export_events = Some(rx);
-        self.export_activity = Some(ExportActivity::Writing);
+        self.handoff.cancel = Some(cancel.clone());
+        self.handoff.events = Some(rx);
+        self.handoff.activity = Some(ExportActivity::Writing);
         std::thread::spawn(move || {
             let result = write_reviewed_pdf(&packet, Some(&path), overwrite, || {
                 cancel.load(Ordering::Relaxed)
@@ -3783,8 +3678,8 @@ impl DesktopApp {
 
     fn export_settings(&self) -> ExportSettings {
         ExportSettings {
-            language: self.export_language,
-            units: self.export_units,
+            language: self.handoff.language,
+            units: self.handoff.units,
         }
     }
 
@@ -3793,31 +3688,31 @@ impl DesktopApp {
         (
             project.id,
             project.revision,
-            self.export_mode,
-            self.export_language,
-            self.export_units,
+            self.handoff.mode,
+            self.handoff.language,
+            self.handoff.units,
             plan_my_cabinet::export::fingerprint(project).packet,
-            self.export_sections,
+            self.handoff.sections,
             plan_my_cabinet::document_layout::LAYOUT_VERSION,
             plan_my_cabinet::document_layout::FONT_METRICS_VERSION,
         )
     }
 
     fn current_reviewed_packet(&self) -> Option<Arc<ReviewedPacket>> {
-        let (key, result) = self.export_preparation.as_ref()?;
+        let (key, result) = self.handoff.preparation.as_ref()?;
         let packet = result.as_ref().ok()?;
         (key == &self.export_key()
             && packet.matches_source(
                 self.editor.project(),
-                self.export_mode,
+                self.handoff.mode,
                 self.export_settings(),
-                self.export_sections,
+                self.handoff.sections,
             ))
         .then(|| Arc::clone(packet))
     }
 
     fn shop_ready_available(&self) -> bool {
-        self.export_candidate.as_ref().is_some_and(|(key, result)| {
+        self.handoff.candidate.as_ref().is_some_and(|(key, result)| {
             key == &self.export_key()
                 && result
                     .as_ref()
@@ -3826,29 +3721,30 @@ impl DesktopApp {
     }
 
     fn invalidate_export_review(&mut self) {
-        self.export_preparation = None;
-        self.export_candidate = None;
-        if let Some((_, _, cancel)) = &self.export_preparation_pending {
+        self.handoff.preparation = None;
+        self.handoff.candidate = None;
+        if let Some((_, _, cancel)) = &self.handoff.preparation_pending {
             cancel.store(true, Ordering::Relaxed);
         }
-        self.export_preparation_pending = None;
+        self.handoff.preparation_pending = None;
     }
 
     fn poll_pdf_export(&mut self, ctx: &egui::Context) {
         let event = self
-            .export_events
+            .handoff
+            .events
             .as_ref()
             .and_then(|rx| rx.try_recv().ok());
         if let Some(event) = event {
-            self.export_events = None;
+            self.handoff.events = None;
             match event {
                 ExportEvent::Selected(path) => {
                     let Some(ExportActivity::Choosing(source, settings, mode)) =
-                        self.export_activity.take()
+                        self.handoff.activity.take()
                     else {
                         return;
                     };
-                    let picker_key = self.export_picker_key.take();
+                    let picker_key = self.handoff.picker_key.take();
                     let reviewed = self.current_reviewed_packet().filter(|packet| {
                         packet.key().project_id == source.id
                             && packet.key().revision == source.revision
@@ -3857,13 +3753,13 @@ impl DesktopApp {
                             && picker_key.as_ref() == Some(packet.key())
                     });
                     match path {
-                        None => self.export_message = Some(self.localizer.text("export-cancelled")),
+                        None => self.handoff.message = Some(self.localizer.text("export-cancelled")),
                         Some(_) if reviewed.is_none() => {
                             self.invalidate_export_review();
-                            self.export_message = Some(self.localizer.text("export-review-stale"));
+                            self.handoff.message = Some(self.localizer.text("export-review-stale"));
                         }
                         Some(path) if path.symlink_metadata().is_ok() => {
-                            self.export_activity =
+                            self.handoff.activity =
                                 Some(ExportActivity::Confirming(path, reviewed.expect("checked")))
                         }
                         Some(path) => self.start_pdf_write(
@@ -3874,13 +3770,13 @@ impl DesktopApp {
                     }
                 }
                 ExportEvent::Finished(path, packet, result) => {
-                    self.export_activity = None;
-                    self.export_cancel = None;
+                    self.handoff.activity = None;
+                    self.handoff.cancel = None;
                     let snapshot = packet.snapshot();
                     let mut args = FluentArgs::new();
                     args.set("path", path.display().to_string());
                     args.set("revision", snapshot.revision() as i64);
-                    self.export_message = Some(match result {
+                    self.handoff.message = Some(match result {
                         Ok(receipt) => {
                             match self.editor.record_completed_export(
                                 snapshot,
@@ -3899,7 +3795,7 @@ impl DesktopApp {
                             }
                         }
                         Err(OutputError::OverwriteRequired) => {
-                            self.export_activity =
+                            self.handoff.activity =
                                 Some(ExportActivity::Confirming(path.clone(), packet.clone()));
                             self.localizer.text("export-overwrite")
                         }
@@ -3935,7 +3831,7 @@ impl DesktopApp {
                 }
             }
         }
-        if self.export_events.is_some() {
+        if self.handoff.events.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
@@ -3947,43 +3843,48 @@ impl DesktopApp {
         let valid = |cache: &ExportPreparationCache| {
             cache.0 == key
                 && cache.1.as_ref().map_or(true, |packet| {
-                    packet.matches_source(&source, self.export_mode, settings, self.export_sections)
+                    packet.matches_source(&source, self.handoff.mode, settings, self.handoff.sections)
                 })
         };
         if self
-            .export_preparation
+            .handoff
+            .preparation
             .as_ref()
             .is_some_and(|cache| !valid(cache))
             || self
-                .export_candidate
+                .handoff
+                .candidate
                 .as_ref()
                 .is_some_and(|cache| !valid(cache))
         {
             self.invalidate_export_review();
         }
         if self
-            .export_preparation_pending
+            .handoff
+            .preparation_pending
             .as_ref()
             .is_some_and(|(pending, _, _)| *pending != key)
         {
             self.invalidate_export_review();
         }
         if self
-            .export_candidate
+            .handoff
+            .candidate
             .as_ref()
             .is_none_or(|(cached, _)| *cached != key)
             && self
-                .export_preparation_pending
+                .handoff
+                .preparation_pending
                 .as_ref()
                 .is_none_or(|(pending, _, _)| *pending != key)
         {
             let snapshot = source.clone();
-            let mode = self.export_mode;
-            let sections = self.export_sections;
+            let mode = self.handoff.mode;
+            let sections = self.handoff.sections;
             let (tx, rx) = mpsc::channel();
             let cancel = Arc::new(AtomicBool::new(false));
             let worker_cancel = cancel.clone();
-            self.export_preparation_pending = Some((key, rx, cancel));
+            self.handoff.preparation_pending = Some((key, rx, cancel));
             std::thread::spawn(move || {
                 let _ = tx.send(
                     ReviewedPacket::prepare_cancellable(
@@ -3997,13 +3898,13 @@ impl DesktopApp {
                 );
             });
         }
-        if let Some((pending, rx, _)) = &self.export_preparation_pending
+        if let Some((pending, rx, _)) = &self.handoff.preparation_pending
             && let Ok(result) = rx.try_recv()
         {
-            self.export_candidate = Some((pending.clone(), result));
-            self.export_preparation_pending = None;
+            self.handoff.candidate = Some((pending.clone(), result));
+            self.handoff.preparation_pending = None;
         }
-        if self.export_preparation_pending.is_some() {
+        if self.handoff.preparation_pending.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
@@ -4011,13 +3912,13 @@ impl DesktopApp {
     fn show_export_overwrite(&mut self, ctx: &egui::Context) {
         // A write can be in flight after the overwrite decision. Never take
         // (and accidentally discard) its Writing state on subsequent frames.
-        if !matches!(self.export_activity, Some(ExportActivity::Confirming(..))) {
-            if self.export_overwrite_chrome.is_active() {
-                self.export_overwrite_chrome.close(ctx);
+        if !matches!(self.handoff.activity, Some(ExportActivity::Confirming(..))) {
+            if self.handoff.overwrite_chrome.is_active() {
+                self.handoff.overwrite_chrome.close(ctx);
             }
             return;
         }
-        let Some(ExportActivity::Confirming(path, packet)) = self.export_activity.take() else {
+        let Some(ExportActivity::Confirming(path, packet)) = self.handoff.activity.take() else {
             unreachable!("confirmed activity was checked above");
         };
         let title = self.localizer.text("export-overwrite");
@@ -4025,7 +3926,8 @@ impl DesktopApp {
         let replace_label = self.localizer.text("export-replace");
         let destination = path.display().to_string();
         let action = self
-            .export_overwrite_chrome
+            .handoff
+            .overwrite_chrome
             .show(
                 ctx,
                 &title,
@@ -4044,25 +3946,25 @@ impl DesktopApp {
         if replace
             && !packet.matches_source(
                 self.editor.project(),
-                self.export_mode,
+                self.handoff.mode,
                 self.export_settings(),
-                self.export_sections,
+                self.handoff.sections,
             )
         {
             self.invalidate_export_review();
-            self.export_message = Some(self.localizer.text("export-review-stale"));
+            self.handoff.message = Some(self.localizer.text("export-review-stale"));
         } else if replace && actions::contextual(Request::new(A::ReplacePdf), Ok(()), || ()).is_ok()
         {
             self.start_pdf_write(path, packet, Overwrite::Confirm);
         } else if cancel
             && actions::contextual(Request::new(A::CancelExport), Ok(()), || ()).is_ok()
         {
-            self.export_message = Some(self.localizer.text("export-cancelled"));
+            self.handoff.message = Some(self.localizer.text("export-cancelled"));
         } else {
-            self.export_activity = Some(ExportActivity::Confirming(path, packet));
+            self.handoff.activity = Some(ExportActivity::Confirming(path, packet));
         }
-        if !matches!(self.export_activity, Some(ExportActivity::Confirming(..))) {
-            self.export_overwrite_chrome.close(ctx);
+        if !matches!(self.handoff.activity, Some(ExportActivity::Confirming(..))) {
+            self.handoff.overwrite_chrome.close(ctx);
         }
     }
 
@@ -4265,7 +4167,8 @@ impl DesktopApp {
         heading(ui, self.localizer.text("handoff-packet-type"));
         let key = self.export_key();
         let prepared = self
-            .export_candidate
+            .handoff
+            .candidate
             .as_ref()
             .filter(|(cached, _)| *cached == key)
             .map(|(_, result)| result);
@@ -4286,14 +4189,14 @@ impl DesktopApp {
         let checked = prepared.is_some();
         let can_shop = self.shop_ready_available();
         let modal = self.modal_open();
-        let mut mode_choice = self.export_mode;
+        let mut mode_choice = self.handoff.mode;
         let mut fix = None;
 
         ui.spacing_mut().item_spacing.y = 6.0;
         let draft = handoff_ui::radio_card(
             ui,
             egui::Id::new("handoff-packet-draft"),
-            self.export_mode == ExportMode::Draft,
+            self.handoff.mode == ExportMode::Draft,
             None,
             &self.localizer.text("export-draft"),
             |ui| {
@@ -4360,7 +4263,7 @@ impl DesktopApp {
         let shop = handoff_ui::radio_card(
             ui,
             egui::Id::new("handoff-packet-shop"),
-            self.export_mode == ExportMode::ShopReady,
+            self.handoff.mode == ExportMode::ShopReady,
             (!can_shop).then_some(shop_unavailable.as_str()),
             &self.localizer.text("export-shop-ready"),
             |ui| {
@@ -4465,7 +4368,7 @@ impl DesktopApp {
         if let Some(route) = fix {
             self.apply_handoff_fix(route);
         }
-        if mode_choice != self.export_mode {
+        if mode_choice != self.handoff.mode {
             let _ = self
                 .invoke(Request::new(A::SetExportMode).argument(Argument::ExportMode(mode_choice)));
         }
@@ -4478,7 +4381,7 @@ impl DesktopApp {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 8.0;
                 let label_width = 78.0;
-                let mut language_choice = self.export_language;
+                let mut language_choice = self.handoff.language;
                 let language_text = |language: Language| {
                     self.localizer.text(match language {
                         Language::En => "handoff-lang-en",
@@ -4505,7 +4408,7 @@ impl DesktopApp {
                                     );
                             })
                             .selected_text(
-                                egui::RichText::new(language_text(self.export_language)).size(13.0),
+                                egui::RichText::new(language_text(self.handoff.language)).size(13.0),
                             )
                             .show_ui(ui, |ui| {
                                 for language in [Language::En, Language::PtBr] {
@@ -4520,13 +4423,13 @@ impl DesktopApp {
                             .on_hover_text(self.localizer.text("export-language"));
                     },
                 );
-                if language_choice != self.export_language {
+                if language_choice != self.handoff.language {
                     self.invoke_or_report(
                         Request::new(A::SetExportLanguage)
                             .argument(Argument::Language(language_choice)),
                     );
                 }
-                let mut units_choice = self.export_units;
+                let mut units_choice = self.handoff.units;
                 let unit_labels = [Unit::Mm, Unit::Cm, Unit::M, Unit::Inch, Unit::Foot]
                     .map(|unit| (unit, self.localizer.text(unit_key(unit))));
                 handoff_ui::field_row(
@@ -4543,12 +4446,12 @@ impl DesktopApp {
                             .on_hover_text(self.localizer.text("export-output-units"));
                     },
                 );
-                if units_choice != self.export_units {
+                if units_choice != self.handoff.units {
                     self.invoke_or_report(
                         Request::new(A::SetExportUnits).argument(Argument::Unit(units_choice)),
                     );
                 }
-                let mut sections = self.export_sections;
+                let mut sections = self.handoff.sections;
                 handoff_ui::field_row(
                     ui,
                     &self.localizer.text("handoff-include"),
@@ -4565,8 +4468,8 @@ impl DesktopApp {
                         }
                     },
                 );
-                if sections != self.export_sections {
-                    self.export_sections = sections;
+                if sections != self.handoff.sections {
+                    self.handoff.sections = sections;
                     self.invalidate_export_review();
                 }
                 ui.add_space(6.0);
@@ -4597,7 +4500,7 @@ impl DesktopApp {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 8.0;
         let width = ui.available_width();
-        if let Some(message) = &self.export_message {
+        if let Some(message) = &self.handoff.message {
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(message)
@@ -4607,7 +4510,7 @@ impl DesktopApp {
                 .wrap(),
             );
         }
-        if let Some(activity) = &self.export_activity {
+        if let Some(activity) = &self.handoff.activity {
             let writing = matches!(activity, ExportActivity::Writing);
             let text = self.localizer.text(match activity {
                 ExportActivity::Choosing(..) => "export-choosing",
@@ -4635,7 +4538,7 @@ impl DesktopApp {
                 }
             });
             if cancel
-                && let Some(flag) = &self.export_cancel
+                && let Some(flag) = &self.handoff.cancel
                 && self
                     .invoke_contextual(Request::new(A::CancelExport))
                     .is_ok()
@@ -4644,7 +4547,8 @@ impl DesktopApp {
             }
         }
         let ready = self
-            .export_candidate
+            .handoff
+            .candidate
             .as_ref()
             .is_some_and(|(key, result)| key == &self.export_key() && result.is_ok());
         let reviewed = self.current_reviewed_packet().is_some();
@@ -4667,7 +4571,7 @@ impl DesktopApp {
                 )
                 .on_hover_text(self.localizer.text("export-review-stale"));
             if response.clicked() {
-                self.export_preparation = self.export_candidate.as_ref().map(|(key, result)| {
+                self.handoff.preparation = self.handoff.candidate.as_ref().map(|(key, result)| {
                     (
                         key.clone(),
                         result
@@ -4678,11 +4582,11 @@ impl DesktopApp {
                 });
             }
         }
-        let label = self.localizer.text(match self.export_mode {
+        let label = self.localizer.text(match self.handoff.mode {
             ExportMode::Draft => "handoff-export-draft",
             ExportMode::ShopReady => "handoff-export-shop",
         });
-        let enabled = reviewed && self.export_activity.is_none() && !self.modal_open();
+        let enabled = reviewed && self.handoff.activity.is_none() && !self.modal_open();
         let response = ui.add_enabled(
             enabled,
             egui::Button::image_and_text(
@@ -4728,20 +4632,21 @@ impl DesktopApp {
         // Project replacement clears the shared diagnostics cache in the
         // lifecycle controller, including a reopened document at the same
         // UUID/revision with different externally saved contents.
-        if self.allocation_diagnostics.is_none() {
+        if self.cut_plan.allocation_diagnostics.is_none() {
             self.shell_estimate = None;
-            self.design_stock_snapshot = None;
+            self.design.stock_snapshot = None;
         }
         let key = sheet_ui::diagnostics_key(project, false);
         if self
+            .cut_plan
             .allocation_diagnostics
             .as_ref()
             .is_none_or(|(cached, _)| *cached != key)
         {
-            self.allocation_diagnostics = Some((key, diagnose(project)));
+            self.cut_plan.allocation_diagnostics = Some((key, diagnose(project)));
         }
         let counts = workspace_shell::IssueCounts::from_diagnostics(
-            &self.allocation_diagnostics.as_ref().expect("diagnosed").1,
+            &self.cut_plan.allocation_diagnostics.as_ref().expect("diagnosed").1,
             |id| !self.selection.visible(project, id),
         );
         let estimate_key = (project.id, project.revision);
@@ -5241,11 +5146,11 @@ impl DesktopApp {
                     self.request_navigation(NavigationRoute::Workspace(Workspace::CutPlan));
                 }
             }
-            if self.optimizer.running() {
+            if self.cut_plan.optimizer.running() {
                 ui.add_space(12.0);
                 ui.label(small(self.localizer.text("shell-search-active")));
             }
-            if self.export_activity.is_some() {
+            if self.handoff.activity.is_some() {
                 ui.add_space(12.0);
                 ui.label(small(self.localizer.text("shell-export-active")));
             }
@@ -5272,7 +5177,7 @@ impl DesktopApp {
                         .color(theme_widgets::WARN_INK)
                 });
                 ui.label(small(self.localizer.text("shell-est-spending")));
-                let hint = match (self.session.active, self.move_tool.mode) {
+                let hint = match (self.session.active, self.design.move_tool.mode) {
                     (Workspace::Design, viewport::ToolMode::Move) => Some("viewport-move-hint"),
                     (Workspace::Design, viewport::ToolMode::Measure) => {
                         Some("viewport-measure-hint")
@@ -5375,10 +5280,10 @@ impl DesktopApp {
                 ));
             }
         }
-        if self.optimizer.running() {
+        if self.cut_plan.optimizer.running() {
             texts.push(self.localizer.text("shell-search-active"));
         }
-        if self.export_activity.is_some() {
+        if self.handoff.activity.is_some() {
             texts.push(self.localizer.text("shell-export-active"));
         }
         // Body is a conservative upper bound for the Small labels. Include
@@ -5415,20 +5320,20 @@ impl DesktopApp {
                     ui,
                     &self.editor,
                     &self.localizer,
-                    &mut self.sheet_repair,
-                    (!self.optimizer.has_result()).then_some(needed + 4.0),
+                    &mut self.cut_plan.repair,
+                    (!self.cut_plan.optimizer.has_result()).then_some(needed + 4.0),
                 );
                 let remaining = ui.clip_rect().bottom() - ui.cursor().top();
-                if !self.optimizer.has_result() && remaining > needed + 1.0 {
+                if !self.cut_plan.optimizer.has_result() && remaining > needed + 1.0 {
                     ui.add_space(remaining - needed - 1.0);
                 }
                 let blocked = self.external_modal_open();
                 let top = ui.cursor().top();
-                self.optimizer
+                self.cut_plan.optimizer
                     .show(ui, &mut self.editor, &self.localizer, blocked);
                 let used = ui.min_rect().bottom() - top;
                 ui.data_mut(|d| d.insert_temp(height_id, used));
-                self.optimizer.show_inspector_comparison(
+                self.cut_plan.optimizer.show_inspector_comparison(
                     ui,
                     self.editor.project(),
                     &self.localizer,
@@ -5513,7 +5418,7 @@ impl DesktopApp {
                     sheet_ui::show_sheet_footer(
                         ui,
                         &self.localizer,
-                        &self.sheet_repair,
+                        &self.cut_plan.repair,
                         blocked,
                     )
                 })
@@ -5546,7 +5451,7 @@ impl DesktopApp {
                             &self.editor,
                             &self.selection,
                             &self.localizer,
-                            &mut self.sheet_repair,
+                            &mut self.cut_plan.repair,
                             blocked,
                             sheet_ui::SheetFocus {
                                 sheet: self.session.focused_sheet,
@@ -5573,14 +5478,14 @@ impl DesktopApp {
         self.selection.retain_objects(self.editor.project());
         self.show_hierarchy(ui);
         let mut notices = Vec::new();
-        if let Some(notice) = self.first_fit_notice {
+        if let Some(notice) = self.design.first_fit_notice {
             notices.push(self.localizer.text(match notice {
                 FirstFit::Allocated(_) => "first-fit-allocated",
                 FirstFit::NoFit => "first-fit-no-fit",
                 FirstFit::SearchExhausted => "first-fit-exhausted",
             }));
         }
-        for conflict in &self.material_conflicts {
+        for conflict in &self.cut_plan.material_conflicts {
             let name = self
                 .editor
                 .project()
@@ -5595,8 +5500,8 @@ impl DesktopApp {
                 conflict_labels(&self.localizer, conflict)
             ));
         }
-        let template = self.template_message.clone();
-        if notices.is_empty() && template.is_none() && !self.board_action_error {
+        let template = self.template.message.clone();
+        if notices.is_empty() && template.is_none() && !self.design.board_action_error {
             return;
         }
         egui::Frame::new()
@@ -5611,7 +5516,7 @@ impl DesktopApp {
                                 .color(theme_widgets::WARN_INK),
                         );
                     }
-                    if self.board_action_error {
+                    if self.design.board_action_error {
                         ui.label(
                             egui::RichText::new(self.localizer.text("error-board-duplicate"))
                                 .size(12.0)
@@ -5653,7 +5558,7 @@ impl DesktopApp {
                     });
             }
             Workspace::Handoff => {
-                let packet = self.export_candidate.as_ref().and_then(|(key, result)| {
+                let packet = self.handoff.candidate.as_ref().and_then(|(key, result)| {
                     (key == &self.export_key())
                         .then(|| result.as_ref().ok())
                         .flatten()
@@ -5689,7 +5594,7 @@ impl DesktopApp {
                     if show_document_preview(
                         ui,
                         packet.document(),
-                        &mut self.export_preview,
+                        &mut self.handoff.preview,
                         &labels,
                     )
                     .is_err()
@@ -5703,14 +5608,14 @@ impl DesktopApp {
             Workspace::CutPlan => {
                 let other_modal = drawer_modal
                     || self.blocking_surface_open()
-                    || self.door_motion.is_some();
+                    || self.hardware.door_motion.is_some();
                 if let Some(request) = sheet_ui::show_with_layout(
                     ui,
                     &mut self.editor,
                     &mut self.selection,
                     &self.localizer,
                     other_modal,
-                    &mut self.sheet_repair,
+                    &mut self.cut_plan.repair,
                     sheet_ui::SheetFocus {
                         sheet: self.session.focused_sheet,
                         issue: self.session.allocation_issue,
@@ -5727,8 +5632,8 @@ impl DesktopApp {
     }
 
     fn show_scene_pane(&mut self, ui: &mut egui::Ui, drawer_modal: bool) {
-        let modal = drawer_modal || self.blocking_surface_open() || self.sheet_repair.active();
-        if self.door_motion.is_some_and(|(id, angle)| {
+        let modal = drawer_modal || self.blocking_surface_open() || self.cut_plan.repair.active();
+        if self.hardware.door_motion.is_some_and(|(id, angle)| {
             self.editor
                 .project()
                 .door_joints
@@ -5739,9 +5644,9 @@ impl DesktopApp {
                         .is_err()
                 })
         }) {
-            self.door_motion = None;
+            self.hardware.door_motion = None;
         }
-        let motion_poses = self.door_motion.and_then(|(id, angle)| {
+        let motion_poses = self.hardware.door_motion.and_then(|(id, angle)| {
             self.editor
                 .project()
                 .door_joints
@@ -5766,15 +5671,15 @@ impl DesktopApp {
                     &mut self.camera,
                     self.editor.preview().unwrap_or(self.editor.project()),
                     &mut self.selection,
-                    &mut self.move_tool,
+                    &mut self.design.move_tool,
                     modal || overlay_blocked,
                     self.localizer.language(),
                     self.preferences.inverse_scroll_zoom,
                     self.preferences.material_tint,
                     self.modals.placement().and_then(PlacementDialog::highlighted),
                     motion_poses.as_ref(),
-                    self.measurement_scope,
-                    self.measurement_frame,
+                    self.design.measurement_scope,
+                    self.design.measurement_frame,
                     match (self.session.active, self.session.inspector) {
                         (Workspace::Hardware, Some(InspectorTarget::Installation(id))) => Some(id),
                         _ => None,
@@ -5785,9 +5690,9 @@ impl DesktopApp {
         );
         let action = surface.inner;
         if let Some(capture) = &mut self.capture {
-            capture.set_snap_evidence(self.move_tool.capture_evidence());
+            capture.set_snap_evidence(self.design.move_tool.capture_evidence());
         }
-        if self.move_tool.take_grid_edit_request() {
+        if self.design.move_tool.take_grid_edit_request() {
             self.invoke_or_report(Request::new(A::EditGrid));
         }
         if let Some(proposal) = action.selection {
@@ -5836,7 +5741,7 @@ impl DesktopApp {
         self.tick_export_preparation(ui.ctx());
         // Worker completion belongs to the app session, not the Cut plan pane.
         // Its candidate is still only applied after explicit review there.
-        self.optimizer.poll(ui.ctx());
+        self.cut_plan.optimizer.poll(ui.ctx());
         self.sync_scene_inspector();
         if let Some(action) = actions::project_shortcut(ui.ctx(), self.modal_open()) {
             self.invoke_or_report(Request::new(action));
@@ -5845,7 +5750,7 @@ impl DesktopApp {
         if command_palette::shortcut(
             ui.ctx(),
             !self.palette.open
-                && !self.optimizer.comparison_open()
+                && !self.cut_plan.optimizer.comparison_open()
                 && !self.other_modal_open()
                 && !self.project_files.blocking()
                 && self.navigation.pending().is_none(),
@@ -5868,7 +5773,7 @@ impl DesktopApp {
             self.session.active,
             &self.localizer,
             !self.palette.open
-                && !self.optimizer.comparison_open()
+                && !self.cut_plan.optimizer.comparison_open()
                 && !self.project_files.blocking()
                 && (!self.other_modal_open()
                     || self.modals.board_dimension().is_some()
@@ -5937,10 +5842,10 @@ impl DesktopApp {
                 if active == Workspace::CutPlan
                     && layout.controls == 0.0
                     && self.open_drawer != Some(workspace_shell::Drawer::Controls)
-                    && self.optimizer.comparison_open()
+                    && self.cut_plan.optimizer.comparison_open()
                 {
                     let blocked = self.external_modal_open();
-                    self.optimizer.show_comparison(
+                    self.cut_plan.optimizer.show_comparison(
                         ui.ctx(),
                         &mut self.editor,
                         &self.localizer,
@@ -6020,10 +5925,10 @@ impl DesktopApp {
         self.show_navigation_prompt(ui.ctx());
         self.show_palette(ui.ctx());
         self.show_settings(ui.ctx());
-        if matches!(self.export_activity, Some(ExportActivity::Choosing(..)))
-            && self.export_picker_key.is_none()
+        if matches!(self.handoff.activity, Some(ExportActivity::Choosing(..)))
+            && self.handoff.picker_key.is_none()
         {
-            self.export_picker_key = self
+            self.handoff.picker_key = self
                 .current_reviewed_packet()
                 .map(|packet| packet.key().clone());
         }
@@ -6240,8 +6145,8 @@ fn main() -> std::process::ExitCode {
                 app.session = WorkspaceSession::new(app.editor.project());
                 app.session.active = config.workspace;
                 if let Some(section) = config.settings {
-                    app.settings_state.section = section;
-                    app.settings_open = true;
+                    app.settings.state.section = section;
+                    app.settings.open = true;
                 }
                 if config.workspace == Workspace::Stock {
                     app.session.stock_piece =
@@ -6251,9 +6156,9 @@ fn main() -> std::process::ExitCode {
                     let packet = Arc::new(
                         ReviewedPacket::prepare(
                             app.editor.project(),
-                            app.export_mode,
+                            app.handoff.mode,
                             app.export_settings(),
-                            app.export_sections,
+                            app.handoff.sections,
                         )
                         .expect("capture fixture draft packet"),
                     );
@@ -6267,10 +6172,10 @@ fn main() -> std::process::ExitCode {
                     )
                     .expect("isolated capture directory is writable");
                     let key = app.export_key();
-                    app.export_candidate = Some((key.clone(), Ok(Arc::clone(&packet))));
-                    app.export_preparation = Some((key, Ok(packet)));
+                    app.handoff.candidate = Some((key.clone(), Ok(Arc::clone(&packet))));
+                    app.handoff.preparation = Some((key, Ok(packet)));
                     if let Some(page) = config.page {
-                        app.export_preview.page = page.saturating_sub(1);
+                        app.handoff.preview.page = page.saturating_sub(1);
                     }
                 }
                 app.localizer = Localizer::new(config.language);
@@ -6285,7 +6190,7 @@ fn main() -> std::process::ExitCode {
                 }
                 if config.workspace == Workspace::Hardware {
                     app.selection.choose(None, false);
-                    app.scene_active_seen = None;
+                    app.design.scene_active_seen = None;
                     app.session.inspector = Some(InspectorTarget::Installation(
                         plan_my_cabinet::reference_fixture::HINGE_IDS[0],
                     ));
@@ -6307,7 +6212,7 @@ fn main() -> std::process::ExitCode {
                     }
                 }
                 if let Some(mode) = config.snap {
-                    app.move_tool.configure_capture_snap(mode);
+                    app.design.move_tool.configure_capture_snap(mode);
                 }
                 if let Some(dialog) = config.dialog {
                     dialog.mount(&mut app);
@@ -6419,8 +6324,8 @@ mod tests {
         setup.setup.roles.insert(MaterialRole::Carcass, carcass);
         setup.setup.roles.insert(MaterialRole::Back, back);
         assert!(setup.setup.review().is_ok());
-        app.template_setup = Some(setup);
-        app.template_guard_pending = true;
+        app.template.setup = Some(setup);
+        app.template.guard_pending = true;
         app.request_project_action(project_ui::NextAction::Template);
         assert!(matches!(
             app.project_files.prompt,
@@ -6429,16 +6334,16 @@ mod tests {
         assert_eq!(app.editor.project(), &old);
         let prompt = app.project_files.prompt.take().unwrap();
         app.resolve_project_choice(prompt, Some("cancel"));
-        assert!(!app.template_guard_pending);
-        assert!(app.template_setup.is_some());
+        assert!(!app.template.guard_pending);
+        assert!(app.template.setup.is_some());
         assert_eq!(app.editor.project(), &old);
 
-        app.template_guard_pending = true;
+        app.template.guard_pending = true;
         app.request_project_action(project_ui::NextAction::Template);
         let prompt = app.project_files.prompt.take().unwrap();
         app.resolve_project_choice(prompt, Some("project-discard"));
         assert!(!app.project_files.welcome.visible);
-        assert!(app.template_setup.is_none());
+        assert!(app.template.setup.is_none());
         assert_eq!(app.editor.project().name, "New base");
         assert!(app.project_files.path.is_none());
         assert!(app.editor.is_dirty());
@@ -6470,7 +6375,7 @@ mod tests {
         app.handle_welcome_intent(plan_my_cabinet::welcome_ui::WelcomeIntent::Template(
             TemplateKind::Drawers,
         ));
-        let setup = &mut app.template_setup.as_mut().unwrap().setup;
+        let setup = &mut app.template.setup.as_mut().unwrap().setup;
         setup.project_name = "Three drawers".into();
         let value = |mm: i64| {
             plan_my_cabinet::template_setup::ProposedLength::new(Conversion::Exact(
@@ -6491,14 +6396,14 @@ mod tests {
             setup.roles.insert(role, id);
         }
         assert!(setup.review().is_ok());
-        app.template_guard_pending = true;
+        app.template.guard_pending = true;
         app.request_project_action(project_ui::NextAction::Template);
         assert!(!app.project_files.welcome.visible);
         assert_eq!(app.editor.project().boards.len(), 23);
         assert_eq!(app.editor.project().materials.len(), 4);
         assert!(app.editor.project().stock.is_empty());
         assert!(app.editor.project().allocations.is_empty());
-        assert!(app.template_message.is_some());
+        assert!(app.template.message.is_some());
         assert_eq!(app.session.active, Workspace::Design);
         assert!(
             app.editor
@@ -6547,7 +6452,7 @@ mod tests {
         let ctx = egui::Context::default();
         let before = app.editor.project().clone();
         app.invoke(Request::new(A::OpenSettings)).unwrap();
-        assert!(app.settings_open);
+        assert!(app.settings.open);
         assert_eq!(
             app.action_availability(Request::new(A::NewBoard)),
             Err(actions::Unavailable::ModalOpen)
@@ -6560,8 +6465,8 @@ mod tests {
         assert_eq!(app.editor.project().cut_fee.unwrap().minor_units(), 0);
         assert!(app.editor.can_undo());
         app.apply_settings_intent(&ctx, SettingsIntent::EditGrid);
-        assert!(!app.settings_open);
-        assert!(app.settings_resume_after_dialog);
+        assert!(!app.settings.open);
+        assert!(app.settings.resume_after_dialog);
         assert!(app.modals.grid().is_some());
         app.modals.set_grid(None);
         ctx.begin_pass(egui::RawInput {
@@ -6573,18 +6478,18 @@ mod tests {
         });
         app.show_settings(&ctx);
         ctx.end_pass().drop_without_applying_deltas();
-        assert!(app.settings_open);
-        assert!(!app.settings_resume_after_dialog);
+        assert!(app.settings.open);
+        assert!(!app.settings.resume_after_dialog);
         app.apply_settings_intent(&ctx, SettingsIntent::Done);
-        assert!(!app.settings_open);
+        assert!(!app.settings.open);
 
         app.invoke(Request::new(A::OpenSettings)).unwrap();
         app.apply_settings_intent(&ctx, SettingsIntent::ChangeCurrency);
-        assert!(!app.settings_open);
+        assert!(!app.settings.open);
         assert!(app.modals.currency().is_some());
         app.modals.set_currency(None);
         app.apply_settings_intent(&ctx, SettingsIntent::WorkedExamples);
-        assert!(app.settings_worked_examples);
+        assert!(app.settings.worked_examples);
         assert!(app.other_modal_open());
     }
 
@@ -6717,9 +6622,9 @@ mod tests {
             &egui::Context::default(),
             SettingsIntent::ReviewRecoveryCleanup,
         );
-        assert!(!app.settings_open);
+        assert!(!app.settings.open);
         assert_eq!(
-            app.settings_cleanup
+            app.settings.cleanup
                 .as_ref()
                 .unwrap()
                 .review()
@@ -6732,8 +6637,8 @@ mod tests {
             Err(actions::Unavailable::ModalOpen)
         );
         assert_eq!(app.editor.project(), &before);
-        app.settings_cleanup = None;
-        app.settings_open = true;
+        app.settings.cleanup = None;
+        app.settings.open = true;
         assert_eq!(app.editor.project(), &before);
     }
 
@@ -6765,7 +6670,7 @@ mod tests {
         };
         // Hints only appear for tools whose gestures need explaining.
         assert!(!render(&mut app).contains("Drag selected board"));
-        app.move_tool.mode = viewport::ToolMode::Move;
+        app.design.move_tool.mode = viewport::ToolMode::Move;
         assert!(render(&mut app).contains("Drag selected board"));
         app.set_navigation_hints(false);
         assert!(!render(&mut app).contains("Drag selected board"));
@@ -6780,8 +6685,8 @@ mod tests {
         let old = app.editor.project().clone();
         app.localizer.set_language(Language::PtBr);
         app.handle_welcome_intent(WelcomeIntent::Preferences);
-        assert!(app.settings_open && app.project_files.welcome.visible);
-        app.settings_state.section = SettingsSection::General;
+        assert!(app.settings.open && app.project_files.welcome.visible);
+        app.settings.state.section = SettingsSection::General;
         let ctx = egui::Context::default();
         for scale in [
             InterfaceScale::Percent90,
@@ -6806,7 +6711,7 @@ mod tests {
             assert_eq!(app.editor.project(), &old);
         }
         app.apply_settings_intent(&ctx, SettingsIntent::Done);
-        assert!(!app.settings_open);
+        assert!(!app.settings.open);
         assert!(app.project_files.welcome.visible);
     }
 
@@ -7275,13 +7180,13 @@ mod tests {
         );
         assert_eq!(app.selection.active, Some(first));
         app.request_pose_frame(CoordinateFrame::World);
-        assert_eq!(app.pose_frame, CoordinateFrame::LocalParent);
+        assert_eq!(app.design.pose_frame, CoordinateFrame::LocalParent);
         assert!(app.navigation.pending().is_some());
         assert_eq!(
             app.resolve_navigation(NavigationDecision::Abandon),
             Outcome::Navigated
         );
-        assert_eq!(app.pose_frame, CoordinateFrame::World);
+        assert_eq!(app.design.pose_frame, CoordinateFrame::World);
         assert!(app.edit_drafts.existing_pose(original.id, first).is_none());
         assert_eq!(app.editor.project(), &original);
     }
@@ -7339,10 +7244,10 @@ mod tests {
         app.selection.choose(Some(board), false);
         let original = app.editor.project().clone();
         assert!(
-            app.sheet_repair
+            app.cut_plan.repair
                 .begin(&mut app.editor, &app.selection, Locale::En)
         );
-        app.sheet_repair.stage_placement(
+        app.cut_plan.repair.stage_placement(
             &mut app.editor,
             board,
             stock,
@@ -7366,7 +7271,7 @@ mod tests {
             Outcome::Stayed
         );
         assert_eq!(app.session.active, Workspace::CutPlan);
-        assert!(app.sheet_repair.active());
+        assert!(app.cut_plan.repair.active());
         assert_eq!(app.editor.project(), &original);
         assert!(matches!(
             app.request_navigation(NavigationRoute::Workspace(Workspace::Design)),
@@ -7534,17 +7439,17 @@ mod tests {
             .choose(Some(original_allocation.board_id), false);
         let before = app.editor.project().clone();
         assert!(
-            app.sheet_repair
+            app.cut_plan.repair
                 .begin(&mut app.editor, &app.selection, Locale::En)
         );
-        assert!(app.sheet_repair.stage_placement(
+        assert!(app.cut_plan.repair.stage_placement(
             &mut app.editor,
             original_allocation.board_id,
             spare_id,
             original_allocation.origin,
             original_allocation.quarter_turn,
         ));
-        assert!(app.sheet_repair.can_accept(&mut app.editor));
+        assert!(app.cut_plan.repair.can_accept(&mut app.editor));
         assert_eq!(app.editor.project(), &before);
         assert_eq!(
             app.request_navigation(NavigationRoute::Workspace(Workspace::Design)),
@@ -7558,7 +7463,7 @@ mod tests {
             Outcome::Navigated
         );
         assert_eq!(app.session.active, Workspace::Design);
-        assert!(!app.sheet_repair.active());
+        assert!(!app.cut_plan.repair.active());
         assert!(app.editor.preview().is_none());
         assert_eq!(
             app.editor
@@ -7655,18 +7560,18 @@ mod tests {
     fn hardware_motion_resets_only_on_successful_navigation() {
         let mut app = navigation_app();
         app.session.switch(Workspace::Hardware);
-        app.door_motion = Some((Uuid::new_v4(), 20.0));
+        app.hardware.door_motion = Some((Uuid::new_v4(), 20.0));
         let missing = Destination::Sheet(Uuid::new_v4());
         assert_eq!(
             app.request_navigation(NavigationRoute::Entity(missing)),
             Outcome::Blocked(pending_navigation::Blocked::MissingDestination)
         );
-        assert!(app.door_motion.is_some());
+        assert!(app.hardware.door_motion.is_some());
         assert_eq!(
             app.request_navigation(NavigationRoute::Workspace(Workspace::Stock)),
             Outcome::Navigated
         );
-        assert_eq!(app.door_motion, None);
+        assert_eq!(app.hardware.door_motion, None);
     }
 
     #[test]
@@ -8093,14 +7998,14 @@ mod tests {
         assert_eq!(app.session.active, Workspace::Design);
         for _ in 0..1000 {
             app.tick_export_preparation(&ctx);
-            if app.export_candidate.is_some() {
+            if app.handoff.candidate.is_some() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(app.export_candidate.is_some());
-        assert!(app.export_preparation.is_none());
-        assert!(app.export_preparation_pending.is_none());
+        assert!(app.handoff.candidate.is_some());
+        assert!(app.handoff.preparation.is_none());
+        assert!(app.handoff.preparation_pending.is_none());
         assert_eq!(app.editor.project(), &project);
         assert!(app.editor.project().export_records.is_empty());
     }
@@ -8110,7 +8015,8 @@ mod tests {
         for _ in 0..2000 {
             app.tick_export_preparation(&ctx);
             if app
-                .export_candidate
+                .handoff
+                .candidate
                 .as_ref()
                 .is_some_and(|(_, result)| result.is_ok())
             {
@@ -8123,8 +8029,8 @@ mod tests {
 
     fn acknowledge_handoff_packet(app: &mut DesktopApp) {
         await_handoff_packet(app);
-        let (key, result) = app.export_candidate.as_ref().unwrap();
-        app.export_preparation = Some((key.clone(), Ok(result.as_ref().unwrap().clone())));
+        let (key, result) = app.handoff.candidate.as_ref().unwrap();
+        app.handoff.preparation = Some((key.clone(), Ok(result.as_ref().unwrap().clone())));
     }
 
     #[test]
@@ -8150,9 +8056,9 @@ mod tests {
             .drop_without_applying_deltas();
         };
         let path = PathBuf::from("overwrite-modal-test.pdf");
-        app.export_activity = Some(ExportActivity::Confirming(path.clone(), packet.clone()));
+        app.handoff.activity = Some(ExportActivity::Confirming(path.clone(), packet.clone()));
         render(&mut app, vec![]);
-        assert!(app.export_overwrite_chrome.is_active());
+        assert!(app.handoff.overwrite_chrome.is_active());
         render(
             &mut app,
             vec![Event::Key {
@@ -8163,12 +8069,12 @@ mod tests {
                 modifiers: Modifiers::NONE,
             }],
         );
-        assert!(app.export_activity.is_none());
-        assert!(!app.export_overwrite_chrome.is_active());
+        assert!(app.handoff.activity.is_none());
+        assert!(!app.handoff.overwrite_chrome.is_active());
         assert_eq!(app.editor.project(), &before);
 
-        app.export_activity = Some(ExportActivity::Confirming(path, packet));
-        app.export_sections.parts_and_costs = false;
+        app.handoff.activity = Some(ExportActivity::Confirming(path, packet));
+        app.handoff.sections.parts_and_costs = false;
         render(&mut app, vec![]);
         render(
             &mut app,
@@ -8180,15 +8086,15 @@ mod tests {
                 modifiers: Modifiers::NONE,
             }],
         );
-        assert!(app.export_activity.is_none());
-        assert!(app.export_events.is_none());
+        assert!(app.handoff.activity.is_none());
+        assert!(app.handoff.events.is_none());
         assert!(app.current_reviewed_packet().is_none());
         assert_eq!(app.editor.project(), &before);
 
-        app.export_activity = Some(ExportActivity::Writing);
+        app.handoff.activity = Some(ExportActivity::Writing);
         render(&mut app, vec![]);
-        assert!(matches!(app.export_activity, Some(ExportActivity::Writing)));
-        assert!(!app.export_overwrite_chrome.is_active());
+        assert!(matches!(app.handoff.activity, Some(ExportActivity::Writing)));
+        assert!(!app.handoff.overwrite_chrome.is_active());
     }
 
     #[test]
@@ -8252,7 +8158,7 @@ mod tests {
             hardware.contains("H1") && hardware.contains("H2"),
             "{hardware}"
         );
-        app.door_motion = Some((plan_my_cabinet::reference_fixture::LEFT_JOINT_ID, 45.0));
+        app.hardware.door_motion = Some((plan_my_cabinet::reference_fixture::LEFT_JOINT_ID, 45.0));
         let _ = render(&mut app); // warm the newly mounted HUD area
         let open = render(&mut app);
         assert!(
@@ -8265,7 +8171,7 @@ mod tests {
             app.request_navigation(NavigationRoute::Workspace(Workspace::Design)),
             Outcome::Navigated
         ));
-        assert!(app.door_motion.is_none());
+        assert!(app.hardware.door_motion.is_none());
         let design = render(&mut app);
         assert!(!design.contains("H1") && !design.contains("H2"), "{design}");
         assert!(!design.contains("Display only — the saved pose stays closed."));
@@ -8342,15 +8248,15 @@ mod tests {
         acknowledge_handoff_packet(&mut app);
         let old = app.current_reviewed_packet().unwrap();
         let page_count = old.document().pages.len();
-        app.export_preview.set_zoom(5.0).unwrap();
+        app.handoff.preview.set_zoom(5.0).unwrap();
         assert_eq!(old.document().pages.len(), page_count);
-        app.export_units = Unit::Foot;
+        app.handoff.units = Unit::Foot;
         app.tick_export_preparation(&egui::Context::default());
         assert!(app.current_reviewed_packet().is_none());
         await_handoff_packet(&mut app);
         assert!(app.current_reviewed_packet().is_none());
         assert_eq!(
-            app.export_candidate
+            app.handoff.candidate
                 .as_ref()
                 .unwrap()
                 .1
@@ -8363,7 +8269,7 @@ mod tests {
         );
         acknowledge_handoff_packet(&mut app);
         assert!(app.current_reviewed_packet().is_some());
-        app.export_sections.hinge_references = false;
+        app.handoff.sections.hinge_references = false;
         app.tick_export_preparation(&egui::Context::default());
         assert!(app.current_reviewed_packet().is_none());
         await_handoff_packet(&mut app);
@@ -8375,8 +8281,8 @@ mod tests {
         let mut app = navigation_app();
         acknowledge_handoff_packet(&mut app);
         assert!(app.action_availability(Request::new(A::ExportPdf)).is_ok());
-        let original_sections = app.export_sections;
-        app.export_sections.parts_and_costs = false;
+        let original_sections = app.handoff.sections;
+        app.handoff.sections.parts_and_costs = false;
         assert_eq!(
             app.action_availability(Request::new(A::ExportPdf)),
             Err(actions::Unavailable::ExportNotReady)
@@ -8385,9 +8291,9 @@ mod tests {
             app.invoke(Request::new(A::ExportPdf)),
             Err(actions::Unavailable::ExportNotReady)
         );
-        assert!(app.export_events.is_none());
-        assert!(app.export_activity.is_none());
-        app.export_sections = original_sections;
+        assert!(app.handoff.events.is_none());
+        assert!(app.handoff.activity.is_none());
+        app.handoff.sections = original_sections;
         assert!(app.action_availability(Request::new(A::ExportPdf)).is_ok());
         app.editor
             .set_cutting_kerf(Length::from_micrometres(6_000))
@@ -8404,7 +8310,7 @@ mod tests {
         let mut app = navigation_app();
         let back = plan_my_cabinet::reference_fixture::BACK_ID;
         app.selection.hidden.insert(back);
-        app.export_sections = ReceiptSections {
+        app.handoff.sections = ReceiptSections {
             parts_and_costs: false,
             sheets_and_cut_steps: false,
             hinge_references: false,
@@ -8412,7 +8318,7 @@ mod tests {
         await_handoff_packet(&mut app);
         assert!(!app.shop_ready_available());
         assert!(
-            app.export_candidate
+            app.handoff.candidate
                 .as_ref()
                 .unwrap()
                 .1
@@ -8429,7 +8335,7 @@ mod tests {
             ),
             Err(actions::Unavailable::ExportNotReady)
         );
-        assert_eq!(app.export_mode, ExportMode::Draft);
+        assert_eq!(app.handoff.mode, ExportMode::Draft);
         assert!(app.editor.project().export_records.is_empty());
     }
 
@@ -8468,15 +8374,15 @@ mod tests {
             Request::new(A::SetExportMode).argument(Argument::ExportMode(ExportMode::ShopReady)),
         )
         .unwrap();
-        app.export_language = Language::PtBr;
-        app.export_units = Unit::Foot;
+        app.handoff.language = Language::PtBr;
+        app.handoff.units = Unit::Foot;
         await_handoff_packet(&mut app);
         assert!(app.shop_ready_available());
         assert_eq!(app.localizer.language(), Language::En);
         assert_eq!(app.editor.project().display_unit, Unit::Mm);
-        assert_eq!(app.export_mode, ExportMode::ShopReady);
-        assert_eq!(app.export_language, Language::PtBr);
-        assert_eq!(app.export_units, Unit::Foot);
+        assert_eq!(app.handoff.mode, ExportMode::ShopReady);
+        assert_eq!(app.handoff.language, Language::PtBr);
+        assert_eq!(app.handoff.units, Unit::Foot);
     }
 
     #[test]
@@ -8484,21 +8390,21 @@ mod tests {
         let mut app = navigation_app();
         acknowledge_handoff_packet(&mut app);
         let (tx, rx) = mpsc::channel();
-        app.export_events = Some(rx);
-        app.export_activity = Some(ExportActivity::Choosing(
+        app.handoff.events = Some(rx);
+        app.handoff.activity = Some(ExportActivity::Choosing(
             Box::new(app.editor.project().clone()),
             app.export_settings(),
-            app.export_mode,
+            app.handoff.mode,
         ));
-        app.export_picker_key = Some(app.current_reviewed_packet().unwrap().key().clone());
+        app.handoff.picker_key = Some(app.current_reviewed_packet().unwrap().key().clone());
         let different_kerf =
             Length::from_micrometres(app.editor.project().cutting_kerf.micrometres() + 100);
         app.editor.set_cutting_kerf(different_kerf).unwrap();
         let path = std::env::temp_dir().join(format!("handoff-stale-{}.pdf", Uuid::new_v4()));
         tx.send(ExportEvent::Selected(Some(path.clone()))).unwrap();
         app.poll_pdf_export(&egui::Context::default());
-        assert!(app.export_activity.is_none());
-        assert!(app.export_preparation.is_none());
+        assert!(app.handoff.activity.is_none());
+        assert!(app.handoff.preparation.is_none());
         assert!(!path.exists());
         assert!(app.editor.project().export_records.is_empty());
     }
@@ -8535,7 +8441,7 @@ mod tests {
         );
         assert!(!buttons.iter().any(|(label, _)| label == &review));
         assert_eq!(app.editor.project(), &before);
-        assert!(app.export_activity.is_none());
+        assert!(app.handoff.activity.is_none());
     }
 
     #[test]
@@ -8543,16 +8449,16 @@ mod tests {
         let mut app = navigation_app();
         acknowledge_handoff_packet(&mut app);
         let (tx, rx) = mpsc::channel();
-        app.export_events = Some(rx);
-        app.export_activity = Some(ExportActivity::Choosing(
+        app.handoff.events = Some(rx);
+        app.handoff.activity = Some(ExportActivity::Choosing(
             Box::new(app.editor.project().clone()),
             app.export_settings(),
-            app.export_mode,
+            app.handoff.mode,
         ));
-        app.export_picker_key = Some(app.current_reviewed_packet().unwrap().key().clone());
+        app.handoff.picker_key = Some(app.current_reviewed_packet().unwrap().key().clone());
         tx.send(ExportEvent::Selected(None)).unwrap();
         app.poll_pdf_export(&egui::Context::default());
-        assert!(app.export_activity.is_none());
+        assert!(app.handoff.activity.is_none());
         assert!(app.current_reviewed_packet().is_some());
         assert!(app.editor.project().export_records.is_empty());
     }
@@ -8560,7 +8466,7 @@ mod tests {
     #[test]
     fn handoff_write_records_only_the_frozen_reviewed_packet() {
         let mut app = navigation_app();
-        app.export_sections = ReceiptSections {
+        app.handoff.sections = ReceiptSections {
             parts_and_costs: false,
             sheets_and_cut_steps: false,
             hinge_references: false,
@@ -8572,15 +8478,15 @@ mod tests {
         let ctx = egui::Context::default();
         for _ in 0..5000 {
             app.poll_pdf_export(&ctx);
-            if app.export_events.is_none() {
+            if app.handoff.events.is_none() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(app.export_events.is_none(), "PDF worker timed out");
+        assert!(app.handoff.events.is_none(), "PDF worker timed out");
         let records = &app.editor.project().export_records;
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].metadata.sections, Some(app.export_sections));
+        assert_eq!(records[0].metadata.sections, Some(app.handoff.sections));
         assert_eq!(
             records[0].metadata.layout_version,
             Some(packet.key().layout_version as u16)
@@ -8600,12 +8506,12 @@ mod tests {
         app.start_pdf_write(path.clone(), packet.clone(), Overwrite::Decline);
         for _ in 0..5000 {
             app.poll_pdf_export(&egui::Context::default());
-            if app.export_events.is_none() {
+            if app.handoff.events.is_none() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(app.export_events.is_none());
+        assert!(app.handoff.events.is_none());
         assert_eq!(std::fs::read(&path).unwrap(), b"existing file remains");
         assert!(app.editor.project().export_records.is_empty());
         std::fs::remove_file(path).unwrap();
@@ -8616,12 +8522,12 @@ mod tests {
         app.start_pdf_write(target.clone(), packet, Overwrite::Decline);
         for _ in 0..5000 {
             app.poll_pdf_export(&egui::Context::default());
-            if app.export_events.is_none() {
+            if app.handoff.events.is_none() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(app.export_events.is_none());
+        assert!(app.handoff.events.is_none());
         assert!(!target.exists());
         assert!(app.editor.project().export_records.is_empty());
     }
@@ -9161,14 +9067,14 @@ mod tests {
         let ctx = egui::Context::default();
         for _ in 0..5000 {
             app.poll_pdf_export(&ctx);
-            if app.export_events.is_none() {
+            if app.handoff.events.is_none() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(app.export_events.is_none(), "export worker timed out");
+        assert!(app.handoff.events.is_none(), "export worker timed out");
         assert!(
-            app.export_message
+            app.handoff.message
                 .as_ref()
                 .is_some_and(|m| m.contains("Could not export PDF"))
         );
@@ -9233,7 +9139,7 @@ mod tests {
             .unwrap();
         assert!(disabled);
         click_repair_position(&mut app, &ctx, *position);
-        assert!(!app.sheet_repair.active());
+        assert!(!app.cut_plan.repair.active());
         assert!(app.editor.preview().is_none());
         app.modals.set_grid(None);
         // Retire the modal focus layer before interacting with the workspace.
@@ -9242,7 +9148,7 @@ mod tests {
         let cancel = app.localizer.text("sheet-cancel");
         let accept = app.localizer.text("sheet-accept");
         click_repair_button(&mut app, &ctx, &edit);
-        assert!(app.sheet_repair.active());
+        assert!(app.cut_plan.repair.active());
         assert!(app.modal_open());
         assert!(!app.other_modal_open());
         let buttons = repair_frame(&mut app, &ctx, vec![]);
@@ -9267,12 +9173,12 @@ mod tests {
                 && app.modals.placement().is_none()
         );
         click_repair_button(&mut app, &ctx, &cancel);
-        assert!(!app.sheet_repair.active());
+        assert!(!app.cut_plan.repair.active());
         assert!(app.editor.preview().is_none());
         assert_eq!(app.editor.project(), &before);
         click_repair_button(&mut app, &ctx, &edit);
         click_repair_button(&mut app, &ctx, &accept);
-        assert!(!app.sheet_repair.active());
+        assert!(!app.cut_plan.repair.active());
         assert!(app.editor.preview().is_none());
     }
 
@@ -9461,7 +9367,7 @@ mod tests {
             .unwrap();
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
         assert!(app.modals.creation().is_none());
-        assert_eq!(app.first_fit_notice, Some(FirstFit::NoFit));
+        assert_eq!(app.design.first_fit_notice, Some(FirstFit::NoFit));
         assert_eq!(app.editor.project().boards.len(), 2);
         assert_eq!(app.editor.project().allocations.len(), 1);
         assert_eq!(
@@ -10415,7 +10321,7 @@ mod tests {
             );
         }
         assert!(app.modals.board_material().is_none());
-        assert!(!app.board_material_chrome.is_active());
+        assert!(!app.chromes.board_material.is_active());
         assert_eq!(app.editor.project().boards[0].material_id, alternate);
         assert_eq!(app.editor.project().revision, before.revision + 1);
         assert!(app.editor.undo().unwrap());
@@ -10497,7 +10403,7 @@ mod tests {
             );
         }
         assert!(app.modals.material_edit().is_none());
-        assert!(!app.material_edit_chrome.is_active());
+        assert!(!app.chromes.material_edit.is_active());
         assert_eq!(
             app.editor.project().materials[0].default_thickness,
             Length::from_micrometres(21_000)

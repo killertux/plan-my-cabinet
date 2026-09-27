@@ -128,7 +128,7 @@ impl DesktopApp {
             .project()
             .door_joints
             .iter()
-            .find(|joint| self.door_motion.map(|(id, _)| id) == Some(joint.id))
+            .find(|joint| self.hardware.door_motion.map(|(id, _)| id) == Some(joint.id))
             .or_else(|| {
                 self.editor.project().door_joints.iter().find(|joint| {
                     selected.is_some_and(|id| joint.hinge_installation_ids.contains(&id))
@@ -140,7 +140,7 @@ impl DesktopApp {
         };
         let start = Request::with(A::StartMotion, Target::Door(joint.id));
         let close = Request::new(A::CloseMotion);
-        let active = self.door_motion.map(|(id, _)| id) == Some(joint.id);
+        let active = self.hardware.door_motion.map(|(id, _)| id) == Some(joint.id);
         let top = egui::Area::new(egui::Id::new("hardware-motion-mode"))
             .order(egui::Order::Foreground)
             .fixed_pos(
@@ -190,7 +190,7 @@ impl DesktopApp {
                 });
             });
         let mut blocked = top.response.contains_pointer();
-        if self.door_motion.is_some() {
+        if self.hardware.door_motion.is_some() {
             let width = (canvas.width() - 32.0).clamp(160.0, 460.0);
             let hud = egui::Area::new(egui::Id::new("hardware-motion-hud"))
                 .order(egui::Order::Foreground)
@@ -221,7 +221,7 @@ impl DesktopApp {
     /// Body of the motion HUD: door name, angle, slider, scale and one note.
     /// The angle is session display state; the saved pose never changes.
     pub(crate) fn show_door_motion_controls(&mut self, ui: &mut egui::Ui) {
-        let Some((id, mut angle)) = self.door_motion else {
+        let Some((id, mut angle)) = self.hardware.door_motion else {
             return;
         };
         let Some(joint) = self
@@ -970,7 +970,7 @@ mod tests {
         app.selection.choose(Some(door), false);
         let original = app.editor.project().clone();
         let joint_id = original.door_joints[0].id;
-        app.door_motion = Some((joint_id, 105.0));
+        app.hardware.door_motion = Some((joint_id, 105.0));
         let ctx = egui::Context::default();
         for language in [Language::En, Language::PtBr] {
             app.localizer.set_language(language);
@@ -996,7 +996,7 @@ mod tests {
         assert!(app.modal_open());
         assert_eq!(app.selection.active, Some(door));
         assert_eq!(app.editor.project(), &original);
-        app.door_motion = None;
+        app.hardware.door_motion = None;
         assert!(!app.modal_open());
         assert_eq!(app.editor.project(), &original);
         assert_eq!(
@@ -1083,7 +1083,7 @@ mod tests {
                 )
                 .drop_without_applying_deltas();
             }
-            assert!(app.door_motion.is_none());
+            assert!(app.hardware.door_motion.is_none());
             assert_eq!(app.editor.project(), &original);
         }
     }
@@ -1109,7 +1109,7 @@ mod tests {
             (retained.root, retained.mount, retained.hinges.clone()),
             selected
         );
-        assert!(app.door_motion.is_none());
+        assert!(app.hardware.door_motion.is_none());
         assert_eq!(app.editor.project(), &original);
     }
 

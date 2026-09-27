@@ -1600,15 +1600,16 @@ impl DesktopApp {
         let project = self.editor.project();
         let key = (project.id, project.revision);
         if self
-            .design_stock_snapshot
+            .design
+            .stock_snapshot
             .as_ref()
             .is_none_or(|(cached, _)| *cached != key)
         {
-            self.design_stock_snapshot = StockReadModel::build(project)
+            self.design.stock_snapshot = StockReadModel::build(project)
                 .ok()
                 .map(|model| (key, model));
         }
-        self.design_stock_snapshot
+        self.design.stock_snapshot
             .as_ref()
             .map(|(_, model)| model.clone())
     }
@@ -1647,7 +1648,7 @@ impl DesktopApp {
         let mut input = StockInput::from(stock);
         change(&mut input);
         if self.editor.edit_stock(id, input).is_ok() {
-            self.material_conflicts = allocation_conflicts(self.editor.project());
+            self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
         }
     }
 
@@ -3875,7 +3876,7 @@ impl DesktopApp {
             };
             match result {
                 Ok(()) => {
-                    self.material_conflicts = allocation_conflicts(self.editor.project());
+                    self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
                     chrome.close(ctx);
                     return;
                 }

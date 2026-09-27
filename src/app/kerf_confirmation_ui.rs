@@ -195,8 +195,8 @@ mod tests {
         let mut app = DesktopApp::default();
         app.invoke(Request::new(A::OpenSettings)).unwrap();
         app.apply_settings_intent(&ctx, SettingsIntent::ConfirmKerf);
-        assert!(!app.settings_open);
-        assert!(app.settings_resume_after_dialog);
+        assert!(!app.settings.open);
+        assert!(app.settings.resume_after_dialog);
         assert!(app.modals.kerf_confirmation().is_some());
         let before = app.editor.project().clone();
         let mut invoker = None;
@@ -212,8 +212,8 @@ mod tests {
         assert_eq!(ctx.memory(|m| m.focused()), invoker);
         ctx.run_ui(Default::default(), |_ui| app.show_settings(&ctx))
             .drop_without_applying_deltas();
-        assert!(app.settings_open);
-        assert!(!app.settings_resume_after_dialog);
+        assert!(app.settings.open);
+        assert!(!app.settings.resume_after_dialog);
         assert_eq!(app.editor.project(), &before);
     }
 

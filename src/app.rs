@@ -20,6 +20,7 @@ pub(crate) mod project_ui;
 pub(crate) mod receipt_ui;
 pub(crate) mod recovery_cleanup_ui;
 pub(crate) mod sheet_ui;
+pub(crate) mod state;
 pub(crate) mod stock_ui;
 pub(crate) mod template_setup_ui;
 pub(crate) mod toasts;

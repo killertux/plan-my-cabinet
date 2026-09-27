@@ -791,7 +791,7 @@ impl DesktopApp {
         ui.push_id(("inspector-pose", id), |ui| {
             match self
                 .edit_drafts
-                .pose(&self.editor, id, self.pose_frame, unit, locale)
+                .pose(&self.editor, id, self.design.pose_frame, unit, locale)
             {
                 Ok(draft) => {
                     let invalid_axis = if draft.dirty() {
@@ -1726,7 +1726,7 @@ impl DesktopApp {
                             .color(theme_widgets::WARN_INK),
                         );
                     }
-                    let mut requested_frame = self.pose_frame;
+                    let mut requested_frame = self.design.pose_frame;
                     theme_widgets::inspector_heading(
                         ui,
                         &self.localizer.text("design-transform-title"),
@@ -1773,7 +1773,7 @@ impl DesktopApp {
                             });
                         },
                     );
-                    if requested_frame != self.pose_frame {
+                    if requested_frame != self.design.pose_frame {
                         self.request_pose_frame(requested_frame);
                     } else {
                         self.show_shared_pose_fields(ui, board.id);
@@ -1809,7 +1809,8 @@ impl DesktopApp {
                     }
                     for allocation in &board.stock {
                         if let Some(piece) = self
-                            .design_stock_snapshot
+                            .design
+                            .stock_snapshot
                             .as_ref()
                             .and_then(|(_, stock)| stock.miniature(allocation.stock_id))
                             && sheet_miniature(ui, piece, board.id, &self.localizer).clicked()
@@ -2022,7 +2023,7 @@ impl DesktopApp {
                 });
             }
         }
-        if self.move_tool.mode == viewport::ToolMode::Measure {
+        if self.design.move_tool.mode == viewport::ToolMode::Measure {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(14, 4))
                 .show(ui, |ui| self.show_measurement(ui));
@@ -3341,14 +3342,14 @@ mod tests {
     fn revision_invalidates_stock_snapshot_but_view_gestures_reuse_it() {
         let (mut app, board) = app_with_board();
         app.design_model().unwrap();
-        let first = &app.design_stock_snapshot.as_ref().unwrap().1 as *const _;
+        let first = &app.design.stock_snapshot.as_ref().unwrap().1 as *const _;
         let revision = app.editor.project().revision;
         app.selection.choose(Some(board), false);
         app.selection.hidden.insert(board);
         app.design_model().unwrap();
         assert_eq!(
             first,
-            &app.design_stock_snapshot.as_ref().unwrap().1 as *const _
+            &app.design.stock_snapshot.as_ref().unwrap().1 as *const _
         );
         assert_eq!(app.editor.project().revision, revision);
         app.editor
@@ -3359,11 +3360,11 @@ mod tests {
             .unwrap();
         app.design_model().unwrap();
         assert_eq!(
-            app.design_stock_snapshot.as_ref().unwrap().0.1,
+            app.design.stock_snapshot.as_ref().unwrap().0.1,
             app.editor.project().revision
         );
         assert_eq!(
-            app.design_stock_snapshot.as_ref().unwrap().1.boards.len(),
+            app.design.stock_snapshot.as_ref().unwrap().1.boards.len(),
             2
         );
     }

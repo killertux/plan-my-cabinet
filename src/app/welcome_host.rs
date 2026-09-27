@@ -180,13 +180,13 @@ impl DesktopApp {
         match intent {
             WelcomeIntent::NewProject => self.request_project_action(project_ui::NextAction::New),
             WelcomeIntent::Template(kind) => {
-                self.template_setup = Some(TemplateSetupUi::new(
+                self.template.setup = Some(TemplateSetupUi::new(
                     kind,
                     self.localizer.text("project-default-name"),
                     self.editor.project().currency,
                     self.editor.project().display_unit,
                 ));
-                self.template_message = None;
+                self.template.message = None;
             }
             WelcomeIntent::OpenProject => self.request_project_action(project_ui::NextAction::Open),
             WelcomeIntent::OpenRecent { path, project_id } => {
@@ -241,7 +241,7 @@ impl DesktopApp {
                     self.project_files.welcome.invalidate();
                 }
             }
-            WelcomeIntent::Preferences => self.settings_open = true,
+            WelcomeIntent::Preferences => self.settings.open = true,
             WelcomeIntent::SetLanguage(language) => self.set_ui_language(language),
             WelcomeIntent::Recovery {
                 identity,

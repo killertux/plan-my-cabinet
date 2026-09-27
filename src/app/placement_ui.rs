@@ -540,17 +540,17 @@ impl DesktopApp {
         } else {
             "placement-place-action"
         });
-        self.placement_chrome.set_icon(if numeric {
+        self.chromes.placement.set_icon(if numeric {
             icons::Icon::Axes
         } else {
             icons::Icon::Place
         });
-        self.placement_chrome.set_context(Some(if numeric {
+        self.chromes.placement.set_context(Some(if numeric {
             self.localizer.text("placement-live")
         } else {
             self.localizer.format("placement-face-context", Some(&args))
         }));
-        self.placement_chrome.set_hint(Some(self.localizer.text(if numeric {
+        self.chromes.placement.set_hint(Some(self.localizer.text(if numeric {
             "placement-numeric-hint"
         } else {
             "placement-face-hint"
@@ -562,7 +562,7 @@ impl DesktopApp {
             .and_then(|b| b.parent_id)
             .and_then(|parent| project.assemblies.iter().find(|a| a.id == parent))
             .map(|a| a.name.clone());
-        let result = self.placement_chrome.show(
+        let result = self.chromes.placement.show(
             ctx,
             &title,
             ModalActions {
@@ -1166,7 +1166,7 @@ impl DesktopApp {
             self.editor.cancel_preview();
             self.selection.ids = dialog.selection_ids;
             self.selection.active = dialog.selection_active;
-            self.placement_chrome.close(ctx);
+            self.chromes.placement.close(ctx);
             return;
         }
         if numeric_noop {
@@ -1176,7 +1176,7 @@ impl DesktopApp {
                 crate::actions::ActionId::ConfirmDialog,
                 result.action == ModalAction::Confirm,
             ) {
-                self.placement_chrome.close(ctx);
+                self.chromes.placement.close(ctx);
                 return;
             }
         }
@@ -1202,7 +1202,7 @@ impl DesktopApp {
         ) && dialog.error.is_none()
         {
             if self.editor.commit_preview().is_ok() {
-                self.placement_chrome.close(ctx);
+                self.chromes.placement.close(ctx);
                 return;
             }
             dialog.error = Some(PlacementError::InvalidPose(UnitError::OutOfBounds));

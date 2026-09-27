@@ -130,8 +130,8 @@ impl DesktopApp {
 
     pub(crate) fn busy_for_project(&self) -> bool {
         self.modal_open()
-            || self.export_activity.is_some()
-            || self.optimizer.running()
+            || self.handoff.activity.is_some()
+            || self.cut_plan.optimizer.running()
             || self.editor.preview().is_some()
     }
 
@@ -214,8 +214,8 @@ impl DesktopApp {
             }
             NextAction::Welcome => self.project_files.welcome.enter(),
             NextAction::Template => {
-                let Some(setup) = &self.template_setup else {
-                    self.template_guard_pending = false;
+                let Some(setup) = &self.template.setup else {
+                    self.template.guard_pending = false;
                     return;
                 };
                 match setup.setup.generate() {
@@ -240,17 +240,17 @@ impl DesktopApp {
                             self.session.view_mut(workspace).camera.request_frame();
                         }
                         self.project_files.welcome.leave();
-                        self.template_setup = None;
-                        self.template_guard_pending = false;
-                        self.template_message =
+                        self.template.setup = None;
+                        self.template.guard_pending = false;
+                        self.template.message =
                             needs_stock.then(|| self.localizer.text("template-setup-needs-stock"));
                     }
                     Err(error) => {
-                        self.template_message = Some(format!(
+                        self.template.message = Some(format!(
                             "{}: {error:?}",
                             self.localizer.text("template-setup-error-generate")
                         ));
-                        self.template_guard_pending = false;
+                        self.template.guard_pending = false;
                     }
                 }
             }
@@ -413,8 +413,8 @@ impl DesktopApp {
         // its worker instead of letting a preview block New/Open indefinitely.
         self.invalidate_export_review();
         self.edit_drafts.clear();
-        self.pose_frame = plan_my_cabinet::placement::CoordinateFrame::LocalParent;
-        self.pending_pose_frame = None;
+        self.design.pose_frame = plan_my_cabinet::placement::CoordinateFrame::LocalParent;
+        self.design.pending_pose_frame = None;
         self.navigation.clear();
         self.pending_action = None;
         self.pending_project_command = None;
@@ -423,17 +423,17 @@ impl DesktopApp {
         self.project_files.store = None;
         self.project_files.observed = None;
         self.selection = viewport::Selection::default();
-        self.move_tool = viewport::MoveTool::default();
+        self.design.move_tool = viewport::MoveTool::default();
         self.camera = viewport::Camera::default();
-        self.measurement_frame = plan_my_cabinet::measurements::Frame::World;
-        self.door_motion = None;
-        self.first_fit_notice = None;
-        self.material_conflicts.clear();
-        self.catalog_update_notice = None;
-        self.allocation_diagnostics = None;
-        self.export_message = None;
-        self.optimizer = Default::default();
-        self.sheet_repair = Default::default();
+        self.design.measurement_frame = plan_my_cabinet::measurements::Frame::World;
+        self.hardware.door_motion = None;
+        self.design.first_fit_notice = None;
+        self.cut_plan.material_conflicts.clear();
+        self.hardware.catalog_update_notice = None;
+        self.cut_plan.allocation_diagnostics = None;
+        self.handoff.message = None;
+        self.cut_plan.optimizer = Default::default();
+        self.cut_plan.repair = Default::default();
     }
 
     fn attach_recovery(&mut self, inspect: bool) {
@@ -579,7 +579,7 @@ impl DesktopApp {
                             self.project_files.pending_open = None;
                         }
                         if matches!(picker.kind, PickerKind::Save(Some(NextAction::Template))) {
-                            self.template_guard_pending = false;
+                            self.template.guard_pending = false;
                         }
                         if matches!(
                             picker.kind,
@@ -596,8 +596,8 @@ impl DesktopApp {
                 {
                     self.project_files.pending_open = None;
                 }
-                if self.template_guard_pending {
-                    self.template_guard_pending = false;
+                if self.template.guard_pending {
+                    self.template.guard_pending = false;
                 }
                 self.project_files.pending_recovery = None;
                 self.project_files.message = Some(self.localizer.text("project-cancelled"));
@@ -1023,7 +1023,7 @@ impl DesktopApp {
                 | Prompt::Upgrade(_, _, Some(NextAction::Template)),
                 _,
             ) => {
-                self.template_guard_pending = false;
+                self.template.guard_pending = false;
             }
             (
                 Prompt::Dirty(NextAction::RecoverFromWelcome)
@@ -1600,15 +1600,13 @@ mod tests {
 
     #[test]
     fn template_save_failure_and_picker_cancel_retain_document_and_staged_setup() {
-        let mut app = DesktopApp {
-            template_setup: Some(TemplateSetupUi::new(
-                TemplateKind::Base,
-                "Next",
-                Currency::Brl,
-                plan_my_cabinet::units::Unit::Mm,
-            )),
-            ..DesktopApp::default()
-        };
+        let mut app = DesktopApp::default();
+        app.template.setup = Some(TemplateSetupUi::new(
+            TemplateKind::Base,
+            "Next",
+            Currency::Brl,
+            plan_my_cabinet::units::Unit::Mm,
+        ));
         app.editor
             .transact(|p| -> Result<(), ()> {
                 p.name = "Original work".into();
@@ -1616,7 +1614,7 @@ mod tests {
             })
             .unwrap();
         let original = app.editor.project().clone();
-        app.template_guard_pending = true;
+        app.template.guard_pending = true;
         let missing_parent = std::env::temp_dir()
             .join(Uuid::new_v4().to_string())
             .join("project.pmcab");
@@ -1626,13 +1624,13 @@ mod tests {
             Some(Prompt::Dirty(NextAction::Template))
         ));
         assert_eq!(app.editor.project(), &original);
-        assert!(app.template_setup.is_some());
+        assert!(app.template.setup.is_some());
         let prompt = app.project_files.prompt.take().unwrap();
         app.resolve_project_choice(prompt, Some("cancel"));
-        assert!(!app.template_guard_pending);
+        assert!(!app.template.guard_pending);
 
         let (tx, rx) = mpsc::channel();
-        app.template_guard_pending = true;
+        app.template.guard_pending = true;
         app.project_files.picker = Some(Picker {
             kind: PickerKind::Save(Some(NextAction::Template)),
             project_id: original.id,
@@ -1641,10 +1639,10 @@ mod tests {
         });
         tx.send(None).unwrap();
         app.tick_project_files(&egui::Context::default());
-        assert!(!app.template_guard_pending);
+        assert!(!app.template.guard_pending);
         assert!(app.project_files.picker.is_none());
         assert_eq!(app.editor.project(), &original);
-        assert!(app.template_setup.is_some());
+        assert!(app.template.setup.is_some());
     }
     use std::sync::{
         Arc,
@@ -1754,7 +1752,7 @@ mod tests {
         let original = app.editor.project().id;
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        app.export_preparation_pending = Some((app.export_key(), rx, Arc::clone(&cancel)));
+        app.handoff.preparation_pending = Some((app.export_key(), rx, Arc::clone(&cancel)));
 
         assert!(app.action_availability(Request::new(A::NewProject)).is_ok());
         app.request_project_action(NextAction::New);
@@ -1773,7 +1771,7 @@ mod tests {
         app.resolve_project_choice(prompt, Some("project-discard"));
         assert_ne!(app.editor.project().id, original);
         assert!(cancel.load(Ordering::Relaxed));
-        assert!(app.export_preparation_pending.is_none());
+        assert!(app.handoff.preparation_pending.is_none());
         drop(tx);
     }
 

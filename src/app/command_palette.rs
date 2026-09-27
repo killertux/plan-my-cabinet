@@ -284,7 +284,7 @@ impl DesktopApp {
     pub(crate) fn palette_availability(&self, route: ResultRoute) -> Result<(), Unavailable> {
         match route {
             ResultRoute::Action(request) => {
-                if (self.sheet_repair.active()
+                if (self.cut_plan.repair.active()
                     || self.modals.board_dimension().is_some()
                     || self.modals.placement().is_some()
                     || self.editor.preview().is_some())
@@ -300,7 +300,7 @@ impl DesktopApp {
                     Err(Unavailable::Busy)
                 } else if self.navigation.pending().is_some()
                     || self.other_modal_open()
-                    || self.optimizer.comparison_open()
+                    || self.cut_plan.optimizer.comparison_open()
                 {
                     Err(Unavailable::ModalOpen)
                 } else if !self.destination_exists(destination) {
@@ -314,7 +314,7 @@ impl DesktopApp {
                     Err(Unavailable::Busy)
                 } else if self.navigation.pending().is_some()
                     || self.other_modal_open()
-                    || self.optimizer.comparison_open()
+                    || self.cut_plan.optimizer.comparison_open()
                 {
                     Err(Unavailable::ModalOpen)
                 } else {

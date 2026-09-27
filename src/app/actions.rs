@@ -592,7 +592,7 @@ impl DesktopApp {
                 request,
                 self.modal_open() || self.palette.open,
                 self.editor.preview().is_some(),
-                self.move_tool.dragging(),
+                self.design.move_tool.dragging(),
                 project,
                 &self.selection,
             );
@@ -600,12 +600,12 @@ impl DesktopApp {
         // Palette dispatch is the same command as a visible control; its own
         // modal layer must not make every listed action unavailable.
         let modal = self.other_modal_open()
-            || self.optimizer.comparison_open()
-            || self.sheet_repair.active()
-            || self.door_motion.is_some()
+            || self.cut_plan.optimizer.comparison_open()
+            || self.cut_plan.repair.active()
+            || self.hardware.door_motion.is_some()
             || self.project_files.blocking();
         if id == A::OpenHandoff {
-            return if self.project_files.blocking() || self.optimizer.comparison_open() {
+            return if self.project_files.blocking() || self.cut_plan.optimizer.comparison_open() {
                 Err(Unavailable::Busy)
             } else if self.navigation.pending().is_some()
                 || self.other_modal_open()
@@ -620,7 +620,7 @@ impl DesktopApp {
         if id == A::RepairIssue
             && (self.other_modal_open()
                 || self.project_files.blocking()
-                || self.door_motion.is_some())
+                || self.hardware.door_motion.is_some())
         {
             return Err(Unavailable::ModalOpen);
         }
@@ -631,12 +631,12 @@ impl DesktopApp {
             if (self.other_modal_open()
                 && self.modals.placement().is_none()
                 && self.modals.board_dimension().is_none())
-                || self.optimizer.comparison_open()
+                || self.cut_plan.optimizer.comparison_open()
                 || self.navigation.pending().is_some()
-                || self.door_motion.is_some()
+                || self.hardware.door_motion.is_some()
                 || self.project_files.blocking()
-                || self.export_activity.is_some()
-                || self.optimizer.running()
+                || self.handoff.activity.is_some()
+                || self.cut_plan.optimizer.running()
             {
                 return Err(Unavailable::Busy);
             }
@@ -675,7 +675,7 @@ impl DesktopApp {
             | A::DeferRecovery
             | A::ReplacePdf
             | A::CancelExport
-                if !modal && self.export_activity.is_none() =>
+                if !modal && self.handoff.activity.is_none() =>
             {
                 Err(Unavailable::NoDialog)
             }
@@ -685,7 +685,7 @@ impl DesktopApp {
             A::SetMeasurementFrame if matches!(request.argument, Argument::Frame(Frame::Object(target)) if !project.boards.iter().any(|b| b.id == target) && !project.assemblies.iter().any(|a| a.id == target)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::SetDoorAngle if !matches!(request.target, T::Door(id) if self.door_motion.is_some_and(|(active, _)| active == id)) => {
+            A::SetDoorAngle if !matches!(request.target, T::Door(id) if self.hardware.door_motion.is_some_and(|(active, _)| active == id)) => {
                 Err(Unavailable::InvalidMotion)
             }
             A::Undo if !self.editor.can_undo() => Err(Unavailable::NoUndo),
@@ -767,24 +767,24 @@ impl DesktopApp {
             A::StartMotion if !matches!(request.target, T::Door(id) if project.door_joints.iter().find(|j| j.id == id).is_some_and(|j| plan_my_cabinet::door_joint::opening_limit(project, j).is_ok())) => {
                 Err(Unavailable::InvalidMotion)
             }
-            A::CloseMotion if self.door_motion.is_none() => Err(Unavailable::InvalidMotion),
+            A::CloseMotion if self.hardware.door_motion.is_none() => Err(Unavailable::InvalidMotion),
             A::AcceptRepair
             | A::CancelRepair
             | A::StageRepair
             | A::Unallocate
             | A::ToggleAllocationLock
-                if !self.sheet_repair.active() =>
+                if !self.cut_plan.repair.active() =>
             {
                 Err(Unavailable::NoRepair)
             }
-            A::BeginRepair if self.sheet_repair.active() => Err(Unavailable::NoRepair),
-            A::CancelOptimization if !self.optimizer.running() => Err(Unavailable::NoOptimization),
+            A::BeginRepair if self.cut_plan.repair.active() => Err(Unavailable::NoRepair),
+            A::CancelOptimization if !self.cut_plan.optimizer.running() => Err(Unavailable::NoOptimization),
             A::StartOptimization | A::SetOptimizerObjective
-                if self.optimizer.running() || self.editor.preview().is_some() =>
+                if self.cut_plan.optimizer.running() || self.editor.preview().is_some() =>
             {
                 Err(Unavailable::Busy)
             }
-            A::AcceptOptimization => self.optimizer.acceptance_availability(project),
+            A::AcceptOptimization => self.cut_plan.optimizer.acceptance_availability(project),
             A::ConfirmKerf if project.confirmed_shop_kerf == Some(project.cutting_kerf) => {
                 Err(Unavailable::AlreadyConfirmed)
             }
@@ -796,7 +796,7 @@ impl DesktopApp {
             {
                 Err(Unavailable::ExportNotReady)
             }
-            A::ExportPdf if self.export_activity.is_some() => Err(Unavailable::Busy),
+            A::ExportPdf if self.handoff.activity.is_some() => Err(Unavailable::Busy),
             A::ExportPdf if self.current_reviewed_packet().is_none() => {
                 Err(Unavailable::ExportNotReady)
             }
@@ -866,31 +866,31 @@ impl DesktopApp {
         match (request.id, request.target) {
             (A::NewProject, _) => self.request_project_action(project_ui::NextAction::New),
             (A::OpenWelcome, _) => self.request_project_action(project_ui::NextAction::Welcome),
-            (A::OpenSettings, _) => self.settings_open = true,
+            (A::OpenSettings, _) => self.settings.open = true,
             (A::OpenProject, _) => self.request_project_action(project_ui::NextAction::Open),
             (A::SaveProject, _) => self.request_save(false),
             (A::SaveProjectAs, _) => self.request_save(true),
             (A::Undo, _) => {
                 let result = self.editor.undo();
                 self.report_edit(result);
-                self.material_conflicts = allocation_conflicts(self.editor.project());
+                self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
             }
             (A::Redo, _) => {
                 let result = self.editor.redo();
                 self.report_edit(result);
-                self.material_conflicts = allocation_conflicts(self.editor.project());
+                self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
             }
             (A::StartOptimization, _) => {
-                if !self.optimizer.start(&self.editor, false) {
+                if !self.cut_plan.optimizer.start(&self.editor, false) {
                     return Err(Unavailable::Busy);
                 }
             }
-            (A::CancelOptimization, _) => self.optimizer.cancel(),
+            (A::CancelOptimization, _) => self.cut_plan.optimizer.cancel(),
             (A::SetOptimizerObjective | A::AcceptOptimization, _) => {
                 match self.request_navigation(NavigationRoute::Workspace(Workspace::CutPlan)) {
                     Outcome::Navigated | Outcome::Stayed => {
                         if request.id == A::AcceptOptimization {
-                            self.optimizer.open_comparison();
+                            self.cut_plan.optimizer.open_comparison();
                         } else {
                             self.open_drawer = Some(workspace_shell::Drawer::Controls);
                         }
@@ -911,7 +911,7 @@ impl DesktopApp {
                 viewport::apply_control(
                     request,
                     &mut self.camera,
-                    &mut self.move_tool,
+                    &mut self.design.move_tool,
                     self.editor.project(),
                     &self.selection,
                 );
@@ -988,10 +988,10 @@ impl DesktopApp {
                 pose.translation_mm[0] += 25.0;
                 match self.editor.duplicate_board_with_fit(id, pose) {
                     Ok((_, fit)) => {
-                        self.board_action_error = false;
-                        self.first_fit_notice = Some(fit);
+                        self.design.board_action_error = false;
+                        self.design.first_fit_notice = Some(fit);
                     }
-                    Err(_) => self.board_action_error = true,
+                    Err(_) => self.design.board_action_error = true,
                 }
             }
             (A::EditDimensions, T::Board(id)) => {
@@ -1016,7 +1016,7 @@ impl DesktopApp {
                 if let Argument::Grain(grain) = request.argument
                     && self.editor.set_board_grain_override(id, grain).is_ok()
                 {
-                    self.material_conflicts = allocation_conflicts(self.editor.project());
+                    self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
                 }
             }
             (A::NewStock, T::Material(id)) => {
@@ -1135,10 +1135,10 @@ impl DesktopApp {
             }
             (A::StartMotion, T::Door(id)) => {
                 self.editor.cancel_preview();
-                self.move_tool.cancel();
-                self.door_motion = Some((id, 0.0));
+                self.design.move_tool.cancel();
+                self.hardware.door_motion = Some((id, 0.0));
             }
-            (A::CloseMotion, _) => self.door_motion = None,
+            (A::CloseMotion, _) => self.hardware.door_motion = None,
             (A::SetUiLanguage, _) => {
                 if let Argument::Language(language) = request.argument {
                     self.set_ui_language(language);
@@ -1148,35 +1148,35 @@ impl DesktopApp {
             }
             (A::SetMeasurementScope, _) => {
                 if let Argument::Scope(scope) = request.argument {
-                    self.measurement_scope = scope;
+                    self.design.measurement_scope = scope;
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
             }
             (A::SetMeasurementFrame, _) => {
                 if let Argument::Frame(frame) = request.argument {
-                    self.measurement_frame = frame;
+                    self.design.measurement_frame = frame;
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
             }
             (A::SetExportMode, _) => {
                 if let Argument::ExportMode(mode) = request.argument {
-                    self.export_mode = mode;
+                    self.handoff.mode = mode;
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
             }
             (A::SetExportLanguage, _) => {
                 if let Argument::Language(language) = request.argument {
-                    self.export_language = language;
+                    self.handoff.language = language;
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
             }
             (A::SetExportUnits, _) => {
                 if let Argument::Unit(unit) = request.argument {
-                    self.export_units = unit;
+                    self.handoff.units = unit;
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
@@ -1196,7 +1196,7 @@ impl DesktopApp {
                     if !angle.is_finite() || !(0.0..=limit).contains(&angle) {
                         return Err(Unavailable::InvalidMotion);
                     }
-                    self.door_motion = Some((id, angle));
+                    self.hardware.door_motion = Some((id, angle));
                 } else {
                     return Err(Unavailable::MissingTarget);
                 }
@@ -1205,7 +1205,7 @@ impl DesktopApp {
                 self.selection.choose(Some(id), false);
                 self.selection.reveal(self.editor.project(), id);
                 if request.id == A::RepairIssue {
-                    self.sheet_repair
+                    self.cut_plan.repair
                         .begin(&mut self.editor, &self.selection, locale);
                 }
             }
@@ -1224,14 +1224,14 @@ impl DesktopApp {
             }
             (A::ExportPdf, _) => {
                 let (tx, rx) = mpsc::channel();
-                self.export_events = Some(rx);
-                self.export_activity = Some(ExportActivity::Choosing(
+                self.handoff.events = Some(rx);
+                self.handoff.activity = Some(ExportActivity::Choosing(
                     Box::new(self.editor.project().clone()),
                     ExportSettings {
-                        language: self.export_language,
-                        units: self.export_units,
+                        language: self.handoff.language,
+                        units: self.handoff.units,
                     },
-                    self.export_mode,
+                    self.handoff.mode,
                 ));
                 let picker = rfd::AsyncFileDialog::new()
                     .add_filter("PDF", &["pdf"])
@@ -1300,7 +1300,7 @@ impl DesktopApp {
     }
 
     fn update_catalog_action(&mut self, id: Uuid) {
-        self.catalog_update_notice = Some(match hardware_catalog::update_from_builtin_with_status(
+        self.hardware.catalog_update_notice = Some(match hardware_catalog::update_from_builtin_with_status(
             &mut self.editor,
             id,
         ) {
@@ -1367,9 +1367,9 @@ mod tests {
             (ActionId::ViewMeasure, viewport::ToolMode::Measure),
         ] {
             app.invoke(Request::new(action)).unwrap();
-            assert_eq!(app.move_tool.mode, expected);
-            assert_eq!(app.measurement_scope, Scope::Overall);
-            assert_eq!(app.measurement_frame, Frame::Object(root));
+            assert_eq!(app.design.move_tool.mode, expected);
+            assert_eq!(app.design.measurement_scope, Scope::Overall);
+            assert_eq!(app.design.measurement_frame, Frame::Object(root));
         }
         assert_eq!(app.editor.project(), &before);
         assert_eq!(app.editor.can_undo(), undo);
@@ -1847,7 +1847,7 @@ mod tests {
         );
         assert_eq!(app.session.active, Workspace::Handoff);
         assert!(app.modals.board_dimension().is_none());
-        assert!(app.export_activity.is_none());
+        assert!(app.handoff.activity.is_none());
     }
 
     #[test]
@@ -1901,7 +1901,7 @@ mod tests {
         ] {
             app.invoke(request).unwrap();
         }
-        assert_eq!(app.export_units, Unit::Foot);
+        assert_eq!(app.handoff.units, Unit::Foot);
         assert_eq!(app.localizer.language(), Language::PtBr);
         assert_eq!(app.editor.project(), &original);
         assert!(!app.editor.is_dirty());

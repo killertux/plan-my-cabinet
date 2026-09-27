@@ -997,7 +997,7 @@ impl DesktopApp {
                     {
                         run = Some(Request::new(A::AddCatalog));
                     }
-                    if let Some(notice) = &self.catalog_update_notice {
+                    if let Some(notice) = &self.hardware.catalog_update_notice {
                         ui.label(egui::RichText::new(notice).size(11.5).color(tw::MUTED));
                     }
                 }

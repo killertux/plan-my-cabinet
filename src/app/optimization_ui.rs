@@ -1065,22 +1065,22 @@ mod tests {
             editor: fixture(),
             ..Default::default()
         };
-        click(&ctx, &mut app.optimizer, &mut app.editor, "Search");
-        finish(&ctx, &mut app.optimizer, &mut app.editor);
+        click(&ctx, &mut app.cut_plan.optimizer, &mut app.editor, "Search");
+        finish(&ctx, &mut app.cut_plan.optimizer, &mut app.editor);
         click(
             &ctx,
-            &mut app.optimizer,
+            &mut app.cut_plan.optimizer,
             &mut app.editor,
             "Review current vs best",
         );
-        assert!(app.optimizer.comparison_open());
+        assert!(app.cut_plan.optimizer.comparison_open());
         assert!(app.modal_open());
         let before = app.editor.project().clone();
         for action in [A::NewBoard, A::OpenHandoff, A::NewProject] {
             assert!(app.invoke(Request::new(action)).is_err(), "{action:?}");
         }
         assert_eq!(app.editor.project(), &before);
-        assert!(app.optimizer.comparison_open());
+        assert!(app.cut_plan.optimizer.comparison_open());
     }
 
     #[test]
@@ -1096,29 +1096,29 @@ mod tests {
         app.session = WorkspaceSession::new(app.editor.project());
         let before = app.editor.project().clone();
         app.invoke(Request::new(A::StartOptimization)).unwrap();
-        assert!(app.optimizer.running());
+        assert!(app.cut_plan.optimizer.running());
         assert_eq!(app.editor.project(), &before);
         app.invoke(Request::new(A::CancelOptimization)).unwrap();
-        assert!(!app.optimizer.running());
+        assert!(!app.cut_plan.optimizer.running());
         assert_eq!(app.editor.project(), &before);
 
         app.invoke(Request::new(A::StartOptimization)).unwrap();
         let ctx = egui::Context::default();
         for _ in 0..1000 {
-            app.optimizer.poll(&ctx);
-            if !app.optimizer.running() {
+            app.cut_plan.optimizer.poll(&ctx);
+            if !app.cut_plan.optimizer.running() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(
-            app.optimizer
+            app.cut_plan.optimizer
                 .acceptance_availability(app.editor.project())
                 .is_ok()
         );
         app.invoke(Request::new(A::AcceptOptimization)).unwrap();
         assert_eq!(app.session.active, Workspace::CutPlan);
-        assert!(app.optimizer.comparison_open());
+        assert!(app.cut_plan.optimizer.comparison_open());
         assert_eq!(app.editor.project(), &before);
         assert!(!app.editor.can_undo());
     }
@@ -1135,11 +1135,11 @@ mod tests {
         };
         app.session = WorkspaceSession::new(app.editor.project());
         let project = app.editor.project().clone();
-        let objective = app.optimizer.objective;
+        let objective = app.cut_plan.optimizer.objective;
         app.invoke(Request::new(A::SetOptimizerObjective)).unwrap();
         assert_eq!(app.session.active, Workspace::CutPlan);
         assert_eq!(app.open_drawer, Some(workspace_shell::Drawer::Controls));
-        assert_eq!(app.optimizer.objective, objective);
+        assert_eq!(app.cut_plan.optimizer.objective, objective);
         assert_eq!(app.editor.project(), &project);
     }
 
