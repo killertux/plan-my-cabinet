@@ -123,16 +123,18 @@ fn grouping_keeps_material_dimensions_grain_and_every_allocation_identity() {
         let all = text(&document);
         assert_eq!(all.matches("Prateleira São João × 2").count(), 1, "{all}");
         assert_eq!(all.matches("Prateleira São João × 1").count(), 3, "{all}");
+        // Every board keeps a unique short part number; machine IDs never print.
+        for n in 1..=5 {
+            assert!(all.contains(&format!("#{n} ")), "missing part #{n}");
+        }
         for n in 0..5 {
-            assert!(all.contains(&id(100 + n).to_string()), "missing board {n}");
+            assert!(!all.contains(&id(100 + n).to_string()), "board UUID {n} printed");
         }
         for n in 0..2 {
-            assert!(
-                all.contains(&id(1000 + n).to_string()),
-                "missing allocation {n}"
-            );
+            assert!(!all.contains(&id(1000 + n).to_string()), "allocation UUID {n} printed");
         }
-        assert!(all.contains(&format!("S1 [{}]", id(4))));
+        assert!(all.contains("S1"));
+        assert!(!all.contains(&id(4).to_string()));
         assert!(all.contains("ft"));
         assert!(all.contains(if language == Language::PtBr {
             "na largura"
@@ -156,13 +158,16 @@ fn all_off_keeps_scope_hidden_board_price_fee_hardware_and_draft_safety() {
         .unwrap();
         let document = build_workshop_document(&prepared, sections(false)).unwrap();
         let all = text(&document);
+        // Only the project ID is printed (once, for traceability).
         assert!(all.contains(&id(1).to_string()));
-        assert!(all.contains(&id(4).to_string()));
+        assert!(all.contains("S1"), "stock scope lost");
+        assert!(!all.contains(&id(4).to_string()));
         assert!(
-            all.contains(&id(107).to_string()),
+            all.contains("#8 ") && all.contains("Peça número 007"),
             "hidden/unallocated board lost"
         );
-        assert!(all.contains(&id(5).to_string()), "hardware issue lost");
+        assert!(all.contains("Dobradiça não verificada"), "hardware issue lost");
+        assert!(!all.contains(&id(5).to_string()));
         for phrase in if language == Language::PtBr {
             [
                 "RASCUNHO / NÃO USAR PARA CORTE",
@@ -230,7 +235,8 @@ fn dense_bilingual_document_preserves_every_label_with_bounded_geometry() {
             "cover title moved past notices"
         );
         for n in 0..76 {
-            assert!(all.contains(&id(100 + n).to_string()), "missing ID {n}");
+            assert!(all.contains(&format!("#{} ", n + 1)), "missing part number {n}");
+            assert!(!all.contains(&id(100 + n).to_string()), "UUID {n} printed");
             if n >= 5 {
                 assert!(
                     all.contains(&format!("Peça número {n:03}")),
