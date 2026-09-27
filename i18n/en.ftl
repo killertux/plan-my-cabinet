@@ -1045,8 +1045,8 @@ material-preset-none = Custom material
 material-color = Display colour
 material-color-hint = Only tints the 3D view and sheet diagrams.
 shell-next-step = Next: { $step }
-shell-next-step-hint = Design → Stock → Cut plan → Hardware → Handoff
-palette-keys = ↑↓ move · ⏎ run · Esc close
+shell-next-step-hint = Design › Stock › Cut plan › Hardware › Handoff
+palette-keys = Up/Down to move · Enter to run · Esc to close
 
 # Stock workspace rework
 stock-subtitle = Sheets and offcuts you own or plan to buy. First-fit tries them top to bottom.

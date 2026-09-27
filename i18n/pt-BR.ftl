@@ -1048,8 +1048,8 @@ material-preset-none = Material personalizado
 material-color = Cor de exibição
 material-color-hint = Só muda a cor na vista 3D e nos diagramas.
 shell-next-step = Próximo: { $step }
-shell-next-step-hint = Projeto 3D → Estoque → Plano de corte → Ferragens → Entrega
-palette-keys = ↑↓ mover · ⏎ executar · Esc fechar
+shell-next-step-hint = Projeto 3D › Estoque › Plano de corte › Ferragens › Entrega
+palette-keys = Setas para mover · Enter para executar · Esc para fechar
 
 # Stock workspace rework
 stock-subtitle = Chapas e sobras que você tem ou vai comprar. O first-fit tenta de cima para baixo.
