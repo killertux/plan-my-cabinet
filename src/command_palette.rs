@@ -140,6 +140,22 @@ pub(crate) fn results(project: &Project, localizer: &Localizer, query: &str) -> 
     for stock in &project.stock {
         let id = stock.id.to_string();
         let alias = project.stock_alias(stock.id).unwrap_or("");
+        // Piece commands appear when the piece or the command itself is searched
+        // ("S1", "Spare MDF", "duplicate", "delete sheet").
+        for action in [A::DuplicateStock, A::DeleteStock] {
+            let label = action.label(localizer);
+            if matches_query(&query, &[&stock.name, alias, &id])
+                || (query.len() >= 3
+                    && matches_query(&query, &[&label, action.keywords(localizer.language())]))
+            {
+                rows.push(ResultRow {
+                    group: Group::Actions,
+                    label: format!("{label}: {alias} · {}", stock.name),
+                    detail: format!("{}×{}", mm(stock.length), mm(stock.width)),
+                    route: ResultRoute::Action(Request::with(action, Target::Stock(stock.id))),
+                });
+            }
+        }
         if matches_query(&query, &[&stock.name, alias, &id]) {
             rows.push(ResultRow {
                 group: Group::Stock,
@@ -675,6 +691,55 @@ mod tests {
         );
         app.palette.query = "no-matching-command-487".into();
         assert!(app.palette_results().is_empty());
+    }
+
+    #[test]
+    fn stock_pieces_offer_duplicate_and_delete_with_in_use_guard() {
+        let mut app = fixture();
+        let project = app.editor.project();
+        let used = project.allocations[0].stock_id;
+        let alias = project.stock_alias(used).unwrap().to_owned();
+        let unused = project
+            .stock
+            .iter()
+            .find(|s| !project.allocations.iter().any(|a| a.stock_id == s.id))
+            .unwrap()
+            .id;
+        let rows = results(project, &app.localizer, &alias);
+        for action in [A::DuplicateStock, A::DeleteStock] {
+            assert!(rows.iter().any(|r| r.route
+                == ResultRoute::Action(Request::with(action, Target::Stock(used)))));
+        }
+        let by_command = results(project, &app.localizer, "delete");
+        assert!(by_command.iter().any(|r| r.route
+            == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(unused)))));
+        // Deleting a piece that still holds parts is refused with a reason.
+        let before = app.editor.project().clone();
+        let delete_used = rows
+            .iter()
+            .find(|r| r.route == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(used))))
+            .unwrap()
+            .clone();
+        assert!(app.invoke_palette(&delete_used).is_err());
+        assert_eq!(app.editor.project(), &before);
+        let count = before.stock.len();
+        let duplicate = ResultRow {
+            group: Group::Actions,
+            label: String::new(),
+            detail: String::new(),
+            route: ResultRoute::Action(Request::with(A::DuplicateStock, Target::Stock(used))),
+        };
+        app.invoke_palette(&duplicate).unwrap();
+        assert_eq!(app.editor.project().stock.len(), count + 1);
+        let delete = ResultRow {
+            route: ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(unused))),
+            ..duplicate
+        };
+        app.invoke_palette(&delete).unwrap();
+        assert_eq!(app.editor.project().stock.len(), count);
+        assert!(!app.editor.project().stock.iter().any(|s| s.id == unused));
+        app.editor.undo().unwrap();
+        assert!(app.editor.project().stock.iter().any(|s| s.id == unused));
     }
 
     #[test]

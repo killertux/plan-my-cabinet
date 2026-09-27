@@ -36,6 +36,8 @@ pub(crate) enum ActionId {
     SetGrain,
     NewStock,
     EditStock,
+    DuplicateStock,
+    DeleteStock,
     StockMove,
     EditCutFee,
     EditCurrency,
@@ -178,6 +180,8 @@ registry! {
     SetGrain => ("board-grain", Design, "grain direction", "sentido veio"),
     NewStock => ("stock-new", Stock, "new stock sheet", "nova chapa estoque"),
     EditStock => ("stock-edit", Stock, "edit stock", "editar estoque"),
+    DuplicateStock => ("stock-duplicate", Stock, "duplicate copy sheet offcut stock", "duplicar copiar chapa sobra estoque"),
+    DeleteStock => ("stock-delete", Stock, "delete remove sheet offcut stock", "excluir remover chapa sobra estoque"),
     StockMove => ("stock-priority-view", Stock, "move stock to visible or global rank", "mover chapa para posição visível ou global"),
     EditCutFee => ("cut-fee-edit", Stock, "cutting fee", "custo corte"),
     EditCurrency => ("currency-change-heading", Stock, "change project currency relabel replacement", "alterar moeda do projeto substituir preços"),
@@ -500,6 +504,7 @@ pub(crate) enum Unavailable {
     AlreadyConfirmed,
     ExportNotReady,
     NoDialog,
+    StockInUse,
 }
 
 impl Unavailable {
@@ -519,6 +524,12 @@ impl Unavailable {
             (Language::PtBr, Self::NoUndo) => "Nada para desfazer",
             (Language::En, Self::NoRedo) => "Nothing to redo",
             (Language::PtBr, Self::NoRedo) => "Nada para refazer",
+            (Language::En, Self::StockInUse) => {
+                "Parts are placed on this piece; move or unallocate them first"
+            }
+            (Language::PtBr, Self::StockInUse) => {
+                "Há peças nesta chapa; mova ou desaloque-as primeiro"
+            }
             (Language::En, Self::NoSelection) => "Select an object first",
             (Language::PtBr, Self::NoSelection) => "Selecione um objeto primeiro",
             (Language::En, Self::MissingTarget) => "The target no longer exists",
@@ -732,8 +743,11 @@ impl DesktopApp {
             {
                 Err(Unavailable::MissingTarget)
             }
-            A::EditStock | A::StockMove if !matches!(request.target, T::Stock(id) if project.stock.iter().any(|s| s.id == id)) => {
+            A::EditStock | A::StockMove | A::DuplicateStock | A::DeleteStock if !matches!(request.target, T::Stock(id) if project.stock.iter().any(|s| s.id == id)) => {
                 Err(Unavailable::MissingTarget)
+            }
+            A::DeleteStock if matches!(request.target, T::Stock(id) if project.allocations.iter().any(|a| a.stock_id == id)) => {
+                Err(Unavailable::StockInUse)
             }
             A::StockMove if !stock_move_target_valid(project, request) => {
                 Err(Unavailable::MissingTarget)
@@ -1007,6 +1021,16 @@ impl DesktopApp {
             }
             (A::NewStock | A::AddIssueStock, _) => {
                 self.stock_dialog = Some(stock_ui::StockDialog::new(self.editor.project()))
+            }
+            (A::DuplicateStock, T::Stock(id)) => {
+                if let Ok(new) = self.editor.duplicate_stock(id) {
+                    self.session.stock_piece = Some(new);
+                }
+            }
+            (A::DeleteStock, T::Stock(id)) => {
+                if self.editor.delete_stock(id).is_ok() && self.session.stock_piece == Some(id) {
+                    self.session.stock_piece = None;
+                }
             }
             (A::EditStock, T::Stock(id)) => {
                 let stock = self
@@ -1506,6 +1530,8 @@ mod tests {
             (A::SetGrain, R::Design),
             (A::NewStock, R::Stock),
             (A::EditStock, R::Stock),
+            (A::DuplicateStock, R::Stock),
+            (A::DeleteStock, R::Stock),
             (A::StockMove, R::Stock),
             (A::EditCutFee, R::Stock),
             (A::EditCurrency, R::Stock),

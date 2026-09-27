@@ -1607,14 +1607,10 @@ impl DesktopApp {
                 let _ = self.invoke(request);
             }
             StockUiAction::Duplicate(id) => {
-                if let Ok(new) = self.editor.duplicate_stock(id) {
-                    self.session.stock_piece = Some(new);
-                }
+                let _ = self.invoke(Request::with(A::DuplicateStock, Target::Stock(id)));
             }
             StockUiAction::Delete(id) => {
-                if self.editor.delete_stock(id).is_ok() && self.session.stock_piece == Some(id) {
-                    self.session.stock_piece = None;
-                }
+                let _ = self.invoke(Request::with(A::DeleteStock, Target::Stock(id)));
             }
             StockUiAction::Grain(id, grain) => {
                 self.commit_stock_field(id, |input| input.grain = grain)
