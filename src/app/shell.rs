@@ -21,7 +21,7 @@ impl DesktopApp {
             self.shell_estimate = None;
             self.design.stock_snapshot = None;
         }
-        let key = sheet_ui::diagnostics_key(project, false);
+        let key = sheet_ui::diagnostics_key(project, None);
         if self
             .cut_plan
             .allocation_diagnostics

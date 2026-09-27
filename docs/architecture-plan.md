@@ -85,7 +85,34 @@ Goal: replace the ~20 `Option<XDialog>` fields, the matching `ModalChrome` field
    their own state; they are not form dialogs.
 5. **Tests.** Keep all focus, restore and guard tests unchanged. They are the safety net.
 
-## Phase 3 — Structure (large, step by step)
+## Phase 3 — Structure (large, step by step) — done
+
+What was done, and where it differs from the plan:
+- **3.1** Desktop-only modules live in `src/app/`. `icons`, `theme` and `theme_widgets`
+  now compile once, in the library.
+  - The library keeps `settings_ui`, `welcome_ui` and the PDF preview widget, which its
+    integration tests exercise.
+  - The library still needs egui: `document_layout` shapes PDF text with egui's font
+    engine, so an egui-free core is not a realistic goal.
+- **3.2** Library modules are grouped: `model/`, `editing/`, `optimize/`, `read_models/`,
+  `output/`, `storage/`, `catalog/`, `ui/`. Flat re-exports keep every existing path;
+  `domain/` was renamed `model/` because it contains `domain.rs`.
+- **3.3** `DesktopApp` went from 88 fields to 32, grouped in `src/app/state.rs`
+  (`handoff`, `settings`, `template`, `chromes`, `design`, `cut_plan`, `hardware`).
+  - Methods stay on `DesktopApp`. The full controller inversion (`show(&mut self, ui,
+    &mut AppState)`) is still open. It needs `invoke` and the read models to move onto
+    `AppState` first.
+- **3.4** `main.rs` went from 10.7k lines to about 800: `board_dialogs`, `export_flow`,
+  `shell`, `settings_host`, `navigation` and `desktop_tests`. Test modules over 150 lines
+  moved to `<module>/tests.rs`. `sheet_ui` and `stock_ui` (~3.8k lines each) can still
+  be split by panel later.
+- **3.5** Changes:
+  - Undo history is capped at 200 snapshots (`MAX_UNDO`).
+  - `ProjectEditor::preview_generation()` replaces the JSON-serialized cache key.
+  - `release_cabinet`'s hang guard is 60 s.
+  - Not done: a `test_ctx()` helper. The weight-aware font helpers already stop bare
+    contexts from panicking.
+
 
 Goal: clear boundaries and smaller files. The build and tests stay green after every step.
 

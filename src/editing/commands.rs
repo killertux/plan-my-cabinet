@@ -22,8 +22,14 @@ pub struct ProjectEditor {
     undo: Vec<Project>,
     redo: Vec<Project>,
     preview: Option<Project>,
+    /// Advances whenever preview content changes, so caches can key on it
+    /// instead of comparing or serializing the preview.
+    preview_generation: u64,
     saved: Option<Project>,
 }
+
+/// Oldest snapshots are dropped past this depth; each one is a full project copy.
+pub const MAX_UNDO: usize = 200;
 
 impl ProjectEditor {
     /// Untitled recovery has no saved-file baseline. Preserve the recovered
@@ -43,6 +49,7 @@ impl ProjectEditor {
             undo: Vec::new(),
             redo: Vec::new(),
             preview: None,
+            preview_generation: 0,
         })
     }
 
@@ -62,6 +69,7 @@ impl ProjectEditor {
         }
         if let Some(preview) = &mut self.preview {
             preview.display_unit = unit;
+            self.preview_generation = self.preview_generation.wrapping_add(1);
         }
     }
 
@@ -242,7 +250,7 @@ impl ProjectEditor {
             .revision
             .checked_add(1)
             .ok_or(EditError::RevisionExhausted)?;
-        self.undo.push(self.project.clone());
+        self.push_undo();
         self.project = candidate;
         self.redo.clear();
         self.preview = None;
@@ -252,6 +260,12 @@ impl ProjectEditor {
     /// Start or restart a transient drag/edit from the committed state.
     pub fn begin_preview(&mut self) {
         self.preview = Some(self.project.clone());
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+    }
+
+    /// Identifies the current preview content; `None` when there is no preview.
+    pub fn preview_generation(&self) -> Option<u64> {
+        self.preview.as_ref().map(|_| self.preview_generation)
     }
 
     /// Failed preview steps preserve the preceding preview. Intermediate preview
@@ -262,8 +276,18 @@ impl ProjectEditor {
     ) -> Result<(), EditError<E>> {
         let mut candidate = self.preview.clone().ok_or(EditError::NoPreview)?;
         edit(&mut candidate).map_err(EditError::Command)?;
+        if self.preview.as_ref() != Some(&candidate) {
+            self.preview_generation = self.preview_generation.wrapping_add(1);
+        }
         self.preview = Some(candidate);
         Ok(())
+    }
+
+    fn push_undo(&mut self) {
+        self.undo.push(self.project.clone());
+        if self.undo.len() > MAX_UNDO {
+            self.undo.remove(0);
+        }
     }
 
     pub fn cancel_preview(&mut self) {
@@ -325,7 +349,7 @@ impl ProjectEditor {
             .next_stock_o_alias
             .max(self.project.next_stock_o_alias);
         self.redo.pop();
-        self.undo.push(self.project.clone());
+        self.push_undo();
         self.project = after;
         self.preview = None;
         Ok(true)
@@ -335,6 +359,46 @@ impl ProjectEditor {
 #[cfg(test)]
 mod display_unit_tests {
     use super::*;
+
+    #[test]
+    fn history_keeps_the_newest_snapshots_up_to_the_cap() {
+        let mut editor =
+            ProjectEditor::new(Project::new("Cap", crate::money::Currency::Brl)).unwrap();
+        for i in 0..MAX_UNDO + 5 {
+            editor
+                .transact(|p| -> Result<(), ()> {
+                    p.name = format!("step {i}");
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let mut undone = 0;
+        while editor.undo().unwrap() {
+            undone += 1;
+        }
+        assert_eq!(undone, MAX_UNDO);
+        assert_eq!(editor.project().name, "step 4");
+    }
+
+    #[test]
+    fn preview_generation_changes_only_with_preview_content() {
+        let mut editor =
+            ProjectEditor::new(Project::new("Gen", crate::money::Currency::Brl)).unwrap();
+        assert_eq!(editor.preview_generation(), None);
+        editor.begin_preview();
+        let first = editor.preview_generation().unwrap();
+        editor.update_preview(|_| Ok::<_, ()>(())).unwrap();
+        assert_eq!(editor.preview_generation(), Some(first), "no-op keeps the key");
+        editor
+            .update_preview(|p| {
+                p.name = "moved".into();
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_ne!(editor.preview_generation(), Some(first));
+        editor.cancel_preview();
+        assert_eq!(editor.preview_generation(), None);
+    }
 
     #[test]
     fn display_unit_switch_does_not_advance_revision_or_history_and_survives_unrelated_undo() {

@@ -54,26 +54,13 @@ fn kerf_band() -> Color32 {
     tw::KERF.gamma_multiply(0.85)
 }
 
-// Previews can change without advancing the document revision. Comparing their
-// manufacturing inputs is cheap relative to reconstructing ten cut witnesses.
-pub(crate) type DiagnosticsKey = (Uuid, u64, Option<Vec<u8>>);
+// Previews change without advancing the document revision; the editor's
+// preview generation tells them apart without comparing their contents.
+pub(crate) type DiagnosticsKey = (Uuid, u64, Option<u64>);
 type AffectedCache = (DiagnosticsKey, Vec<Uuid>, Vec<(Uuid, &'static str)>);
 
-pub(crate) fn diagnostics_key(project: &Project, preview: bool) -> DiagnosticsKey {
-    (
-        project.id,
-        project.revision,
-        preview.then(|| {
-            serde_json::to_vec(&(
-                &project.materials,
-                &project.boards,
-                &project.stock,
-                &project.allocations,
-                project.cutting_kerf,
-            ))
-            .expect("project diagnostics inputs serialize")
-        }),
-    )
+pub(crate) fn diagnostics_key(project: &Project, preview: Option<u64>) -> DiagnosticsKey {
+    (project.id, project.revision, preview)
 }
 
 #[derive(Default)]
@@ -276,7 +263,7 @@ impl RepairUi {
     }
 
     /// Rebuilds the read model and diagnostics only when manufacturing inputs change.
-    fn refresh(&mut self, project: &Project, preview: bool) {
+    fn refresh(&mut self, project: &Project, preview: Option<u64>) {
         let key = diagnostics_key(project, preview);
         if self
             .stock_model_cache
@@ -284,7 +271,7 @@ impl RepairUi {
             .is_none_or(|(cached, _)| *cached != key)
         {
             self.hovered_cut = None;
-            self.stock_model_cache = Some((key.clone(), StockReadModel::build(project).ok()));
+            self.stock_model_cache = Some((key, StockReadModel::build(project).ok()));
         }
         if self
             .board_diagnostics_cache
@@ -2342,7 +2329,7 @@ pub fn show_sheet_list(
     focus: SheetFocus,
 ) -> Option<Request> {
     let project = editor.preview().unwrap_or(editor.project());
-    repair.refresh(project, editor.preview().is_some());
+    repair.refresh(project, editor.preview_generation());
     let ordered = project.ordered_stock();
     if focus.scroll_to_target
         && let Some(id) = focus.sheet
@@ -2545,7 +2532,7 @@ pub fn show_focused_inspector_with_reserve(
     reserve: Option<f32>,
 ) {
     let project = editor.preview().unwrap_or(editor.project());
-    repair.refresh(project, editor.preview().is_some());
+    repair.refresh(project, editor.preview_generation());
     let stock = repair
         .focused_sheet
         .and_then(|id| project.stock.iter().find(|s| s.id == id));
@@ -2978,7 +2965,7 @@ fn show_repair_strip(
     project: &Project,
     repair: &mut RepairUi,
     modal: bool,
-    preview: bool,
+    preview: Option<u64>,
     localizer: &Localizer,
 ) -> Option<RepairAction> {
     let mut action = None;
@@ -3210,7 +3197,7 @@ fn show_affected_statuses(
     ui: &mut egui::Ui,
     project: &Project,
     repair: &mut RepairUi,
-    preview: bool,
+    preview: Option<u64>,
     localizer: &Localizer,
 ) {
     let Some(affected) = &repair.affected else {
@@ -3306,7 +3293,7 @@ pub fn show_with_layout(
     }
     let project = editor.preview().unwrap_or(editor.project()).clone();
     let project = &project;
-    let preview = editor.preview().is_some();
+    let preview = editor.preview_generation();
     let loc = locale(localizer);
     let mut action = None;
     let mut selection_request = None;

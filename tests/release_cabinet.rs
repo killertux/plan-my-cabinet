@@ -262,7 +262,10 @@ fn rectangular_cabinet_release_walkthrough() {
         },
         Duration::from_secs(5),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // The worker's own 5 s budget bounds the search; this wait only guards
+    // against a hang. Speed is covered by tests/optimization_performance.rs,
+    // and a loaded machine (parallel debug test binaries) must not fail here.
+    let deadline = Instant::now() + Duration::from_secs(60);
     let result = loop {
         assert!(
             Instant::now() < deadline,

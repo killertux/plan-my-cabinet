@@ -1523,7 +1523,7 @@ fn host_inspector_hover_links_next_frame_without_shrinking_canvas_or_rebuilding_
         inspector_headings[0] >= width,
         "inspector renders only in the host pane"
     );
-    let key = repair.stock_model_cache.as_ref().unwrap().0.clone();
+    let key = repair.stock_model_cache.as_ref().unwrap().0;
     let cached_model = repair
         .stock_model_cache
         .as_ref()
