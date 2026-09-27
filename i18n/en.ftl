@@ -1044,3 +1044,60 @@ material-preset = Start from a standard material
 material-preset-none = Custom material
 material-color = Display colour
 material-color-hint = Only tints the 3D view and sheet diagrams.
+
+# Cut plan rework
+sheet-title = Sheet { $alias }
+sheet-owned-chip = owned
+sheet-card-parts = { $count ->
+    [one] 1 part
+   *[other] { $count } parts
+}
+sheet-card-unused = unused
+sheet-card-conflict = cut conflict
+sheet-card-unknown = not verified
+sheet-issue-no-stock = No { $material } { $thickness } stock fits this part. Add a sheet or place it manually.
+sheet-issue-unplaced = Not on a sheet yet. Repair to place it on existing stock.
+sheet-add-named = Add { $material } sheet
+sheet-reveal = Reveal
+sheet-more-actions = More actions
+sheet-edit-stock = Edit sheet or offcut…
+sheet-footer-add = Sheet or offcut
+sheet-grain-x = grain along X
+sheet-grain-y = grain along Y
+sheet-grain-none = no grain
+sheet-grain-unknown = grain unknown
+sheet-no-trims = no trims
+sheet-trims-short = trims { $values }
+sheet-reusable-offcuts = Reusable offcuts
+sheet-kerf-loss-short = Kerf loss
+sheet-trim-loss-short = Trim loss
+sheet-waste-short = Other waste
+sheet-sequence-heading = Cut sequence
+sheet-verified-full-span = Verified full-span
+sheet-op-full-sheet = full sheet
+sheet-op-rip = Rip { $piece } at Y { $at }
+sheet-op-crosscut = Cross-cut { $piece } at X { $at }
+sheet-op-trim = Trim { $piece } at { $axis } { $at }
+sheet-op-far-edge = from far edge
+sheet-offcut-short = offcut
+sheet-mode-view = View
+sheet-mode-view-hint = Accept or cancel the repair to return to view mode.
+sheet-mode-repair = Repair
+sheet-fit-short = Fit
+sheet-overlay-cuts-hint = Show cut bands and numbered markers
+sheet-overlay-offcuts-hint = Show verified reusable offcuts
+sheet-overlay-grain-hint = Show the grain direction on every part
+sheet-overlay-ids-hint = Show the ID on every part
+sheet-legend-part = Part
+sheet-legend-offcut = Reusable offcut
+sheet-legend-kerf = Kerf { $kerf }
+sheet-legend-conflict = Conflict
+sheet-repair-pick = Select a part on the sheet to move, turn or transfer it.
+optimize-all-sheets = Optimize all sheets
+optimize-search = Search
+optimize-searching = searching… { $count } tried
+optimize-status-best = current = best found
+optimize-status-better = better plan found
+optimize-status-stale = stale — search again
+optimize-status-none = no complete plan
+optimize-disclaimer = Respects grain, kerf, trims and locked placements. Best found within budget, not a guaranteed optimum.
