@@ -563,10 +563,11 @@ fn native_preview_uses_the_frozen_page_set_and_clamps_selection_on_refresh() {
     let ctx = egui::Context::default();
     test_fonts(&ctx);
     let labels = DocumentPreviewLabels {
-        previous: "Previous",
-        next: "Next",
+        title: "Preview",
+        pages: "pages",
         page: "Page",
-        zoom: "Zoom",
+        zoom_in: "Zoom in",
+        zoom_out: "Zoom out",
         fit: "Fit page",
     };
     let mut state = DocumentPreviewState::default();
