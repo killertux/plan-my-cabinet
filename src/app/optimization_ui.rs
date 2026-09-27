@@ -1,5 +1,5 @@
 //! Nonblocking optimizer controls. This view never writes to an editor except on Accept.
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::actions::{self, ActionId as A, Request, Unavailable};
 use crate::icons::Icon;
@@ -15,6 +15,12 @@ use plan_my_cabinet::optimization_worker::{
     ApplyError, CompletedSearch, OptimizationWorker, WorkerError, WorkerMessage,
 };
 
+/// Quiet time after the last edit before a search starts on its own.
+const AUTO_DELAY: Duration = Duration::from_millis(600);
+
+/// The project revision and objective a search was (or is waiting to be) run for.
+type SearchKey = (uuid::Uuid, u64, Objective);
+
 const BUDGET: SearchBudget = SearchBudget {
     placements: 10_000,
     witness_states: 20_000,
@@ -29,6 +35,10 @@ pub struct OptimizeUi {
     placements: usize,
     notice: Option<&'static str>,
     comparison: Option<ModalChrome>,
+    /// Last revision searched automatically or by hand; never searched twice.
+    searched: Option<SearchKey>,
+    /// A revision waiting out `AUTO_DELAY` before its automatic search.
+    waiting: Option<(SearchKey, Instant)>,
 }
 
 impl Default for OptimizeUi {
@@ -41,6 +51,8 @@ impl Default for OptimizeUi {
             placements: 0,
             notice: None,
             comparison: None,
+            searched: None,
+            waiting: None,
         }
     }
 }
@@ -75,6 +87,8 @@ impl OptimizeUi {
         self.notice = None;
         self.placements = 0;
         self.started_revision = editor.project().revision;
+        self.searched = Some(search_key(editor.project(), self.objective));
+        self.waiting = None;
         self.worker = Some(OptimizationWorker::start(
             editor,
             self.objective,
@@ -82,6 +96,45 @@ impl OptimizeUi {
             Duration::from_secs(5),
         ));
         true
+    }
+
+    /// Keeps the cut plan fresh while it is on screen: once the project has
+    /// been quiet for `AUTO_DELAY` on a revision nobody searched, start the
+    /// search. The result still waits for an explicit review and Accept.
+    pub(crate) fn auto_run(
+        &mut self,
+        ctx: &egui::Context,
+        editor: &ProjectEditor,
+        visible: bool,
+        blocked: bool,
+    ) {
+        let project = editor.project();
+        let key = search_key(project, self.objective);
+        let ready = visible
+            && !blocked
+            && self.worker.is_none()
+            && editor.preview().is_none()
+            && !project.boards.is_empty()
+            && !project.stock.is_empty()
+            && self.searched != Some(key)
+            && !self.result.as_ref().is_some_and(|result| result.is_current(project));
+        if !ready {
+            self.waiting = None;
+            return;
+        }
+        let now = Instant::now();
+        let since = match self.waiting {
+            Some((waiting, since)) if waiting == key => since,
+            _ => {
+                self.waiting = Some((key, now));
+                now
+            }
+        };
+        if now.duration_since(since) >= AUTO_DELAY {
+            self.start(editor, false);
+        } else {
+            ctx.request_repaint_after(AUTO_DELAY - now.duration_since(since));
+        }
     }
 
     pub(crate) fn cancel(&mut self) {
@@ -139,6 +192,8 @@ impl OptimizeUi {
         }
         let applied = OptimizationWorker::apply(editor, result, 0)?;
         self.result = None;
+        // The accepted plan is the search result; do not search it again.
+        self.searched = Some(search_key(editor.project(), self.objective));
         self.notice = Some(if applied {
             "optimize-applied"
         } else {
@@ -745,6 +800,10 @@ impl OptimizeUi {
             chrome.close(ctx);
         }
     }
+}
+
+fn search_key(project: &Project, objective: Objective) -> SearchKey {
+    (project.id, project.revision, objective)
 }
 
 fn objective_key(objective: Objective) -> &'static str {

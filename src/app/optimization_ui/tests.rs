@@ -615,3 +615,38 @@ fn all_objectives_no_result_and_locked_unchanged_layout() {
         Err(ApplyError::UnknownCandidate)
     ));
 }
+
+#[test]
+fn visible_cut_plan_searches_once_per_revision_after_a_quiet_moment() {
+    let ctx = egui::Context::default();
+    let mut editor = fixture();
+    let mut state = OptimizeUi::default();
+    let mut settle = |state: &mut OptimizeUi, editor: &ProjectEditor, visible, blocked| {
+        state.auto_run(&ctx, editor, visible, blocked);
+        if let Some((key, _)) = state.waiting {
+            state.waiting = Some((key, Instant::now() - AUTO_DELAY));
+        }
+        state.auto_run(&ctx, editor, visible, blocked);
+    };
+    settle(&mut state, &editor, false, false);
+    assert!(!state.running(), "hidden cut plan does not search");
+    settle(&mut state, &editor, true, true);
+    assert!(!state.running(), "an open dialog blocks the search");
+    state.auto_run(&ctx, &editor, true, false);
+    assert!(!state.running(), "the first sighting only starts the quiet timer");
+    settle(&mut state, &editor, true, false);
+    assert!(state.running());
+    state.cancel();
+    settle(&mut state, &editor, true, false);
+    assert!(!state.running(), "a cancelled revision is not searched again");
+    editor
+        .transact(|p| -> Result<(), ()> {
+            p.name = "edited".into();
+            Ok(())
+        })
+        .unwrap();
+    settle(&mut state, &editor, true, false);
+    assert!(state.running(), "a new revision searches again");
+    state.cancel();
+    assert_eq!(editor.project().name, "edited", "searching never edits the project");
+}

@@ -1127,6 +1127,17 @@ impl DesktopApp {
         // Worker completion belongs to the app session, not the Cut plan pane.
         // Its candidate is still only applied after explicit review there.
         self.cut_plan.optimizer.poll(ui.ctx());
+        // Captures and app-level tests stay deterministic; the unit tests in
+        // optimization_ui drive auto_run directly.
+        if self.capture.is_none() && !cfg!(test) {
+            let blocked = self.modal_open() || self.project_files.blocking();
+            self.cut_plan.optimizer.auto_run(
+                ui.ctx(),
+                &self.editor,
+                self.session.active == Workspace::CutPlan,
+                blocked,
+            );
+        }
         self.sync_scene_inspector();
         if let Some(action) = actions::project_shortcut(ui.ctx(), self.modal_open()) {
             self.invoke_or_report(Request::new(action));
