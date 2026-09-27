@@ -5,6 +5,7 @@ use plan_my_cabinet::cost_estimate::ProjectEstimate;
 use plan_my_cabinet::domain::Project;
 use plan_my_cabinet::i18n::{Language, Localizer};
 
+#[cfg(test)]
 use crate::actions::ActionId as A;
 use crate::icons::{self, Icon};
 use crate::theme_widgets as colors;
@@ -21,6 +22,7 @@ pub(crate) const ENTRIES: [(Workspace, &str, Icon); 5] = [
 pub(crate) const RAIL_WIDTH: f32 = 60.0;
 pub(crate) const HEADER_HEIGHT: f32 = 46.0;
 pub(crate) const STATUS_HEIGHT: f32 = 26.0;
+#[cfg(test)]
 pub(crate) const OVERFLOW_ACTIONS: [A; 4] = [A::Undo, A::Redo, A::SaveProject, A::OpenHandoff];
 
 pub(crate) fn more_label(language: Language) -> &'static str {

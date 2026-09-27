@@ -26,7 +26,7 @@ use plan_my_cabinet::material_changes::{
     AllocationConflict, ConflictReason, DependantChoice, MaterialChangeError,
     MaterialChangePreview, allocation_conflicts,
 };
-use plan_my_cabinet::measurements::{Frame, MeasurementError, Scope};
+use plan_my_cabinet::measurements::{Frame, Scope};
 use plan_my_cabinet::money::Currency;
 use plan_my_cabinet::pdf_export::{
     DocumentPreviewLabels, DocumentPreviewState, show_document_preview,
@@ -1636,80 +1636,6 @@ impl DesktopApp {
     }
 
     /// Advanced ID-based routes stay reachable beside contextual workspace controls.
-    fn show_session_routes(&mut self, ui: &mut egui::Ui) {
-        let project = self.editor.project();
-        let material_rows: Vec<_> = project
-            .materials
-            .iter()
-            .map(|m| (m.id, m.name.clone()))
-            .collect();
-        let sheet_rows: Vec<_> = project
-            .ordered_stock()
-            .iter()
-            .map(|s| (s.id, stock_reference(project, s.id)))
-            .collect();
-        let installation_rows: Vec<_> = project
-            .hinge_installations
-            .iter()
-            .map(|h| (h.id, h.door_board_id))
-            .collect();
-        if let Some(id) = self.selection.active
-            && self.editor.project().boards.iter().any(|b| b.id == id)
-            && ui
-                .add_enabled(
-                    !self.other_modal_open() && !self.project_files.blocking(),
-                    egui::Button::new(self.localizer.text("sheet-heading")),
-                )
-                .on_hover_text(id.to_string())
-                .clicked()
-        {
-            self.navigate_session(Destination::BoardAllocation(id));
-        }
-        ui.collapsing(self.localizer.text("material-list"), |ui| {
-            for (id, name) in &material_rows {
-                if ui
-                    .add_enabled(
-                        !self.other_modal_open() && !self.project_files.blocking(),
-                        egui::Button::new(format!("{name} ({id})")).selected(
-                            self.session.inspector == Some(InspectorTarget::Material(*id)),
-                        ),
-                    )
-                    .clicked()
-                {
-                    self.navigate_session(Destination::Material(*id));
-                }
-            }
-        });
-        ui.collapsing(self.localizer.text("sheet-heading"), |ui| {
-            for (id, label) in &sheet_rows {
-                if ui
-                    .add_enabled(
-                        !self.other_modal_open() && !self.project_files.blocking(),
-                        egui::Button::new(label).selected(self.session.focused_sheet == Some(*id)),
-                    )
-                    .clicked()
-                {
-                    self.navigate_session(Destination::Sheet(*id));
-                }
-            }
-        });
-        ui.collapsing(self.localizer.text("hinge-list"), |ui| {
-            for (id, door_id) in &installation_rows {
-                if ui
-                    .add_enabled(
-                        !self.other_modal_open() && !self.project_files.blocking(),
-                        egui::Button::new(format!("{door_id} ({id})")).selected(
-                            self.session.inspector == Some(InspectorTarget::Installation(*id)),
-                        ),
-                    )
-                    .clicked()
-                {
-                    self.navigate_session(Destination::Installation(*id));
-                }
-            }
-        });
-    }
-
     fn show_measurement(&mut self, ui: &mut egui::Ui) {
         ui.heading(self.localizer.text("measurement-heading"));
         ui.label(self.localizer.text("measurement-selection"));

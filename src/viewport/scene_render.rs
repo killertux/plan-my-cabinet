@@ -203,6 +203,19 @@ pub(super) fn scene_with_faces(
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
     material_tint: bool,
 ) -> (Mesh, f64) {
+    scene_with_hover(project, camera, selection, faces, poses, material_tint, None)
+}
+
+pub(super) fn scene_with_hover(
+    project: &Project,
+    camera: &Camera,
+    selection: &Selection,
+    faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
+    poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
+    material_tint: bool,
+    hovered: Option<Uuid>,
+) -> (Mesh, f64) {
+    let hovered: HashSet<Uuid> = hovered.into_iter().collect();
     let mut mesh = Mesh::default();
     add_grid(&mut mesh, project, camera);
     for (end, color) in [
@@ -242,8 +255,21 @@ pub(super) fn scene_with_faces(
             // edge: a shelf inside the carcass otherwise blends into the same
             // white material behind it. Selection remains session-only and
             // never changes the persisted display colour or stock identity.
-            let face = selection_face_color(base, selection.active == Some(board.id));
-            mesh.box_mesh(corners, face, highlight_color(project, board.id, selection));
+            let active = selection.active == Some(board.id);
+            let hover = !active
+                && !hovered.is_empty()
+                && super::selected_board(project, &hovered, board.id);
+            let face = if hover {
+                std::array::from_fn(|i| base[i] * 0.78 + [1.0, 0.86, 0.66][i] * 0.22)
+            } else {
+                selection_face_color(base, active)
+            };
+            let edge = if hover && !selection.ids.contains(&board.id) {
+                [0.79, 0.45, 0.12]
+            } else {
+                highlight_color(project, board.id, selection)
+            };
+            mesh.box_mesh(corners, face, edge);
             if let Some((source, source_face, target, target_face)) = faces {
                 let selected = if source == board.id {
                     Some((source_face, [0.15, 0.95, 0.95]))
@@ -860,13 +886,19 @@ pub(super) fn paint(
         drag.last_pose
             .map(|pose| HashMap::from([(drag.board_id, pose)]))
     });
-    let (mesh, radius) = scene_with_faces(
+    let hover = if tool.drag.is_some() {
+        None
+    } else {
+        super::hovered(ui.ctx())
+    };
+    let (mesh, radius) = scene_with_hover(
         project,
         camera,
         selection,
         faces,
         capture_pose.as_ref().or(poses),
         material_tint,
+        hover,
     );
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,

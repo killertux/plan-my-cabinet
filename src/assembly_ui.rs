@@ -3,7 +3,7 @@ use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::modal_chrome::{ModalAction, ModalActions, ModalChrome};
 use plan_my_cabinet::assembly_edit::{AssemblyEditError, world_pose};
 use plan_my_cabinet::design_read_models::{
-    DesignInspector, DesignReadModel, GrainProvenance, ObjectKind, OutlinerRow, ThicknessProvenance,
+    DesignInspector, DesignReadModel, ObjectKind, OutlinerRow, ThicknessProvenance,
 };
 use plan_my_cabinet::edit_drafts::DraftError;
 use plan_my_cabinet::stock_read_models::StockPieceReadModel;
@@ -388,55 +388,6 @@ fn visible_rows(rows: &[OutlinerRow]) -> Vec<&OutlinerRow> {
         .collect()
 }
 
-fn design_section(ui: &mut egui::Ui, label: &str) {
-    ui.add_space(7.0);
-    ui.separator();
-    ui.add_space(3.0);
-    ui.label(
-        egui::RichText::new(label.to_uppercase())
-            .font(design_font(
-                ui,
-                "Section",
-                crate::theme::SECTION.size,
-                false,
-            ))
-            .color(theme_widgets::FAINT),
-    );
-}
-
-fn design_font(ui: &egui::Ui, style: &str, size: f32, mono: bool) -> egui::FontId {
-    ui.style()
-        .text_styles
-        .get(&egui::TextStyle::Name(style.into()))
-        .cloned()
-        .unwrap_or_else(|| {
-            if mono {
-                egui::FontId::monospace(size)
-            } else {
-                egui::FontId::proportional(size)
-            }
-        })
-}
-
-fn design_icon_button(
-    ui: &mut egui::Ui,
-    icon: icons::Icon,
-    label: &str,
-    color: egui::Color32,
-    enabled: bool,
-) -> egui::Response {
-    let response = ui
-        .add_enabled(
-            enabled,
-            egui::Button::image(icons::icon(icon, color, 14.0).alt_text(label))
-                .frame(false)
-                .min_size(egui::vec2(22.0, 24.0)),
-        )
-        .on_hover_text(label);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    response
-}
-
 fn material_swatch(ui: &mut egui::Ui, color: plan_my_cabinet::domain::SrgbColor) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
     ui.painter().rect(
@@ -502,123 +453,6 @@ const AXIS_COLORS: [egui::Color32; 3] = [
     egui::Color32::from_rgb(78, 154, 87),
     egui::Color32::from_rgb(62, 111, 196),
 ];
-
-fn inspector_section(ui: &mut egui::Ui, label: &str) {
-    design_section(ui, label);
-    ui.add_space(2.0);
-}
-
-fn inspector_value(ui: &mut egui::Ui, label: &str, value: impl Into<String>) {
-    ui.horizontal(|ui| {
-        ui.set_min_height(24.0);
-        ui.add_sized(
-            [84.0, 20.0],
-            egui::Label::new(egui::RichText::new(label).color(theme_widgets::MUTED)),
-        );
-        ui.label(egui::RichText::new(value.into()).font(design_font(
-            ui,
-            "MonoSmall",
-            crate::theme::MONO_SMALL.size,
-            true,
-        )));
-    });
-}
-
-fn show_design_pose(
-    ui: &mut egui::Ui,
-    localizer: &Localizer,
-    frame: &plan_my_cabinet::design_read_models::ObjectFrame,
-    locale: Locale,
-) {
-    ui.separator();
-    ui.label(format!(
-        "{}: {}",
-        localizer.text("design-local-frame"),
-        frame
-            .local_to
-            .map_or_else(|| localizer.text("assembly-root"), |id| id.to_string())
-    ));
-    let position = frame.local_pose.translation_mm.map(|v| {
-        if locale == Locale::PtBr {
-            format!("{v:.3}").replace('.', ",")
-        } else {
-            format!("{v:.3}")
-        }
-    });
-    ui.small(format!(
-        "X / Y / Z: {} / {} / {} mm",
-        position[0], position[1], position[2]
-    ));
-    let q = frame.local_pose.rotation;
-    ui.small(format!(
-        "{}: ({:.4}, {:.4}, {:.4}, {:.4})",
-        localizer.text("design-local-rotation"),
-        q.w,
-        q.x,
-        q.y,
-        q.z
-    ));
-}
-
-fn show_design_measurement(
-    ui: &mut egui::Ui,
-    localizer: &Localizer,
-    result: &Result<plan_my_cabinet::measurements::Measurement, MeasurementError>,
-    label: &str,
-) {
-    match result {
-        Ok(m) => {
-            ui.small(format!(
-                "{label}: {:.3} × {:.3} × {:.3} mm",
-                m.dimensions_mm[0], m.dimensions_mm[1], m.dimensions_mm[2]
-            ));
-        }
-        Err(MeasurementError::UndimensionedHardware(_)) => {
-            ui.small(format!(
-                "{label}: {}",
-                localizer.text("measurement-unknown-hardware")
-            ));
-        }
-        Err(_) => {
-            ui.small(format!(
-                "{label}: {}",
-                localizer.text("measurement-invalid")
-            ));
-        }
-    }
-}
-
-fn show_design_bounds(
-    ui: &mut egui::Ui,
-    localizer: &Localizer,
-    world: &plan_my_cabinet::design_read_models::ScopedBounds,
-    object: &plan_my_cabinet::design_read_models::ScopedBounds,
-) {
-    ui.separator();
-    ui.label(localizer.text("design-bounding"));
-    for (bounds, frame) in [(world, "design-world"), (object, "design-object-frame")] {
-        show_design_measurement(
-            ui,
-            localizer,
-            &bounds.body,
-            &format!(
-                "{} · {}",
-                localizer.text("design-body"),
-                localizer.text(frame)
-            ),
-        );
-        show_design_measurement(
-            ui,
-            localizer,
-            &bounds.overall,
-            &format!(
-                "{} · {}",
-                localizer.text("design-overall"),
-                localizer.text(frame)
-            ),
-        );
-    }
-}
 
 impl DesktopApp {
     /// Inspector and HUD borrow the same app-session board draft; neither owns
@@ -1399,6 +1233,9 @@ impl DesktopApp {
                         });
                     },
                 );
+                if response.hovered() {
+                    viewport::set_hover(ui.ctx(), Some(row.id));
+                }
                 let response =
                     response.on_hover_text(format!("{} · {}", self.localizer.text(kind), row.name));
                 if let Some(expanded) = toggle_expand {

@@ -362,23 +362,6 @@ pub(super) fn show(
     blocked
 }
 
-fn preset_key(preset: Preset) -> &'static str {
-    match preset {
-        Preset::Isometric => "viewport-iso",
-        Preset::Front => "viewport-front",
-        Preset::Right => "viewport-right",
-        Preset::Top => "viewport-top",
-        Preset::Free => "viewport-free",
-    }
-}
-
-fn projection_key(projection: Projection) -> &'static str {
-    match projection {
-        Projection::Perspective => "viewport-perspective",
-        Projection::Orthographic => "viewport-orthographic",
-    }
-}
-
 fn presets(
     ui: &mut egui::Ui,
     localizer: &Localizer,

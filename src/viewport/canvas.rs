@@ -100,6 +100,22 @@ pub(super) fn interact_with_selection(
                 action = Some(DragAction::Preview(drag.board_id, pose));
             }
         }
+        if tool.drag.is_none()
+            && !ui.input(|i| i.pointer.any_down())
+            && let Some(pointer) = response.hover_pos()
+        {
+            let picked = pick_visible(project, camera, pointer, rect, selection);
+            super::set_hover(ui.ctx(), picked);
+            if let Some(id) = picked {
+                ui.ctx().set_cursor_icon(
+                    if tool.mode == ToolMode::Move && selection.active == Some(id) {
+                        egui::CursorIcon::Grab
+                    } else {
+                        egui::CursorIcon::PointingHand
+                    },
+                );
+            }
+        }
         if !preview_active
             && response.clicked_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()

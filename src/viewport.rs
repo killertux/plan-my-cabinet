@@ -1050,6 +1050,20 @@ fn bounds_visible(
     result.valid().then_some(result)
 }
 
+/// Session-only pointer hover shared by the outliner and the 3D view. It is
+/// stored per frame so a stale hover never survives the pointer leaving.
+pub fn set_hover(ctx: &egui::Context, id: Option<Uuid>) {
+    let frame = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("pmc-scene-hover"), (frame, id)));
+}
+
+pub fn hovered(ctx: &egui::Context) -> Option<Uuid> {
+    let frame = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(u64, Option<Uuid>)>(egui::Id::new("pmc-scene-hover")))
+        .filter(|(stamp, _)| frame.saturating_sub(*stamp) <= 1)
+        .and_then(|(_, id)| id)
+}
+
 fn selected_board(project: &Project, selected: &HashSet<Uuid>, board_id: Uuid) -> bool {
     if selected.contains(&board_id) {
         return true;
