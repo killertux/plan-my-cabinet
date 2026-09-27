@@ -171,12 +171,14 @@ impl DesktopApp {
     pub(super) fn proceed(&mut self, action: NextAction) {
         match action {
             NextAction::New => {
+                let mut project =
+                    Project::new(self.localizer.text("project-default-name"), Currency::Brl);
+                plan_my_cabinet::material_presets::seed_defaults(
+                    &mut project,
+                    self.localizer.language(),
+                );
                 self.replace_project(
-                    ProjectEditor::new(Project::new(
-                        self.localizer.text("project-default-name"),
-                        Currency::Brl,
-                    ))
-                    .expect("empty project"),
+                    ProjectEditor::new(project).expect("empty project"),
                     None,
                 );
                 self.project_files.message = None;

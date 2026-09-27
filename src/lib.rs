@@ -28,6 +28,7 @@ pub mod icons;
 pub mod kerf_date;
 pub mod local_preferences;
 pub mod material_changes;
+pub mod material_presets;
 pub mod measurements;
 pub mod money;
 pub mod optimization_worker;

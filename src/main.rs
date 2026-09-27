@@ -733,41 +733,82 @@ fn creation_dimension_field(
     field.value(unit).is_ok()
 }
 
+/// Swatch grid plus a free colour picker. Returns whether the value changed.
 fn creation_color_swatches(
     ui: &mut egui::Ui,
     localizer: &Localizer,
     color: &mut Option<SrgbColor>,
-) {
-    ui.label(localizer.text("template-setup-color"));
+) -> bool {
+    let before = *color;
+    ui.label(
+        egui::RichText::new(localizer.text("material-color"))
+            .size(12.0)
+            .color(theme_widgets::MUTED),
+    );
     ui.horizontal_wrapped(|ui| {
-        for (key, swatch) in [
-            ("template-setup-color-none", None),
-            ("template-setup-color-oak", Some(SrgbColor([226, 197, 156]))),
-            (
-                "template-setup-color-white",
-                Some(SrgbColor([244, 242, 238])),
-            ),
-            (
-                "template-setup-color-walnut",
-                Some(SrgbColor([166, 136, 101])),
-            ),
-        ] {
-            let [r, g, b] = swatch.map_or([215, 210, 201], |value| value.0);
-            ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, 3.0, egui::Color32::from_rgb(r, g, b));
-                if ui
-                    .selectable_label(*color == swatch, localizer.text(key))
-                    .clicked()
-                {
-                    *color = swatch;
-                }
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        let mut swatch = |ui: &mut egui::Ui, value: Option<SrgbColor>, label: String| {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+            let selected = *color == value;
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, selected, &label)
             });
+            let painter = ui.painter();
+            if selected {
+                painter.rect_stroke(
+                    rect.expand(2.0),
+                    7.0,
+                    egui::Stroke::new(2.0, theme_widgets::TEXT),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let inner = rect.shrink(if selected { 3.0 } else { 1.0 });
+            match value {
+                Some(SrgbColor([r, g, b])) => {
+                    painter.rect(
+                        inner,
+                        5.0,
+                        egui::Color32::from_rgb(r, g, b),
+                        egui::Stroke::new(1.0, egui::Color32::from_black_alpha(30)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                None => {
+                    painter.rect(
+                        inner,
+                        5.0,
+                        theme_widgets::CARD,
+                        egui::Stroke::new(1.0, theme_widgets::BORDER_STRONG),
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.line_segment(
+                        [inner.left_bottom() + egui::vec2(4.0, -4.0), inner.right_top() + egui::vec2(-4.0, 4.0)],
+                        egui::Stroke::new(1.5, theme_widgets::DANGER),
+                    );
+                }
+            }
+            if response.on_hover_text(label).clicked() {
+                *color = value;
+            }
+        };
+        swatch(ui, None, localizer.text("color-none"));
+        for (key, value) in plan_my_cabinet::material_presets::SWATCHES {
+            swatch(ui, Some(*value), localizer.text(key));
+        }
+        let mut rgb = color.map_or([200, 196, 187], |c| c.0);
+        let custom = egui::color_picker::color_edit_button_srgb(ui, &mut rgb)
+            .on_hover_text(localizer.text("color-custom"));
+        if custom.changed() {
+            *color = Some(SrgbColor(rgb));
         }
     });
-    ui.small(localizer.text("template-setup-color-hint"));
+    ui.label(
+        egui::RichText::new(localizer.text("material-color-hint"))
+            .size(11.5)
+            .color(theme_widgets::FAINT),
+    );
+    *color != before
 }
 
 fn conflict_labels(localizer: &Localizer, conflict: &AllocationConflict) -> String {
@@ -2699,6 +2740,11 @@ impl DesktopApp {
                     draft.choice = None;
                     draft.error = None;
                 }
+                let mut color = self.editor.project().material_colors.get(&draft.id).copied();
+                if creation_color_swatches(ui, &self.localizer, &mut color) {
+                    let _ = self.editor.set_material_color(draft.id, color);
+                }
+                ui.add_space(4.0);
                 let old_anchor = draft.anchor;
                 egui::ComboBox::from_label(self.localizer.text("material-anchor"))
                     .selected_text(self.localizer.text(match draft.anchor {
@@ -3063,6 +3109,51 @@ impl DesktopApp {
                     }
                     draft.board_key(project).is_some()
                 } else {
+                    let language = self.localizer.language();
+                    let current = plan_my_cabinet::material_presets::BR_STANDARD
+                        .iter()
+                        .position(|preset| {
+                            preset.name(language) == draft.name
+                                && draft.thickness.text.trim() == preset.thickness_mm.to_string()
+                        });
+                    let mut chosen = current;
+                    ui.label(
+                        egui::RichText::new(self.localizer.text("material-preset"))
+                            .size(12.0)
+                            .color(theme_widgets::MUTED),
+                    );
+                    egui::ComboBox::from_id_salt("material-creation-preset")
+                        .width(ui.available_width() - 8.0)
+                        .selected_text(current.map_or_else(
+                            || self.localizer.text("material-preset-none"),
+                            |index| {
+                                let preset = &plan_my_cabinet::material_presets::BR_STANDARD[index];
+                                format!("{} · {} mm", preset.name(language), preset.thickness_mm)
+                            },
+                        ))
+                        .show_ui(ui, |ui| {
+                            for (index, preset) in
+                                plan_my_cabinet::material_presets::BR_STANDARD.iter().enumerate()
+                            {
+                                combo_option(
+                                    ui,
+                                    &mut chosen,
+                                    Some(index),
+                                    format!("{} · {} mm", preset.name(language), preset.thickness_mm),
+                                );
+                            }
+                        });
+                    if chosen != current
+                        && let Some(index) = chosen
+                    {
+                        let preset = &plan_my_cabinet::material_presets::BR_STANDARD[index];
+                        draft.name = preset.name(language).to_owned();
+                        draft.thickness.text = preset.thickness_mm.to_string();
+                        draft.thickness.consent = false;
+                        draft.grain = preset.grain;
+                        draft.color = Some(preset.color);
+                    }
+                    ui.add_space(4.0);
                     ui.label(self.localizer.text("board-input-hint"));
                     let thickness = creation_dimension_field(
                         ui,

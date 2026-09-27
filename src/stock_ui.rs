@@ -1008,6 +1008,12 @@ fn known_free_fee_text() -> String {
 
 impl StockDialog {
     pub(super) fn new(project: &Project) -> Self {
+        let mut draft = Self::blank(project);
+        draft.fill_from_preset(project);
+        draft
+    }
+
+    fn blank(project: &Project) -> Self {
         Self {
             project_id: project.id,
             revision: project.revision,
@@ -1032,10 +1038,52 @@ impl StockDialog {
         }
     }
 
+    /// Pre-fill blank sheet size, grain and ownership from the standard
+    /// material preset this material came from, when there is one.
+    fn fill_from_preset(&mut self, project: &Project) {
+        let Some(material) = self
+            .material_id
+            .and_then(|id| project.materials.iter().find(|m| m.id == id))
+        else {
+            return;
+        };
+        let Some(preset) = plan_my_cabinet::material_presets::preset_for(material) else {
+            return;
+        };
+        let blank = self.dimensions[0].text.trim().is_empty() && self.dimensions[1].text.trim().is_empty();
+        let from_other_preset = plan_my_cabinet::material_presets::BR_STANDARD
+            .iter()
+            .any(|p| {
+                self.dimensions[0].text == p.sheet_mm[0].to_string()
+                    && self.dimensions[1].text == p.sheet_mm[1].to_string()
+            });
+        if blank || from_other_preset {
+            self.dimensions[0] = DimensionDraft {
+                text: preset.sheet_mm[0].to_string(),
+                consent: false,
+            };
+            self.dimensions[1] = DimensionDraft {
+                text: preset.sheet_mm[1].to_string(),
+                consent: false,
+            };
+            self.dimensions[2] = DimensionDraft {
+                text: preset.thickness_mm.to_string(),
+                consent: false,
+            };
+            self.grain = if preset.grain == BoardGrain::Length {
+                StockGrain::AlongX
+            } else {
+                StockGrain::Nondirectional
+            };
+            self.source = StockSource::ToPurchase;
+        }
+    }
+
     pub(super) fn new_for_material(project: &Project, material_id: Uuid) -> Self {
         let mut draft = Self::new(project);
         if let Some(material) = project.materials.iter().find(|m| m.id == material_id) {
             draft.material_id = Some(material.id);
+            draft.fill_from_preset(project);
             draft.dimensions[2] = DimensionDraft {
                 text: format_length(material.default_thickness, Unit::Mm, Locale::En, 3),
                 consent: false,
@@ -1048,6 +1096,7 @@ impl StockDialog {
         let mut draft = Self::new(project);
         if let Some(board) = project.boards.iter().find(|board| board.id == board_id) {
             draft.material_id = Some(board.material_id);
+            draft.fill_from_preset(project);
             draft.dimensions[2] = DimensionDraft {
                 text: format_length(board.thickness, Unit::Mm, Locale::En, 3),
                 consent: false,
@@ -2151,6 +2200,7 @@ impl DesktopApp {
                             .id(egui::Id::new("stock-dialog-name")),
                     );
                 });
+                let previous_material = draft.material_id;
                 egui::ComboBox::from_label(self.localizer.text("material"))
                     .selected_text(
                         project
@@ -2165,10 +2215,17 @@ impl DesktopApp {
                                 ui,
                                 &mut draft.material_id,
                                 Some(material.id),
-                                &material.name,
+                                format!(
+                                    "{} · {} mm",
+                                    material.name,
+                                    compact_mm(material.default_thickness, locale(self))
+                                ),
                             );
                         }
                     });
+                if draft.material_id != previous_material && draft.edit_id.is_none() {
+                    draft.fill_from_preset(project);
+                }
                 for (index, key) in ["board-length", "board-width", "board-thickness"]
                     .iter()
                     .enumerate()
