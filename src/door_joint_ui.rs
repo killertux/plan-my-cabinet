@@ -1,6 +1,8 @@
 //! Explicit relationship drafts and dependency-aware object removal.
 use super::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
+use crate::icons::Icon;
+use crate::theme_widgets as tw;
 use plan_my_cabinet::door_joint::{self, JointPreview};
 
 pub(super) struct DoorDialog {
@@ -143,158 +145,151 @@ impl DesktopApp {
             .order(egui::Order::Foreground)
             .fixed_pos(
                 canvas.left_top()
-                    + egui::vec2(10.0, if canvas.width() < 600.0 { 58.0 } else { 10.0 }),
+                    + egui::vec2(12.0, if canvas.width() < 600.0 { 58.0 } else { 12.0 }),
             )
             .show(ctx, |ui| {
-                crate::theme_widgets::card().inner_margin(4).show(ui, |ui| {
+                tw::floating_frame().inner_margin(3).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(
-                                self.action_availability(start).is_ok(),
-                                egui::Button::selectable(
-                                    active,
-                                    self.localizer.text("door-motion-start"),
-                                ),
-                            )
-                            .clicked()
-                        {
-                            let _ = self.invoke(start);
-                        }
-                        if ui
-                            .add_enabled(
-                                active && self.action_availability(close).is_ok(),
-                                egui::Button::selectable(
-                                    !active,
-                                    self.localizer.text("hardware-closed"),
-                                ),
-                            )
-                            .clicked()
-                        {
-                            let _ = self.invoke(close);
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        for (selected, key, request) in [
+                            (active, "hardware-motion-preview", start),
+                            (!active, "hardware-closed", close),
+                        ] {
+                            let enabled = !selected && self.action_availability(request).is_ok();
+                            let text = if selected {
+                                tw::medium(ui, self.localizer.text(key), 12.5).color(tw::PANEL)
+                            } else {
+                                egui::RichText::new(self.localizer.text(key))
+                                    .size(12.5)
+                                    .color(if enabled { tw::SECONDARY } else { tw::FAINT })
+                            };
+                            let response = ui
+                                .add_enabled(
+                                    enabled || selected,
+                                    egui::Button::new(text)
+                                        .selected(selected)
+                                        .fill(if selected {
+                                            tw::TEXT
+                                        } else {
+                                            egui::Color32::TRANSPARENT
+                                        })
+                                        .stroke(egui::Stroke::NONE)
+                                        .corner_radius(6)
+                                        .min_size(egui::vec2(0.0, 26.0)),
+                                )
+                                .on_hover_text(if key == "hardware-closed" {
+                                    A::CloseMotion.label(&self.localizer)
+                                } else {
+                                    self.localizer.text("door-motion-disclosure")
+                                });
+                            if response.clicked() && !selected {
+                                let _ = self.invoke(request);
+                            }
                         }
                     });
                 });
             });
         let mut blocked = top.response.contains_pointer();
-        if let Some((id, mut angle)) = self.door_motion
-            && let Ok(limit) = door_joint::opening_limit(self.editor.project(), &joint)
-        {
-            let name = object_name(self.editor.project(), joint.moving_root_id).to_owned();
+        if self.door_motion.is_some() {
+            let width = (canvas.width() - 32.0).clamp(160.0, 460.0);
             let hud = egui::Area::new(egui::Id::new("hardware-motion-hud"))
                 .order(egui::Order::Foreground)
                 .pivot(egui::Align2::CENTER_BOTTOM)
                 .fixed_pos(canvas.center_bottom() - egui::vec2(0.0, 16.0))
                 .show(ctx, |ui| {
-                    crate::theme_widgets::card().show(ui, |ui| {
-                        ui.set_width((canvas.width() - 64.0).clamp(160.0, 436.0));
-                        ui.horizontal(|ui| {
-                            ui.strong(name);
-                            ui.label(format!("{angle:.0}° / {limit:.0}°"));
+                    egui::Frame::new()
+                        .fill(tw::PANEL)
+                        .stroke(egui::Stroke::new(1.0, tw::BORDER_STRONG))
+                        .corner_radius(11)
+                        .inner_margin(egui::Margin::symmetric(16, 12))
+                        .shadow(egui::Shadow {
+                            offset: [0, 8],
+                            blur: 24,
+                            spread: 0,
+                            color: egui::Color32::from_rgba_unmultiplied(60, 45, 25, 40),
+                        })
+                        .show(ui, |ui| {
+                            ui.set_width(width - 32.0);
+                            self.show_door_motion_controls(ui);
                         });
-                        ui.spacing_mut().slider_width = ui.available_width() - 12.0;
-                        let slider =
-                            ui.add(egui::Slider::new(&mut angle, 0.0..=limit).show_value(false));
-                        if slider.changed() {
-                            let _ = self.invoke(
-                                Request::with(A::SetDoorAngle, Target::Door(id))
-                                    .argument(Argument::Angle(angle)),
-                            );
-                        }
-                        show_motion_ticks(ui, slider.rect, limit);
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(self.localizer.text("door-motion-disclosure"))
-                                    .small(),
-                            )
-                            .wrap(),
-                        );
-                    });
                 });
             blocked |= hud.response.contains_pointer();
         }
         blocked
     }
 
+    /// Body of the motion HUD: door name, angle, slider, scale and one note.
+    /// The angle is session display state; the saved pose never changes.
     pub(super) fn show_door_motion_controls(&mut self, ui: &mut egui::Ui) {
-        ui.separator();
-        ui.heading(self.localizer.text("door-motion-angle"));
-        if self.door_motion.is_some() {
-            ui.group(|ui| {
-                ui.colored_label(
-                    egui::Color32::YELLOW,
-                    self.localizer.text("door-motion-disclosure"),
+        let Some((id, mut angle)) = self.door_motion else {
+            return;
+        };
+        let Some(joint) = self
+            .editor
+            .project()
+            .door_joints
+            .iter()
+            .find(|j| j.id == id)
+            .cloned()
+        else {
+            return;
+        };
+        let name = object_name(self.editor.project(), joint.moving_root_id).to_owned();
+        let limit = door_joint::opening_limit(self.editor.project(), &joint);
+        ui.spacing_mut().item_spacing.y = 10.0;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            ui.add(crate::icons::icon(Icon::Door, tw::MUTED, 15.0));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(format!("{angle:.0}°"))
+                        .font(if tw::weights_available(ui) {
+                            egui::FontId::new(14.0, crate::theme::Typeface::MonoSemibold.family())
+                        } else {
+                            egui::FontId::monospace(14.0)
+                        })
+                        .color(tw::TEXT),
                 );
-                if ui.button(self.localizer.text("door-motion-exit")).clicked() {
-                    let _ = self.invoke(Request::new(A::CloseMotion));
-                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(tw::semibold(ui, &name, 13.0).color(tw::TEXT))
+                            .truncate()
+                            .selectable(false),
+                    );
+                });
             });
-        }
-        for joint in self.editor.project().door_joints.clone() {
-            let limit = door_joint::opening_limit(self.editor.project(), &joint);
-            ui.group(|ui| {
-                ui.label(format!(
-                    "{} → {}",
-                    object_name(self.editor.project(), joint.moving_root_id),
-                    object_name(self.editor.project(), joint.mounting_board_id)
-                ));
-                if door_joint::needs_review(self.editor.project(), &joint) {
-                    ui.colored_label(egui::Color32::YELLOW, self.localizer.text("door-review"));
-                }
-                if let Ok(limit) = limit {
-                    if self.door_motion.map(|(id, _)| id) == Some(joint.id) {
-                        let mut angle = self.door_motion.unwrap().1;
-                        ui.strong(format!("{angle:.0}° / {limit:.0}°"));
-                        let slider = ui.add(
-                            egui::Slider::new(&mut angle, 0.0..=limit)
-                                .text(self.localizer.text("door-motion-angle")),
-                        );
-                        if slider.changed() {
-                            let _ = self.invoke(
-                                Request::with(A::SetDoorAngle, Target::Door(joint.id))
-                                    .argument(Argument::Angle(angle)),
-                            );
-                        }
-                        // This response also contains the numeric editor and
-                        // caption. Only its leading slider-width region is the rail.
-                        let rail = egui::Rect::from_min_size(
-                            slider.rect.min,
-                            egui::vec2(
-                                ui.spacing().slider_width,
-                                ui.text_style_height(&egui::TextStyle::Body)
-                                    .max(ui.spacing().interact_size.y),
-                            ),
-                        );
-                        show_motion_ticks(ui, rail, limit);
-                    } else if ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(self.localizer.text("door-motion-start")),
-                        )
-                        .clicked()
-                    {
-                        let _ = self.invoke(Request::with(A::StartMotion, Target::Door(joint.id)));
-                    }
-                } else {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        self.localizer.text("door-motion-unavailable"),
+        });
+        match limit {
+            Ok(limit) => {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let label = A::SetDoorAngle.label(&self.localizer);
+                let (slider, travel) = angle_slider(ui, &mut angle, limit, &label, true);
+                if slider.changed() {
+                    let _ = self.invoke(
+                        Request::with(A::SetDoorAngle, Target::Door(id))
+                            .argument(Argument::Angle(angle)),
                     );
                 }
-            });
+                show_motion_ticks(ui, travel, slider.rect.x_range(), limit);
+                ui.add_space(2.0);
+            }
+            Err(_) => {
+                ui.label(
+                    egui::RichText::new(self.localizer.text("door-motion-unavailable"))
+                        .size(11.5)
+                        .color(tw::WARN_INK),
+                );
+            }
         }
-        let target = self.selection.active.filter(|id| {
-            self.editor.project().boards.iter().any(|b| b.id == *id)
-                || self.editor.project().assemblies.iter().any(|a| a.id == *id)
-        });
-        if ui
-            .add_enabled(
-                !self.modal_open() && target.is_some(),
-                egui::Button::new(self.localizer.text("door-delete-object")),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(self.localizer.text("hardware-motion-note"))
+                    .size(11.5)
+                    .color(tw::MUTED),
             )
-            .clicked()
-        {
-            let _ = self.invoke(Request::new(A::DeleteObject));
-        }
+            .wrap(),
+        )
+        .on_hover_text(self.localizer.text("door-motion-disclosure"));
     }
 
     pub(super) fn show_door_dialog(&mut self, ctx: &egui::Context) {
@@ -318,92 +313,217 @@ impl DesktopApp {
             },
             |ui| {
                 let p = self.editor.project();
-                let moving = egui::ComboBox::from_label(self.localizer.text("door-moving"))
-                    .selected_text(draft.root.map_or("—", |id| object_name(p, id)))
-                    .show_ui(ui, |ui| {
-                        for a in &p.assemblies {
-                            crate::combo_option(ui, &mut draft.root, Some(a.id), &a.name);
-                        }
-                        for b in &p.boards {
-                            crate::combo_option(ui, &mut draft.root, Some(b.id), &b.name);
-                        }
-                    });
-                first_control = Some(moving.response.id);
-                egui::ComboBox::from_label(self.localizer.text("door-stationary"))
-                    .selected_text(draft.mount.map_or("—", |id| object_name(p, id)))
-                    .show_ui(ui, |ui| {
-                        for b in &p.boards {
-                            crate::combo_option(ui, &mut draft.mount, Some(b.id), &b.name);
-                        }
-                    });
-                ui.label(self.localizer.text("door-hinges"));
-                for h in &p.hinge_installations {
-                    if draft.mount != Some(h.mounting_board_id)
-                        || !draft.root.is_some_and(|root| {
-                            door_joint::moving_members(p, root).contains(&h.door_board_id)
-                        })
-                    {
-                        continue;
-                    }
-                    let mut checked = draft.hinges.contains(&h.id);
-                    if ui
-                        .checkbox(
-                            &mut checked,
-                            format!(
-                                "{} → {} · {:.3} mm",
+                let localizer = &self.localizer;
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let gap = 12.0;
+                let half = ((ui.available_width() - gap) / 2.0).max(80.0);
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(half, 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            hinge_ui::field_label(ui, &localizer.text("door-moving"));
+                            let moving = egui::ComboBox::from_id_salt("door-moving")
+                                .width(half)
+                                .selected_text(draft.root.map_or("—", |id| object_name(p, id)))
+                                .show_ui(ui, |ui| {
+                                    for a in &p.assemblies {
+                                        crate::combo_option(
+                                            ui,
+                                            &mut draft.root,
+                                            Some(a.id),
+                                            &a.name,
+                                        );
+                                    }
+                                    for b in &p.boards {
+                                        crate::combo_option(
+                                            ui,
+                                            &mut draft.root,
+                                            Some(b.id),
+                                            &b.name,
+                                        );
+                                    }
+                                });
+                            first_control = Some(moving.response.id);
+                        },
+                    );
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(half, 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            hinge_ui::field_label(ui, &localizer.text("door-stationary"));
+                            egui::ComboBox::from_id_salt("door-stationary")
+                                .width(half)
+                                .selected_text(draft.mount.map_or("—", |id| object_name(p, id)))
+                                .show_ui(ui, |ui| {
+                                    for b in &p.boards {
+                                        crate::combo_option(
+                                            ui,
+                                            &mut draft.mount,
+                                            Some(b.id),
+                                            &b.name,
+                                        );
+                                    }
+                                });
+                        },
+                    );
+                });
+                ui.add_space(8.0);
+                hinge_ui::field_label(ui, &localizer.text("door-hinges"));
+                let mut any = false;
+                egui::Frame::new()
+                    .fill(tw::APP)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                    .corner_radius(6)
+                    .inner_margin(egui::Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        for h in &p.hinge_installations {
+                            if draft.mount != Some(h.mounting_board_id)
+                                || !draft.root.is_some_and(|root| {
+                                    door_joint::moving_members(p, root).contains(&h.door_board_id)
+                                })
+                            {
+                                continue;
+                            }
+                            any = true;
+                            let mut checked = draft.hinges.contains(&h.id);
+                            let label = format!(
+                                "{} {} · {} → {}",
+                                localizer.text("hardware-hinge"),
+                                hinge_ui::hinge_ordinal(p, h.id),
                                 object_name(p, h.door_board_id),
                                 object_name(p, h.mounting_board_id),
-                                h.door_y.micrometres() as f64 / 1000.0
-                            ),
-                        )
-                        .changed()
-                    {
-                        if checked {
-                            draft.hinges.push(h.id);
-                        } else {
-                            draft.hinges.retain(|id| *id != h.id);
+                            );
+                            ui.horizontal(|ui| {
+                                if ui.checkbox(&mut checked, label).changed() {
+                                    if checked {
+                                        draft.hinges.push(h.id);
+                                    } else {
+                                        draft.hinges.retain(|id| *id != h.id);
+                                    }
+                                }
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            tw::mono(
+                                                format!(
+                                                    "Y {}",
+                                                    hinge_ui::short_mm(localizer, h.door_y)
+                                                ),
+                                                11.5,
+                                            )
+                                            .color(tw::FAINT),
+                                        );
+                                    },
+                                );
+                            });
                         }
-                    }
-                }
-                let proposal = draft.proposal(self);
-                if let Ok(ref preview) = proposal {
-                    ui.label(self.localizer.text("door-members"));
-                    for id in &preview.moving_members {
-                        ui.label(object_name(p, *id));
-                    }
-                    ui.label(format!(
-                        "{}: {}",
-                        self.localizer.text("door-fixed"),
-                        object_name(p, preview.joint.mounting_board_id)
-                    ));
-                    ui.label(format!(
-                        "{}: {:?} / {:?} mm",
-                        self.localizer.text("door-axis"),
-                        preview.joint.axis_direction,
-                        preview.joint.axis_origin_mm
-                    ));
-                    for status in &preview.installation_statuses {
-                        for issue in &status.issues {
-                            ui.colored_label(
-                                egui::Color32::YELLOW,
-                                self.localizer.text(hinge_ui::issue_key(issue)),
+                        if !any {
+                            ui.label(
+                                egui::RichText::new(localizer.text("hardware-no-hinges"))
+                                    .size(12.0)
+                                    .color(tw::FAINT),
                             );
                         }
+                    });
+                ui.add_space(8.0);
+                let proposal = draft.proposal(self);
+                if let Ok(ref preview) = proposal {
+                    tw::card().show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::Grid::new("door-dialog-preview")
+                            .num_columns(2)
+                            .spacing(egui::vec2(10.0, 5.0))
+                            .show(ui, |ui| {
+                                let muted = |ui: &mut egui::Ui, key: &str| {
+                                    ui.label(
+                                        egui::RichText::new(localizer.text(key))
+                                            .size(12.0)
+                                            .color(tw::MUTED),
+                                    );
+                                };
+                                muted(ui, "door-members");
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(
+                                            preview
+                                                .moving_members
+                                                .iter()
+                                                .map(|id| object_name(p, *id))
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                        )
+                                        .size(12.5),
+                                    )
+                                    .wrap(),
+                                );
+                                ui.end_row();
+                                muted(ui, "door-fixed");
+                                ui.label(
+                                    egui::RichText::new(object_name(
+                                        p,
+                                        preview.joint.mounting_board_id,
+                                    ))
+                                    .size(12.5),
+                                );
+                                ui.end_row();
+                                muted(ui, "door-axis");
+                                let v = |values: [f64; 3]| {
+                                    values
+                                        .map(|value| {
+                                            let text = format!("{:.3}", value + 0.0);
+                                            text.trim_end_matches('0')
+                                                .trim_end_matches('.')
+                                                .to_owned()
+                                        })
+                                        .join(", ")
+                                };
+                                ui.label(
+                                    tw::mono(
+                                        format!(
+                                            "({}) · ({})",
+                                            v(preview.joint.axis_direction),
+                                            v(preview.joint.axis_origin_mm)
+                                        ),
+                                        11.5,
+                                    )
+                                    .color(tw::TEXT),
+                                );
+                                ui.end_row();
+                            });
+                    });
+                    let issues: Vec<_> = preview
+                        .installation_statuses
+                        .iter()
+                        .flat_map(|status| status.issues.iter())
+                        .collect();
+                    if !issues.is_empty() {
+                        ui.add_space(6.0);
+                        hinge_ui::warning_callout(ui, false, |ui| {
+                            for issue in issues {
+                                ui.label(
+                                    egui::RichText::new(localizer.text(hinge_ui::issue_key(issue)))
+                                        .size(12.0)
+                                        .color(tw::WARN_INK),
+                                );
+                            }
+                        });
                     }
                 } else {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        format!(
-                            "{}: {:?}",
-                            self.localizer.text("door-invalid"),
-                            proposal.as_ref().err()
-                        ),
+                    ui.label(
+                        egui::RichText::new(localizer.text("door-invalid"))
+                            .size(11.5)
+                            .color(tw::DANGER),
                     );
                 }
-                if draft.error {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text("door-invalid"),
+                if draft.error && proposal.is_ok() {
+                    ui.label(
+                        egui::RichText::new(localizer.text("door-invalid"))
+                            .size(11.5)
+                            .color(tw::DANGER),
                     );
                 }
                 ((), proposal.is_ok())
@@ -508,7 +628,7 @@ impl DesktopApp {
                             .filter(|h| installations.contains(&h.id))
                         {
                             ui.label(format!(
-                                "{} → {} · {:.3} mm",
+                                "{} → {} · Y {}",
                                 object_name(p, h.door_board_id),
                                 object_name(p, h.mounting_board_id),
                                 h.door_y.micrometres() as f64 / 1000.0
@@ -540,10 +660,7 @@ impl DesktopApp {
                     }
                 }
                 if !current || draft.error {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text("door-invalid"),
-                    );
+                    ui.colored_label(tw::DANGER, self.localizer.text("door-invalid"));
                 }
                 ((), current)
             },
@@ -581,60 +698,136 @@ fn motion_ticks(limit: f64) -> Vec<f64> {
     values
 }
 
-/// Align the scale to the actual linear slider, not a spaced row of labels.
-/// Endpoints stay inside the card; crowded intermediate labels use another row.
-fn show_motion_ticks(ui: &mut egui::Ui, slider: egui::Rect, limit: f64) {
-    // egui 0.36's horizontal Slider::position_range reserves this half-handle
-    // width at each end. Keep ticks aligned with handle centers, not rail edges.
-    let radius = slider.height() / 2.5;
-    let inset = match ui.visuals().handle_shape {
-        egui::style::HandleShape::Circle => radius,
-        egui::style::HandleShape::Rect { aspect_ratio } => radius * aspect_ratio,
-    };
-    let travel = slider.x_range().shrink(inset);
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let row_height = ui.text_style_height(&egui::TextStyle::Small) + 4.0;
+const KNOB_RADIUS: f32 = 9.0;
+
+/// Display-only angle slider: `border_soft` track, `accent` fill and an 18px
+/// knob with a 2px `accent` stroke. Returns the response and the knob travel
+/// (knob centres), which the scale below shares.
+fn angle_slider(
+    ui: &mut egui::Ui,
+    angle: &mut f64,
+    limit: f64,
+    label: &str,
+    enabled: bool,
+) -> (egui::Response, egui::Rangef) {
+    let width = ui.available_width().max(2.0 * KNOB_RADIUS + 1.0);
+    let (rect, mut response) = ui.allocate_exact_size(
+        egui::vec2(width, 2.0 * KNOB_RADIUS),
+        if enabled {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let travel = egui::Rangef::new(rect.left() + KNOB_RADIUS, rect.right() - KNOB_RADIUS);
+    let limit = limit.max(f64::EPSILON);
+    let before = *angle;
+    if enabled {
+        if (response.dragged() || response.clicked() || response.is_pointer_button_down_on())
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let t = ((pointer.x - travel.min) / travel.span().max(1.0)).clamp(0.0, 1.0);
+            *angle = (f64::from(t) * limit).round().clamp(0.0, limit);
+        }
+        if response.has_focus() {
+            let step = if ui.input(|i| i.modifiers.shift) {
+                15.0
+            } else {
+                1.0
+            };
+            ui.input(|i| {
+                if i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowUp) {
+                    *angle = (*angle + step).min(limit);
+                }
+                if i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::ArrowDown) {
+                    *angle = (*angle - step).max(0.0);
+                }
+                if i.key_pressed(egui::Key::Home) {
+                    *angle = 0.0;
+                }
+                if i.key_pressed(egui::Key::End) {
+                    *angle = limit;
+                }
+            });
+        }
+    }
+    if *angle != before {
+        response.mark_changed();
+    }
+    let value = *angle;
+    response.widget_info(|| egui::WidgetInfo::slider(enabled, value, label));
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let y = rect.center().y;
+        let x = egui::lerp(travel, (value / limit).clamp(0.0, 1.0) as f32);
+        let track = egui::Rect::from_x_y_ranges(rect.x_range(), (y - 2.0)..=(y + 2.0));
+        painter.rect_filled(track, 2.0, tw::BORDER_SOFT);
+        painter.rect_filled(
+            egui::Rect::from_x_y_ranges(rect.left()..=x, (y - 2.0)..=(y + 2.0)),
+            2.0,
+            tw::ACCENT,
+        );
+        let knob = egui::pos2(x, y);
+        painter.circle_filled(
+            knob + egui::vec2(0.0, 1.0),
+            KNOB_RADIUS + 0.5,
+            egui::Color32::from_rgba_unmultiplied(60, 45, 25, 40),
+        );
+        painter.circle(
+            knob,
+            KNOB_RADIUS - 1.0,
+            tw::PANEL,
+            egui::Stroke::new(2.0, tw::ACCENT),
+        );
+        if response.has_focus() {
+            painter.circle_stroke(
+                knob,
+                KNOB_RADIUS + 3.0,
+                egui::Stroke::new(2.0, tw::ACCENT_BG),
+            );
+        }
+    }
+    (response, travel)
+}
+
+/// Mono tick labels (0/45/90/limit) aligned with the knob travel. Endpoints stay
+/// inside `bounds`; crowded intermediate labels move to another row.
+fn show_motion_ticks(ui: &mut egui::Ui, travel: egui::Rangef, bounds: egui::Rangef, limit: f64) {
+    let font = egui::FontId::monospace(10.5);
+    let row_height = 14.0;
     let top = ui.cursor().min.y;
     let ticks = motion_ticks(limit);
-    let mut labels: Vec<(f32, egui::Rect, std::sync::Arc<egui::Galley>)> = Vec::new();
+    let mut labels: Vec<(egui::Rect, std::sync::Arc<egui::Galley>)> = Vec::new();
     let mut rows = 1;
     // Reserve both endpoint labels on the first row before intermediates.
     for angle in [0.0, limit]
         .into_iter()
         .chain(ticks[1..ticks.len() - 1].iter().copied())
     {
-        let x = egui::lerp(travel, (angle / limit) as f32);
-        let galley = ui.painter().layout_no_wrap(
-            format!("{angle:.0}°"),
-            font.clone(),
-            ui.visuals().text_color(),
-        );
-        let left = (x - galley.size().x * 0.5).clamp(
-            slider.left(),
-            (slider.right() - galley.size().x).max(slider.left()),
-        );
+        let x = egui::lerp(travel, (angle / limit.max(f64::EPSILON)) as f32);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(format!("{angle:.0}°"), font.clone(), tw::FAINT);
+        let left = (x - galley.size().x * 0.5)
+            .clamp(bounds.min, (bounds.max - galley.size().x).max(bounds.min));
         let mut row = 0;
-        let mut rect = egui::Rect::from_min_size(egui::pos2(left, top + 4.0), galley.size());
+        let mut rect = egui::Rect::from_min_size(egui::pos2(left, top), galley.size());
         while labels
             .iter()
-            .any(|(_, placed, _)| placed.expand(2.0).intersects(rect))
+            .any(|(placed, _)| placed.expand(2.0).intersects(rect))
         {
             row += 1;
             rect = rect.translate(egui::vec2(0.0, row_height));
         }
         rows = rows.max(row + 1);
-        labels.push((x, rect, galley));
+        labels.push((rect, galley));
     }
     ui.allocate_exact_size(
-        egui::vec2(slider.width(), 4.0 + rows as f32 * row_height),
+        egui::vec2(bounds.span(), rows as f32 * row_height),
         egui::Sense::hover(),
     );
-    for (x, rect, galley) in labels {
-        ui.painter().line_segment(
-            [egui::pos2(x, top), egui::pos2(x, top + 3.0)],
-            egui::Stroke::new(1.0, ui.visuals().weak_text_color()),
-        );
-        ui.put(rect, egui::Label::new(galley).selectable(false));
+    for (rect, galley) in labels {
+        ui.painter().galley(rect.min, galley, tw::FAINT);
     }
 }
 
@@ -692,90 +885,70 @@ mod tests {
     }
 
     #[test]
-    fn angle_scale_tracks_slider_handle_and_keeps_labels_separate() {
-        for width in [150.0, 300.0, 436.0] {
+    fn angle_scale_tracks_slider_knob_and_keeps_labels_separate() {
+        for width in [150.0, 300.0, 428.0] {
             for limit in [60.0, 90.0, 105.0, 110.0, 180.0] {
-                for handle in [
-                    egui::style::HandleShape::Circle,
-                    egui::style::HandleShape::Rect { aspect_ratio: 0.6 },
-                ] {
-                    let ctx = egui::Context::default();
-                    crate::theme::install_fonts(&ctx);
-                    let mut angle = 45.0;
-                    let mut rail = egui::Rect::NOTHING;
-                    let mut top = 0.0;
-                    let output = ctx.run_ui(Default::default(), |ui| {
-                        ui.visuals_mut().handle_shape = handle;
-                        ui.spacing_mut().slider_width = width;
-                        rail = ui
-                            .add(egui::Slider::new(&mut angle, 0.0..=limit).show_value(false))
-                            .rect;
-                        top = ui.cursor().min.y;
-                        show_motion_ticks(ui, rail, limit);
+                let ctx = egui::Context::default();
+                crate::theme::install_fonts(&ctx);
+                let mut angle = 45.0;
+                let mut rail = egui::Rect::NOTHING;
+                let mut travel = egui::Rangef::EVERYTHING;
+                let output = ctx.run_ui(Default::default(), |ui| {
+                    ui.allocate_ui(egui::vec2(width, 200.0), |ui| {
+                        let (response, range) = angle_slider(ui, &mut angle, limit, "Angle", true);
+                        rail = response.rect;
+                        travel = range;
+                        show_motion_ticks(ui, travel, rail.x_range(), limit);
                     });
-                    let mut markers = Vec::new();
-                    let mut labels = Vec::new();
-                    let mut knob = None;
-                    for shape in &output.shapes {
-                        match &shape.shape {
-                            egui::Shape::LineSegment { points, .. }
-                                if (points[0].y - top).abs() < 0.01 =>
-                            {
-                                markers.push(points[0].x)
-                            }
-                            egui::Shape::Text(text) if text.galley.text().ends_with('°') => {
-                                labels
-                                    .push(egui::Rect::from_min_size(text.pos, text.galley.size()));
-                            }
-                            egui::Shape::Circle(circle)
-                                if (circle.center.y - rail.center().y).abs() < 0.01
-                                    && circle.radius > 4.0 =>
-                            {
-                                knob = Some(circle.center.x)
-                            }
-                            egui::Shape::Rect(rect)
-                                if (rect.rect.center().y - rail.center().y).abs() < 0.01
-                                    && rect.rect.height() > 10.0
-                                    && rect.rect.width() < 40.0 =>
-                            {
-                                knob = Some(rect.rect.center().x)
-                            }
-                            _ => {}
+                });
+                let mut labels = Vec::new();
+                let mut knob = None;
+                for shape in &output.shapes {
+                    match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.text().ends_with('°') => {
+                            labels.push((
+                                text.galley.text().to_owned(),
+                                egui::Rect::from_min_size(text.pos, text.galley.size()),
+                            ));
                         }
+                        egui::Shape::Circle(circle)
+                            if (circle.center.y - rail.center().y).abs() < 0.01
+                                && (circle.radius - (KNOB_RADIUS - 1.0)).abs() < 0.01 =>
+                        {
+                            knob = Some(circle.center.x)
+                        }
+                        _ => {}
                     }
-                    markers.sort_by(f32::total_cmp);
-                    let ticks = motion_ticks(limit);
-                    assert_eq!(markers.len(), ticks.len());
-                    assert_eq!(labels.len(), ticks.len());
-                    let travel = markers[0]..=*markers.last().unwrap();
-                    for (marker, value) in markers.iter().zip(ticks) {
-                        assert!(
-                            (*marker - egui::lerp(travel.clone(), (value / limit) as f32)).abs()
-                                < 0.1
-                        );
-                    }
-                    assert!(
-                        (knob.expect("actual slider thumb")
-                            - egui::lerp(travel, (45.0 / limit) as f32))
-                        .abs()
-                            < 0.1,
-                        "scale must share the real thumb's range at width {width}, limit {limit}"
-                    );
-                    for (index, label) in labels.iter().enumerate() {
-                        assert!(
-                            label.left() >= rail.left() - 0.1
-                                && label.right() <= rail.right() + 0.1
-                        );
-                        assert!(
-                            labels[index + 1..]
-                                .iter()
-                                .all(|other| !label.intersects(*other)),
-                            "angle labels overlap at width {width}, limit {limit}: {labels:?}"
-                        );
-                    }
-                    assert_eq!(angle, 45.0, "laying out the scale must not move the door");
-                    output.drop_without_applying_deltas();
                 }
+                let ticks = motion_ticks(limit);
+                assert_eq!(labels.len(), ticks.len());
+                assert!(
+                    (knob.expect("slider knob") - egui::lerp(travel, (45.0 / limit) as f32)).abs()
+                        < 0.1,
+                    "knob must share the scale's range at width {width}, limit {limit}"
+                );
+                for (index, (text, label)) in labels.iter().enumerate() {
+                    assert!(
+                        label.left() >= rail.left() - 0.1 && label.right() <= rail.right() + 0.1,
+                        "{text} leaves the rail at width {width}"
+                    );
+                    assert!(
+                        labels[index + 1..]
+                            .iter()
+                            .all(|(_, other)| !label.intersects(*other)),
+                        "angle labels overlap at width {width}, limit {limit}: {labels:?}"
+                    );
+                    let value: f64 = text.trim_end_matches('°').parse().unwrap();
+                    let x = egui::lerp(travel, (value / limit) as f32);
+                    let clamped =
+                        label.left() <= rail.left() + 0.1 || label.right() >= rail.right() - 0.1;
+                    assert!(
+                        clamped || (label.center().x - x).abs() < 0.6,
+                        "{text} is centred on its knob position"
+                    );
+                }
+                assert_eq!(angle, 45.0, "laying out the scale must not move the door");
+                output.drop_without_applying_deltas();
             }
         }
     }
@@ -815,7 +988,7 @@ mod tests {
             assert!(
                 texts
                     .iter()
-                    .any(|s| s == &app.localizer.text("door-motion-disclosure"))
+                    .any(|s| s == &app.localizer.text("hardware-motion-note"))
             );
             assert!(texts.iter().any(|s| s.contains("105")));
             output.drop_without_applying_deltas();
@@ -879,7 +1052,7 @@ mod tests {
                         if text.galley.text() == app.localizer.text("hardware-closed") {
                             point = Some(text.pos + text.galley.size() * 0.5);
                         }
-                        if text.galley.text() == app.localizer.text("door-motion-disclosure") {
+                        if text.galley.text() == app.localizer.text("hardware-motion-note") {
                             assert!(canvas.contains_rect(egui::Rect::from_min_size(
                                 text.pos,
                                 text.galley.size()
