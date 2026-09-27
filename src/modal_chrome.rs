@@ -786,6 +786,13 @@ pub fn icon_tile(ui: &mut egui::Ui, icon: crate::icons::Icon, size: f32) {
 }
 
 impl ModalChrome {
+    /// Moves the controller out of a draft for the duration of `show`, whose
+    /// body borrows the rest of the draft. Put it back afterwards; the inert
+    /// placeholder left behind is never shown.
+    pub fn detach(&mut self) -> Self {
+        std::mem::replace(self, Self::new(Id::NULL))
+    }
+
     pub fn new(id: Id) -> Self {
         Self {
             id,

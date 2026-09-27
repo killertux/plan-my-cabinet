@@ -14,7 +14,7 @@ pub(super) struct DoorDialog {
     mount: Option<Uuid>,
     hinges: Vec<Uuid>,
     error: bool,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
 }
 
 impl DoorDialog {
@@ -34,7 +34,7 @@ impl DoorDialog {
             mount: old.map(|j| j.mounting_board_id),
             hinges: old.map_or_else(Vec::new, |j| j.hinge_installation_ids.clone()),
             error: false,
-            chrome: Some(ModalChrome::new(egui::Id::new("door-joint-dialog")).width(540.0)),
+            chrome: ModalChrome::new(egui::Id::new("door-joint-dialog")).width(540.0),
         }
     }
 
@@ -65,7 +65,7 @@ pub(super) struct RemovalDialog {
     project_id: Uuid,
     revision: u64,
     error: bool,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
 }
 
 impl RemovalDialog {
@@ -75,7 +75,7 @@ impl RemovalDialog {
             project_id: app.editor.project().id,
             revision: app.editor.project().revision,
             error: false,
-            chrome: Some(ModalChrome::new(egui::Id::new("door-removal-dialog"))),
+            chrome: ModalChrome::new(egui::Id::new("door-removal-dialog")),
         }
     }
 }
@@ -293,7 +293,7 @@ impl DesktopApp {
     }
 
     pub(super) fn show_door_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.door_dialog.take() else {
+        let Some(mut draft) = self.modals.take_door() else {
             return;
         };
         let title = self.localizer.text(if draft.editing {
@@ -301,7 +301,7 @@ impl DesktopApp {
         } else {
             "door-add"
         });
-        let mut chrome = draft.chrome.take().expect("relationship modal controller");
+        let mut chrome = draft.chrome.detach();
         let opening = !chrome.is_active();
         let mut first_control = None;
         let result = chrome.show(
@@ -546,17 +546,17 @@ impl DesktopApp {
             }
             draft.error = true;
         }
-        draft.chrome = Some(chrome);
-        self.door_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_door(Some(draft));
     }
 
     pub(super) fn show_removal_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.removal_dialog.take() else {
+        let Some(mut draft) = self.modals.take_removal() else {
             return;
         };
         let current = draft.project_id == self.editor.project().id
             && draft.revision == self.editor.project().revision;
-        let mut chrome = draft.chrome.take().expect("removal modal controller");
+        let mut chrome = draft.chrome.detach();
         let result = chrome.show(
             ctx,
             &self.localizer.text("door-delete-confirm"),
@@ -682,8 +682,8 @@ impl DesktopApp {
             }
             draft.error = true;
         }
-        draft.chrome = Some(chrome);
-        self.removal_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_removal(Some(draft));
     }
 }
 
@@ -1099,12 +1099,12 @@ mod tests {
         let original = app.editor.project().clone();
         let draft = DoorDialog::new(&app, Some(joint));
         let selected = (draft.root, draft.mount, draft.hinges.clone());
-        app.door_dialog = Some(draft);
+        app.modals.set_door(Some(draft));
         assert!(
             app.invoke(Request::with(A::StartMotion, Target::Door(joint)))
                 .is_err()
         );
-        let retained = app.door_dialog.as_ref().unwrap();
+        let retained = app.modals.door().unwrap();
         assert_eq!(
             (retained.root, retained.mount, retained.hinges.clone()),
             selected
@@ -1122,13 +1122,13 @@ mod tests {
         draft.hinges = vec![app.editor.project().hinge_installations[0].id];
         let initial = app.editor.project().clone();
         let ctx = egui::Context::default();
-        app.door_dialog = Some(draft);
+        app.modals.set_door(Some(draft));
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.show_door_dialog(ui.ctx())
         })
         .drop_without_applying_deltas();
         assert_eq!(app.editor.project(), &initial);
-        let draft = app.door_dialog.take().unwrap();
+        let draft = app.modals.take_door().unwrap();
         let proposal = draft.proposal(&app).unwrap();
         door_joint::confirm(&mut app.editor, proposal).unwrap();
         assert_eq!(app.editor.project().door_joints.len(), 1);
@@ -1150,7 +1150,7 @@ mod tests {
                 .door_joints,
             app.editor.project().door_joints
         );
-        app.removal_dialog = Some(RemovalDialog::new(&app, DoorRemoval::Object(door)));
+        app.modals.set_removal(Some(RemovalDialog::new(&app, DoorRemoval::Object(door))));
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.show_removal_dialog(ui.ctx())
         })
@@ -1169,7 +1169,7 @@ mod tests {
             |ui| app.show_removal_dialog(ui.ctx()),
         )
         .drop_without_applying_deltas();
-        assert!(app.removal_dialog.is_none());
+        assert!(app.modals.removal().is_none());
         assert_eq!(app.editor.project().boards.len(), 2);
         door_joint::delete_object(&mut app.editor, door).unwrap();
         assert!(app.editor.project().door_joints.is_empty());

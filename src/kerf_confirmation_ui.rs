@@ -27,7 +27,7 @@ impl KerfConfirmation {
 
 impl DesktopApp {
     pub(super) fn show_kerf_confirmation(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.kerf_confirmation.take() else {
+        let Some(mut draft) = self.modals.take_kerf_confirmation() else {
             return;
         };
         let project = self.editor.project();
@@ -130,7 +130,7 @@ impl DesktopApp {
             }
             _ => {}
         }
-        self.kerf_confirmation = Some(draft);
+        self.modals.set_kerf_confirmation(Some(draft));
     }
 }
 
@@ -197,7 +197,7 @@ mod tests {
         app.apply_settings_intent(&ctx, SettingsIntent::ConfirmKerf);
         assert!(!app.settings_open);
         assert!(app.settings_resume_after_dialog);
-        assert!(app.kerf_confirmation.is_some());
+        assert!(app.modals.kerf_confirmation().is_some());
         let before = app.editor.project().clone();
         let mut invoker = None;
         ctx.run_ui(Default::default(), |ui| {
@@ -231,27 +231,27 @@ mod tests {
             frame(&mut app, &ctx, Default::default());
             // Enter on the acknowledgement must not simultaneously submit.
             frame(&mut app, &ctx, key(egui::Key::Enter));
-            assert!(app.kerf_confirmation.is_some());
+            assert!(app.modals.kerf_confirmation().is_some());
             assert_eq!(app.editor.project(), &before);
             frame(&mut app, &ctx, key(egui::Key::Escape));
-            assert!(app.kerf_confirmation.is_none());
+            assert!(app.modals.kerf_confirmation().is_none());
             assert_eq!(app.editor.project(), &before);
 
             app.invoke(Request::new(A::ConfirmKerf)).unwrap();
             frame(&mut app, &ctx, Default::default());
-            app.kerf_confirmation.as_mut().unwrap().acknowledged = true;
+            app.modals.kerf_confirmation_mut().unwrap().acknowledged = true;
             frame(&mut app, &ctx, key(egui::Key::Tab)); // Cancel
             frame(&mut app, &ctx, key(egui::Key::Enter));
-            assert!(app.kerf_confirmation.is_none());
+            assert!(app.modals.kerf_confirmation().is_none());
             assert_eq!(app.editor.project(), &before);
 
             app.invoke(Request::new(A::ConfirmKerf)).unwrap();
             frame(&mut app, &ctx, Default::default());
-            app.kerf_confirmation.as_mut().unwrap().acknowledged = true;
+            app.modals.kerf_confirmation_mut().unwrap().acknowledged = true;
             frame(&mut app, &ctx, key(egui::Key::Tab));
             frame(&mut app, &ctx, key(egui::Key::Tab)); // Confirm
             frame(&mut app, &ctx, key(egui::Key::Enter));
-            assert!(app.kerf_confirmation.is_none());
+            assert!(app.modals.kerf_confirmation().is_none());
             assert_eq!(
                 app.editor.project().confirmed_shop_kerf,
                 Some(before.cutting_kerf)
@@ -268,7 +268,7 @@ mod tests {
 
             app.invoke(Request::new(A::ConfirmKerf)).unwrap();
             frame(&mut app, &ctx, Default::default());
-            app.kerf_confirmation.as_mut().unwrap().acknowledged = true;
+            app.modals.kerf_confirmation_mut().unwrap().acknowledged = true;
             app.editor
                 .set_cutting_kerf(Length::from_micrometres(3000))
                 .unwrap();

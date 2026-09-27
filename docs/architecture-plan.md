@@ -51,7 +51,19 @@ Goal: no silent failures, no crash without a recovery save, no new production `u
      validated invariant guarantees it.
    - Fix the 5 existing clippy warnings.
 
-## Phase 2 — Dialogs as one modal state (medium)
+## Phase 2 — Dialogs as one modal state (medium) — done
+
+What was done:
+- `src/modals.rs`: `Modals { active: Option<Modal> }` with generated typed accessors
+  (`hinge()`, `hinge_mut()`, `take_hinge()`, `set_hinge(..)`). Opening a second dialog
+  trips a debug assertion; the full test suite never hits it.
+- `other_modal_open` checks `modals.is_open()` instead of 16 fields.
+- Chromes stay where they were: the app-level chromes persist for focus restore.
+  Dialogs that owned an `Option<ModalChrome>` now own a plain `ModalChrome` and use
+  `ModalChrome::detach()` during `show`.
+- The cut fee dialog is a real `CutFeeDialog` holding its own chrome. It no longer keeps
+  an `Arc<Mutex<ModalChrome>>` in egui temp data.
+
 
 Goal: replace the ~20 `Option<XDialog>` fields, the matching `ModalChrome` fields and the
 `other_modal_open` chain with a single source of truth.

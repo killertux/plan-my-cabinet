@@ -609,8 +609,8 @@ impl DesktopApp {
                 Err(Unavailable::Busy)
             } else if self.navigation.pending().is_some()
                 || self.other_modal_open()
-                    && self.board_dimension.is_none()
-                    && self.placement.is_none()
+                    && self.modals.board_dimension().is_none()
+                    && self.modals.placement().is_none()
             {
                 Err(Unavailable::ModalOpen)
             } else {
@@ -629,8 +629,8 @@ impl DesktopApp {
             A::NewProject | A::OpenProject | A::SaveProject | A::SaveProjectAs | A::OpenWelcome
         ) {
             if (self.other_modal_open()
-                && self.placement.is_none()
-                && self.board_dimension.is_none())
+                && self.modals.placement().is_none()
+                && self.modals.board_dimension().is_none())
                 || self.optimizer.comparison_open()
                 || self.navigation.pending().is_some()
                 || self.door_motion.is_some()
@@ -917,16 +917,16 @@ impl DesktopApp {
                 );
             }
             (A::NewBoard, _) => {
-                self.dialog = Some(CreationDialog::board(
+                self.modals.set_creation(Some(CreationDialog::board(
                     self.editor.project().materials.first().map(|m| m.id),
-                ))
+                )))
             }
-            (A::NewMaterial, _) => self.dialog = Some(CreationDialog::material()),
+            (A::NewMaterial, _) => self.modals.set_creation(Some(CreationDialog::material())),
             (A::EditGrid, _) => {
-                self.grid_dialog = Some(GridDialog::open(self.editor.project(), locale))
+                self.modals.set_grid(Some(GridDialog::open(self.editor.project(), locale)))
             }
             (A::EditKerf, _) => {
-                self.grid_dialog = Some(GridDialog::cutting_kerf(self.editor.project(), locale))
+                self.modals.set_grid(Some(GridDialog::cutting_kerf(self.editor.project(), locale)))
             }
             (A::AddCatalog, _) => {
                 let result = hardware_catalog::add_builtin(&mut self.editor);
@@ -963,13 +963,13 @@ impl DesktopApp {
                     A::DuplicateAssembly => assembly_ui::Operation::Duplicate,
                     _ => assembly_ui::Operation::Transform,
                 };
-                self.assembly_dialog = Some(assembly_ui::AssemblyDialog::new(self, operation));
+                self.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(self, operation)));
             }
             (A::AssignMaterial, T::Board(id)) => {
                 let Some(board) = self.editor.project().board(id) else {
                     return Err(Unavailable::MissingTarget);
                 };
-                self.board_material = Some(BoardMaterialDialog {
+                self.modals.set_board_material(Some(BoardMaterialDialog {
                     focus_on_open: true,
                     board_id: id,
                     project_id: self.editor.project().id,
@@ -977,10 +977,10 @@ impl DesktopApp {
                     material_id: Some(board.material_id),
                     anchor: Anchor::Centre,
                     error: None,
-                });
+                }));
             }
-            (A::PositionBoard, T::Board(id)) => self.placement = PlacementDialog::numeric(self, id),
-            (A::PlaceFace, T::Board(id)) => self.placement = PlacementDialog::face(self, id),
+            (A::PositionBoard, T::Board(id)) => self.modals.set_placement(PlacementDialog::numeric(self, id)),
+            (A::PlaceFace, T::Board(id)) => self.modals.set_placement(PlacementDialog::face(self, id)),
             (A::DuplicateBoard, T::Board(id)) => {
                 let Some(mut pose) = self.editor.project().board(id).map(|b| b.pose) else {
                     return Err(Unavailable::MissingTarget);
@@ -998,7 +998,7 @@ impl DesktopApp {
                 let Some(board) = self.editor.project().board(id) else {
                     return Err(Unavailable::MissingTarget);
                 };
-                self.board_dimension = Some(BoardDimensionDialog {
+                self.modals.set_board_dimension(Some(BoardDimensionDialog {
                     focus_on_open: true,
                     board_id: id,
                     project_id: self.editor.project().id,
@@ -1010,7 +1010,7 @@ impl DesktopApp {
                     },
                     anchor: Anchor::Centre,
                     error: None,
-                });
+                }));
             }
             (A::SetGrain, T::Board(id)) => {
                 if let Argument::Grain(grain) = request.argument
@@ -1020,19 +1020,19 @@ impl DesktopApp {
                 }
             }
             (A::NewStock, T::Material(id)) => {
-                self.stock_dialog = Some(stock_ui::StockDialog::new_for_material(
+                self.modals.set_stock(Some(stock_ui::StockDialog::new_for_material(
                     self.editor.project(),
                     id,
-                ));
+                )));
             }
             (A::AddIssueStock, T::Board(id)) => {
-                self.stock_dialog = Some(stock_ui::StockDialog::new_for_issue(
+                self.modals.set_stock(Some(stock_ui::StockDialog::new_for_issue(
                     self.editor.project(),
                     id,
-                ));
+                )));
             }
             (A::NewStock | A::AddIssueStock, _) => {
-                self.stock_dialog = Some(stock_ui::StockDialog::new(self.editor.project()))
+                self.modals.set_stock(Some(stock_ui::StockDialog::new(self.editor.project())))
             }
             (A::DuplicateStock, T::Stock(id)) => {
                 if let Ok(new) = self.editor.duplicate_stock(id) {
@@ -1048,11 +1048,11 @@ impl DesktopApp {
                 let Some(stock) = self.editor.project().stock_piece(id) else {
                     return Err(Unavailable::MissingTarget);
                 };
-                self.stock_dialog = Some(stock_ui::StockDialog::edit(
+                self.modals.set_stock(Some(stock_ui::StockDialog::edit(
                     self.editor.project(),
                     stock,
                     locale,
-                ));
+                )));
             }
             (A::StockMove, T::Stock(id)) => {
                 if let Argument::StockPriority { target, subset } = request.argument {
@@ -1082,20 +1082,19 @@ impl DesktopApp {
                 }
             }
             (A::EditCutFee, _) => {
-                self.cut_fee_dialog =
-                    Some(self.editor.project().cut_fee.map_or(String::new(), |fee| {
-                        format!("{}.{:02}", fee.minor_units() / 100, fee.minor_units() % 100)
-                    }))
+                let text = self.editor.project().cut_fee.map_or(String::new(), |fee| {
+                    format!("{}.{:02}", fee.minor_units() / 100, fee.minor_units() % 100)
+                });
+                self.modals.set_cut_fee(Some(stock_ui::CutFeeDialog::new(text)));
             }
             (A::EditCurrency, _) => {
-                self.currency_dialog =
-                    Some(currency_ui::CurrencyDialog::new(self.editor.project()));
+                self.modals.set_currency(Some(currency_ui::CurrencyDialog::new(self.editor.project())));
             }
             (A::NewHardware, _) => {
-                self.hardware_dialog = Some(hardware_ui::HardwareDialog::new(self, None))
+                self.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(self, None)))
             }
             (A::EditHardware, T::Object(id)) => {
-                self.hardware_dialog = Some(hardware_ui::HardwareDialog::new(self, Some(id)))
+                self.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(self, Some(id))))
             }
             (A::DuplicateHardware, T::Object(id)) => {
                 if let Ok(copy) = self.editor.duplicate_placeholder(id) {
@@ -1103,35 +1102,35 @@ impl DesktopApp {
                 }
             }
             (A::DeleteHardware, T::Object(id)) => {
-                self.removal_dialog = Some(door_joint_ui::RemovalDialog::new(
+                self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
                     self,
                     door_joint_ui::DoorRemoval::Hardware(id),
-                ));
+                )));
             }
-            (A::NewHinge, _) => self.hinge_dialog = Some(hinge_ui::HingeDialog::new(self, None)),
+            (A::NewHinge, _) => self.modals.set_hinge(Some(hinge_ui::HingeDialog::new(self, None))),
             (A::EditHinge, T::Hinge(id)) => {
-                self.hinge_dialog = Some(hinge_ui::HingeDialog::new(self, Some(id)))
+                self.modals.set_hinge(Some(hinge_ui::HingeDialog::new(self, Some(id))))
             }
             (A::DeleteHinge, T::Hinge(id)) => {
                 let result = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
                 self.report_edit(result);
             }
-            (A::NewDoor, _) => self.door_dialog = Some(door_joint_ui::DoorDialog::new(self, None)),
+            (A::NewDoor, _) => self.modals.set_door(Some(door_joint_ui::DoorDialog::new(self, None))),
             (A::EditDoor, T::Door(id)) => {
-                self.door_dialog = Some(door_joint_ui::DoorDialog::new(self, Some(id)))
+                self.modals.set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id))))
             }
             (A::DeleteDoor, T::Door(id)) => {
-                self.removal_dialog = Some(door_joint_ui::RemovalDialog::new(
+                self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
                     self,
                     door_joint_ui::DoorRemoval::Joint(id),
-                ))
+                )))
             }
             (A::DeleteObject, _) => {
                 if let Some(id) = self.selection.active {
-                    self.removal_dialog = Some(door_joint_ui::RemovalDialog::new(
+                    self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
                         self,
                         door_joint_ui::DoorRemoval::Object(id),
-                    ));
+                    )));
                 }
             }
             (A::StartMotion, T::Door(id)) => {
@@ -1211,9 +1210,9 @@ impl DesktopApp {
                 }
             }
             (A::ConfirmKerf, _) => {
-                self.kerf_confirmation = Some(crate::kerf_confirmation_ui::KerfConfirmation::new(
+                self.modals.set_kerf_confirmation(Some(crate::kerf_confirmation_ui::KerfConfirmation::new(
                     self.editor.project(),
-                ));
+                )));
             }
             (A::OpenHandoff, _) => {
                 if matches!(
@@ -1258,7 +1257,7 @@ impl DesktopApp {
         let Some(material) = self.editor.project().material(id) else {
             return;
         };
-        self.material_edit = Some(MaterialEditDialog {
+        self.modals.set_material_edit(Some(MaterialEditDialog {
             focus_on_open: true,
             id,
             name: material.name.clone(),
@@ -1270,7 +1269,7 @@ impl DesktopApp {
             anchor: Anchor::Centre,
             choice: None,
             error: None,
-        });
+        }));
     }
 
     fn open_batch_action(&mut self) {
@@ -1283,7 +1282,7 @@ impl DesktopApp {
             .map(BoardSelection::Board)
             .collect();
         if let Ok(summary) = self.editor.selected_boards(&selection) {
-            self.batch_dimension = Some(BatchDialog {
+            self.modals.set_batch_dimension(Some(BatchDialog {
                 focus_on_open: true,
                 project_id: self.editor.project().id,
                 revision: self.editor.project().revision,
@@ -1296,7 +1295,7 @@ impl DesktopApp {
                 dimension: BoardDimension::Length,
                 value: DimensionDraft::new(),
                 error: None,
-            });
+            }));
         }
     }
 
@@ -1817,7 +1816,7 @@ mod tests {
             Target::Board(plan_my_cabinet::reference_fixture::LEFT_SIDE_ID),
         ))
         .unwrap();
-        app.board_dimension.as_mut().unwrap().value.text = "invalid".into();
+        app.modals.board_dimension_mut().unwrap().value.text = "invalid".into();
         assert_eq!(
             app.action_availability(Request::new(ActionId::SaveProject)),
             Ok(())
@@ -1828,7 +1827,7 @@ mod tests {
             app.resolve_navigation(NavigationDecision::Stay),
             Outcome::Stayed
         );
-        assert_eq!(app.board_dimension.as_ref().unwrap().value.text, "invalid");
+        assert_eq!(app.modals.board_dimension().unwrap().value.text, "invalid");
         app.invoke(Request::new(ActionId::OpenHandoff)).unwrap();
         assert_eq!(app.session.active, Workspace::Design);
         assert!(app.navigation.pending().is_some());
@@ -1840,14 +1839,14 @@ mod tests {
             app.resolve_navigation(NavigationDecision::Stay),
             Outcome::Stayed
         );
-        assert_eq!(app.board_dimension.as_ref().unwrap().value.text, "invalid");
+        assert_eq!(app.modals.board_dimension().unwrap().value.text, "invalid");
         app.invoke(Request::new(ActionId::OpenHandoff)).unwrap();
         assert_eq!(
             app.resolve_navigation(NavigationDecision::Abandon),
             Outcome::Navigated
         );
         assert_eq!(app.session.active, Workspace::Handoff);
-        assert!(app.board_dimension.is_none());
+        assert!(app.modals.board_dimension().is_none());
         assert!(app.export_activity.is_none());
     }
 

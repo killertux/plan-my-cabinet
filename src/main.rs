@@ -63,6 +63,7 @@ mod hinge_ui;
 mod icons;
 mod kerf_confirmation_ui;
 mod modal_chrome;
+mod modals;
 mod optimization_ui;
 mod pending_navigation;
 mod placement_ui;
@@ -457,31 +458,17 @@ struct DesktopApp {
     move_tool: viewport::MoveTool,
     localizer: Localizer,
     editor: ProjectEditor,
-    dialog: Option<CreationDialog>,
+    /// The one form dialog that may be open.
+    modals: modals::Modals,
     suspended_board: Option<CreationDialog>,
     board_creation_chrome: ModalChrome,
     material_creation_chrome: ModalChrome,
-    material_edit: Option<MaterialEditDialog>,
     material_edit_chrome: ModalChrome,
-    board_material: Option<BoardMaterialDialog>,
     board_material_chrome: ModalChrome,
-    board_dimension: Option<BoardDimensionDialog>,
     board_dimension_chrome: ModalChrome,
-    batch_dimension: Option<BatchDialog>,
     batch_dimension_chrome: ModalChrome,
-    placement: Option<PlacementDialog>,
     placement_chrome: ModalChrome,
-    grid_dialog: Option<GridDialog>,
-    kerf_confirmation: Option<kerf_confirmation_ui::KerfConfirmation>,
     grid_chrome: ModalChrome,
-    stock_dialog: Option<stock_ui::StockDialog>,
-    cut_fee_dialog: Option<String>,
-    currency_dialog: Option<currency_ui::CurrencyDialog>,
-    assembly_dialog: Option<assembly_ui::AssemblyDialog>,
-    hardware_dialog: Option<hardware_ui::HardwareDialog>,
-    hinge_dialog: Option<hinge_ui::HingeDialog>,
-    door_dialog: Option<door_joint_ui::DoorDialog>,
-    removal_dialog: Option<door_joint_ui::RemovalDialog>,
     door_motion: Option<(Uuid, f64)>,
     catalog_update_notice: Option<String>,
     sheet_repair: sheet_ui::RepairUi,
@@ -560,7 +547,7 @@ impl Default for DesktopApp {
             move_tool: viewport::MoveTool::default(),
             localizer: Localizer::new(Language::En),
             editor,
-            dialog: None,
+            modals: modals::Modals::default(),
             suspended_board: None,
             board_creation_chrome: ModalChrome::new(egui::Id::new("board-creation-dialog"))
                 .width(480.0)
@@ -570,12 +557,10 @@ impl Default for DesktopApp {
                 .width(400.0)
                 .icon(icons::Icon::Material)
                 .first_focus(egui::Id::new("material-creation-name")),
-            material_edit: None,
             material_edit_chrome: ModalChrome::new(egui::Id::new("material-edit-dialog"))
                 .width(480.0)
                 .icon(icons::Icon::Material)
                 .first_focus(egui::Id::new("material-edit-name")),
-            board_material: None,
             board_material_chrome: ModalChrome::new(egui::Id::new("board-material-dialog"))
                 .width(440.0)
                 .icon(icons::Icon::Material)
@@ -584,32 +569,19 @@ impl Default for DesktopApp {
                         .with("popup")
                         .with("select"),
                 ),
-            board_dimension: None,
             board_dimension_chrome: ModalChrome::new(egui::Id::new("board-dimension-dialog"))
                 .width(440.0)
                 .icon(icons::Icon::Measure)
                 .first_focus(egui::Id::new("board-dimension-value")),
-            batch_dimension: None,
             batch_dimension_chrome: ModalChrome::new(egui::Id::new("batch-dimension-dialog"))
                 .width(440.0)
                 .icon(icons::Icon::Measure)
                 .first_focus(egui::Id::new("batch-dimension-value")),
-            placement: None,
             placement_chrome: ModalChrome::new(egui::Id::new("placement-dialog")).width(520.0),
-            grid_dialog: None,
-            kerf_confirmation: None,
             grid_chrome: ModalChrome::new(egui::Id::new("grid-spacing-dialog"))
                 .width(420.0)
                 .icon(icons::Icon::Grid)
                 .first_focus(egui::Id::new("grid-spacing-value")),
-            stock_dialog: None,
-            cut_fee_dialog: None,
-            currency_dialog: None,
-            assembly_dialog: None,
-            hardware_dialog: None,
-            hinge_dialog: None,
-            door_dialog: None,
-            removal_dialog: None,
             door_motion: None,
             catalog_update_notice: None,
             sheet_repair: sheet_ui::RepairUi::default(),
@@ -1339,7 +1311,7 @@ impl DesktopApp {
                 self.session.focused_sheet.map(InspectorTarget::Sheet),
                 self.sheet_repair.can_accept(&mut self.editor),
             )
-        } else if let Some(draft) = &self.board_dimension {
+        } else if let Some(draft) = self.modals.board_dimension() {
             let project = self.editor.project();
             let valid = project.id == draft.project_id
                 && project.revision == draft.revision
@@ -1358,7 +1330,7 @@ impl DesktopApp {
                 Some(InspectorTarget::Board(draft.board_id)),
                 valid,
             )
-        } else if let Some(placement) = &self.placement {
+        } else if let Some(placement) = self.modals.placement() {
             (
                 EditKind::Preview,
                 Some(InspectorTarget::Board(placement.board_id)),
@@ -1414,7 +1386,7 @@ impl DesktopApp {
 
     fn request_navigation(&mut self, route: NavigationRoute) -> Outcome {
         if self.project_files.blocking()
-            || self.other_modal_open() && self.placement.is_none() && self.board_dimension.is_none()
+            || self.other_modal_open() && self.modals.placement().is_none() && self.modals.board_dimension().is_none()
         {
             return Outcome::Blocked(pending_navigation::Blocked::PendingDecision);
         }
@@ -1534,16 +1506,15 @@ impl DesktopApp {
             _ => None,
         };
         let return_selection = self
-            .placement
-            .as_ref()
+            .modals
+            .placement()
             .map(|dialog| (dialog.selection_ids.clone(), dialog.selection_active));
         let workspace_route = matches!(
             self.navigation.pending().map(|intent| intent.route),
             Some(NavigationRoute::Workspace(_))
         );
         let repair = &mut self.sheet_repair;
-        let board_dimension = &mut self.board_dimension;
-        let placement = &mut self.placement;
+        let modals = &mut self.modals;
         let drafts = &mut self.edit_drafts;
         let mut conflicts = None;
         let outcome = self.navigation.resolve(
@@ -1559,7 +1530,7 @@ impl DesktopApp {
                     } else {
                         repair.cancel_navigation(editor);
                     }
-                } else if let Some(draft) = board_dimension.as_mut() {
+                } else if let Some(draft) = modals.board_dimension_mut() {
                     if decision == NavigationDecision::Commit {
                         let value = draft
                             .value
@@ -1583,14 +1554,14 @@ impl DesktopApp {
                                 });
                             })?);
                     }
-                    *board_dimension = None;
-                } else if placement.is_some() {
+                    modals.set_board_dimension(None);
+                } else if modals.placement().is_some() {
                     if decision == NavigationDecision::Commit && editor.preview().is_some() {
                         editor.commit_preview().map_err(|_| ())?;
                     } else {
                         editor.cancel_preview();
                     }
-                    *placement = None;
+                    modals.set_placement(None);
                 } else if editor.preview().is_some() {
                     if decision == NavigationDecision::Commit {
                         editor.commit_preview().map_err(|_| ())?;
@@ -1951,22 +1922,7 @@ impl DesktopApp {
             || self.settings_worked_examples
             || self.settings_cleanup.is_some()
             || (self.template_setup.is_some() && !self.template_guard_pending)
-            || self.dialog.is_some()
-            || self.material_edit.is_some()
-            || self.board_material.is_some()
-            || self.board_dimension.is_some()
-            || self.batch_dimension.is_some()
-            || self.placement.is_some()
-            || self.grid_dialog.is_some()
-            || self.kerf_confirmation.is_some()
-            || self.stock_dialog.is_some()
-            || self.cut_fee_dialog.is_some()
-            || self.currency_dialog.is_some()
-            || self.assembly_dialog.is_some()
-            || self.hardware_dialog.is_some()
-            || self.hinge_dialog.is_some()
-            || self.door_dialog.is_some()
-            || self.removal_dialog.is_some()
+            || self.modals.is_open()
             || matches!(self.export_activity, Some(ExportActivity::Confirming(..)))
     }
 
@@ -1999,7 +1955,7 @@ impl DesktopApp {
     }
 
     fn show_grid_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.grid_dialog.take() else {
+        let Some(mut draft) = self.modals.take_grid() else {
             // A draft can be dismissed by project replacement or a caller that
             // clears dialogs directly. Do not leave a modal layer or focus trap
             // alive after its owning draft is gone.
@@ -2184,11 +2140,11 @@ impl DesktopApp {
             }
             draft.error = true;
         }
-        self.grid_dialog = Some(draft);
+        self.modals.set_grid(Some(draft));
     }
 
     fn show_batch_dimension(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.batch_dimension.take() else {
+        let Some(mut draft) = self.modals.take_batch_dimension() else {
             return;
         };
         let mut accepted_preview = None;
@@ -2558,14 +2514,14 @@ impl DesktopApp {
                 }
             }
         }
-        self.batch_dimension = Some(draft);
+        self.modals.set_batch_dimension(Some(draft));
     }
 
     fn show_board_dimension(&mut self, ctx: &egui::Context) {
         if self.navigation.pending().is_some() {
             return;
         }
-        let Some(mut draft) = self.board_dimension.take() else {
+        let Some(mut draft) = self.modals.take_board_dimension() else {
             if self.board_dimension_chrome.is_active() {
                 self.board_dimension_chrome.close(ctx);
             }
@@ -2830,11 +2786,11 @@ impl DesktopApp {
                 Err(_) => draft.error = Some(DimensionEditError::StalePreview),
             }
         }
-        self.board_dimension = Some(draft);
+        self.modals.set_board_dimension(Some(draft));
     }
 
     fn show_board_material(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.board_material.take() else {
+        let Some(mut draft) = self.modals.take_board_material() else {
             if self.board_material_chrome.is_active() {
                 self.board_material_chrome.close(ctx);
             }
@@ -3004,11 +2960,11 @@ impl DesktopApp {
                 Err(_) => draft.error = Some(MaterialChangeError::StalePreview),
             }
         }
-        self.board_material = Some(draft);
+        self.modals.set_board_material(Some(draft));
     }
 
     fn show_material_edit(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.material_edit.take() else {
+        let Some(mut draft) = self.modals.take_material_edit() else {
             if self.material_edit_chrome.is_active() {
                 self.material_edit_chrome.close(ctx);
             }
@@ -3318,11 +3274,11 @@ impl DesktopApp {
                 Err(_) => draft.error = Some(MaterialChangeError::StalePreview),
             }
         }
-        self.material_edit = Some(draft);
+        self.modals.set_material_edit(Some(draft));
     }
 
     fn show_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.dialog.take() else {
+        let Some(mut draft) = self.modals.take_creation() else {
             if self.board_creation_chrome.is_active() {
                 self.board_creation_chrome.close(ctx);
             }
@@ -3768,7 +3724,7 @@ impl DesktopApp {
         if actions::decision(A::CancelDialog, result.action == ModalAction::Cancel) {
             chrome.close(ctx);
             if draft.kind == DialogKind::Material {
-                self.dialog = self.suspended_board.take();
+                self.modals.set_creation(self.suspended_board.take());
             }
             return;
         }
@@ -3817,14 +3773,14 @@ impl DesktopApp {
                     chrome.close(ctx);
                     if let Some(mut board) = self.suspended_board.take() {
                         board.material_id = Some(id);
-                        self.dialog = Some(board);
+                        self.modals.set_creation(Some(board));
                     }
                     return;
                 }
             }
             draft.error = true;
         }
-        self.dialog = Some(draft);
+        self.modals.set_creation(Some(draft));
     }
 }
 
@@ -5838,7 +5794,7 @@ impl DesktopApp {
                     self.localizer.language(),
                     self.preferences.inverse_scroll_zoom,
                     self.preferences.material_tint,
-                    self.placement.as_ref().and_then(PlacementDialog::highlighted),
+                    self.modals.placement().and_then(PlacementDialog::highlighted),
                     motion_poses.as_ref(),
                     self.measurement_scope,
                     self.measurement_frame,
@@ -5925,8 +5881,8 @@ impl DesktopApp {
                 || self.project_files.blocking()
                 || self.navigation.pending().is_some()
                 || (self.other_modal_open()
-                    && self.board_dimension.is_none()
-                    && self.placement.is_none()),
+                    && self.modals.board_dimension().is_none()
+                    && self.modals.placement().is_none()),
         ) {
             self.request_navigation(NavigationRoute::Workspace(workspace));
         }
@@ -5938,8 +5894,8 @@ impl DesktopApp {
                 && !self.optimizer.comparison_open()
                 && !self.project_files.blocking()
                 && (!self.other_modal_open()
-                    || self.board_dimension.is_some()
-                    || self.placement.is_some()),
+                    || self.modals.board_dimension().is_some()
+                    || self.modals.placement().is_some()),
             issues,
         ) {
             match workspace {
@@ -6629,8 +6585,8 @@ mod tests {
         app.apply_settings_intent(&ctx, SettingsIntent::EditGrid);
         assert!(!app.settings_open);
         assert!(app.settings_resume_after_dialog);
-        assert!(app.grid_dialog.is_some());
-        app.grid_dialog = None;
+        assert!(app.modals.grid().is_some());
+        app.modals.set_grid(None);
         ctx.begin_pass(egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -6648,8 +6604,8 @@ mod tests {
         app.invoke(Request::new(A::OpenSettings)).unwrap();
         app.apply_settings_intent(&ctx, SettingsIntent::ChangeCurrency);
         assert!(!app.settings_open);
-        assert!(app.currency_dialog.is_some());
-        app.currency_dialog = None;
+        assert!(app.modals.currency().is_some());
+        app.modals.set_currency(None);
         app.apply_settings_intent(&ctx, SettingsIntent::WorkedExamples);
         assert!(app.settings_worked_examples);
         assert!(app.other_modal_open());
@@ -7099,7 +7055,7 @@ mod tests {
         let second = app.editor.project().boards[1].id;
         app.invoke(Request::with(A::EditDimensions, Target::Board(first)))
             .unwrap();
-        app.board_dimension.as_mut().unwrap().value.text = "invalid".into();
+        app.modals.board_dimension_mut().unwrap().value.text = "invalid".into();
         let original = app.editor.project().clone();
         assert_eq!(
             app.request_navigation(NavigationRoute::Entity(Destination::Board(second))),
@@ -7116,7 +7072,7 @@ mod tests {
             app.resolve_navigation(NavigationDecision::Stay),
             Outcome::Stayed
         );
-        assert_eq!(app.board_dimension.as_ref().unwrap().value.text, "invalid");
+        assert_eq!(app.modals.board_dimension().unwrap().value.text, "invalid");
         assert_eq!(app.selection.active, None);
         assert_eq!(app.editor.project(), &original);
         assert!(matches!(
@@ -7127,7 +7083,7 @@ mod tests {
             app.resolve_navigation(NavigationDecision::Abandon),
             Outcome::Navigated
         );
-        assert!(app.board_dimension.is_none());
+        assert!(app.modals.board_dimension().is_none());
         assert_eq!(app.selection.active, Some(second));
         assert_eq!(app.editor.project(), &original);
     }
@@ -7141,7 +7097,7 @@ mod tests {
         let old = app.editor.project().boards[0].length.micrometres();
         app.invoke(Request::with(A::EditDimensions, Target::Board(first)))
             .unwrap();
-        app.board_dimension.as_mut().unwrap().value.text = format_length(
+        app.modals.board_dimension_mut().unwrap().value.text = format_length(
             Length::from_micrometres(old + 10_000),
             Unit::Mm,
             Locale::En,
@@ -7164,7 +7120,7 @@ mod tests {
             old + 10_000
         );
         assert_eq!(app.selection.active, Some(second));
-        assert!(app.board_dimension.is_none());
+        assert!(app.modals.board_dimension().is_none());
     }
 
     #[test]
@@ -7648,7 +7604,7 @@ mod tests {
         let board = app.editor.project().boards[0].id;
         let sheet = app.editor.project().stock[0].id;
         app.selection.choose(Some(board), false);
-        app.placement = PlacementDialog::numeric(&app, board);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board));
         let original = app.editor.project().clone();
         assert_eq!(
             app.request_navigation(NavigationRoute::Entity(Destination::Sheet(sheet))),
@@ -7662,7 +7618,7 @@ mod tests {
             Outcome::Stayed
         );
         assert_eq!(app.session.active, Workspace::Design);
-        assert!(app.placement.is_some());
+        assert!(app.modals.placement().is_some());
         assert_eq!(app.selection.active, Some(board));
         assert!(matches!(
             app.request_navigation(NavigationRoute::Entity(Destination::Sheet(sheet))),
@@ -7769,7 +7725,7 @@ mod tests {
         app.selection.choose(Some(board), false);
         app.invoke(Request::with(A::EditDimensions, Target::Board(board)))
             .unwrap();
-        let draft = app.board_dimension.as_mut().unwrap();
+        let draft = app.modals.board_dimension_mut().unwrap();
         draft.value.text = "invalid draft".into();
         draft.value.consent = true;
         app.session.design.scroll = 73.0;
@@ -7785,10 +7741,10 @@ mod tests {
                 app.open_drawer = Some(workspace_shell::Drawer::Inspector);
             }
             assert_eq!(
-                app.board_dimension.as_ref().unwrap().value.text,
+                app.modals.board_dimension().unwrap().value.text,
                 "invalid draft"
             );
-            assert!(app.board_dimension.as_ref().unwrap().value.consent);
+            assert!(app.modals.board_dimension().unwrap().value.consent);
             assert_eq!(app.session.design.scroll, 73.0);
             assert_eq!(app.controls_horizontal_scroll[0], 19.0);
             assert_eq!(app.inspector_scroll[0], egui::vec2(12.0, 84.0));
@@ -8796,7 +8752,7 @@ mod tests {
         app.request_scene_selection(Some(id), false);
         app.invoke(Request::with(A::PositionBoard, Target::Board(id)))
             .unwrap();
-        assert!(app.placement.is_some());
+        assert!(app.modals.placement().is_some());
         app.invoke(Request::new(A::NewProject)).unwrap();
         assert!(app.navigation.pending().is_some());
         assert_eq!(app.editor.project().id, original);
@@ -8804,13 +8760,13 @@ mod tests {
             app.resolve_navigation(NavigationDecision::Stay),
             Outcome::Stayed
         );
-        assert!(app.placement.is_some());
+        assert!(app.modals.placement().is_some());
         app.invoke(Request::new(A::NewProject)).unwrap();
         assert_eq!(
             app.resolve_navigation(NavigationDecision::Abandon),
             Outcome::Navigated
         );
-        assert!(app.placement.is_none());
+        assert!(app.modals.placement().is_none());
         assert_ne!(app.editor.project().id, original);
     }
 
@@ -9292,7 +9248,7 @@ mod tests {
         app.selection.choose(Some(board), false);
         app.session.switch(Workspace::CutPlan);
         let before = app.editor.project().clone();
-        app.grid_dialog = Some(GridDialog::open(app.editor.project(), Locale::En));
+        app.modals.set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
         let buttons = repair_frame(&mut app, &ctx, vec![]);
         let (_, disabled, position) = buttons
             .iter()
@@ -9302,7 +9258,7 @@ mod tests {
         click_repair_position(&mut app, &ctx, *position);
         assert!(!app.sheet_repair.active());
         assert!(app.editor.preview().is_none());
-        app.grid_dialog = None;
+        app.modals.set_grid(None);
         // Retire the modal focus layer before interacting with the workspace.
         repair_frame(&mut app, &ctx, vec![]);
         let edit = app.localizer.text("sheet-edit");
@@ -9328,10 +9284,10 @@ mod tests {
         assert!(app.invoke(Request::new(A::EditGrid)).is_err());
         assert_eq!(app.editor.project(), &before);
         assert!(
-            app.dialog.is_none()
-                && app.stock_dialog.is_none()
-                && app.grid_dialog.is_none()
-                && app.placement.is_none()
+            app.modals.creation().is_none()
+                && app.modals.stock().is_none()
+                && app.modals.grid().is_none()
+                && app.modals.placement().is_none()
         );
         click_repair_button(&mut app, &ctx, &cancel);
         assert!(!app.sheet_repair.active());
@@ -9425,13 +9381,13 @@ mod tests {
         let (mut app, material, stock) = creation_fixture();
         let before = app.editor.project().clone();
         let undo = app.editor.can_undo();
-        app.dialog = Some(CreationDialog::board(Some(material)));
+        app.modals.set_creation(Some(CreationDialog::board(Some(material))));
         for size in ["100 mm", "75 mm", "120 mm", "100 mm"] {
-            let draft = app.dialog.as_mut().unwrap();
+            let draft = app.modals.creation_mut().unwrap();
             draft.length.text = size.into();
             draft.width.text = "50 mm".into();
             creation_frame(&mut app, &ctx, None);
-            let preview = app.dialog.as_ref().unwrap().preview.unwrap().1;
+            let preview = app.modals.creation().unwrap().preview.unwrap().1;
             assert_eq!(
                 preview.fit,
                 if size == "120 mm" {
@@ -9444,7 +9400,7 @@ mod tests {
             assert_eq!(app.editor.can_undo(), undo);
         }
         creation_frame(&mut app, &ctx, Some(egui::Key::Escape));
-        assert!(app.dialog.is_none());
+        assert!(app.modals.creation().is_none());
         assert_eq!(app.editor.project(), &before);
         assert_eq!(app.editor.project().revision, before.revision);
         assert!(app.editor.project().allocations.is_empty());
@@ -9454,13 +9410,13 @@ mod tests {
     fn creation_requires_fresh_rounding_consent_and_popup_keys_stay_inside() {
         let ctx = egui::Context::default();
         let (mut app, material, _) = creation_fixture();
-        app.dialog = Some(CreationDialog::board(Some(material)));
-        app.dialog.as_mut().unwrap().length.text = "1/64 in".into();
-        app.dialog.as_mut().unwrap().width.text = "50 mm".into();
+        app.modals.set_creation(Some(CreationDialog::board(Some(material))));
+        app.modals.creation_mut().unwrap().length.text = "1/64 in".into();
+        app.modals.creation_mut().unwrap().width.text = "50 mm".into();
         creation_frame(&mut app, &ctx, None);
         assert!(
-            app.dialog
-                .as_ref()
+            app.modals
+                .creation()
                 .unwrap()
                 .board_key(app.editor.project())
                 .is_none()
@@ -9468,11 +9424,11 @@ mod tests {
         let before = app.editor.project().clone();
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
         assert_eq!(app.editor.project(), &before);
-        app.dialog.as_mut().unwrap().length.consent = true;
+        app.modals.creation_mut().unwrap().length.consent = true;
         creation_frame(&mut app, &ctx, None);
         assert_eq!(
-            app.dialog
-                .as_ref()
+            app.modals
+                .creation()
                 .unwrap()
                 .board_key(app.editor.project())
                 .unwrap()
@@ -9482,19 +9438,19 @@ mod tests {
         let popup = egui::Id::new("board-creation-material").with("popup");
         egui::Popup::open_id(&ctx, popup);
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
-        assert!(app.dialog.is_some());
+        assert!(app.modals.creation().is_some());
         assert_eq!(app.editor.project(), &before);
         egui::Popup::open_id(&ctx, popup);
         creation_frame(&mut app, &ctx, Some(egui::Key::Escape));
-        assert!(app.dialog.is_some());
+        assert!(app.modals.creation().is_some());
         assert_eq!(app.editor.project(), &before);
         // Editing the proposed quantity invalidates the previous consent.
-        app.dialog.as_mut().unwrap().length.text = "3/64 in".into();
-        app.dialog.as_mut().unwrap().length.consent = false;
+        app.modals.creation_mut().unwrap().length.text = "3/64 in".into();
+        app.modals.creation_mut().unwrap().length.consent = false;
         creation_frame(&mut app, &ctx, None);
         assert!(
-            app.dialog
-                .as_ref()
+            app.modals
+                .creation()
                 .unwrap()
                 .board_key(app.editor.project())
                 .is_none()
@@ -9510,10 +9466,10 @@ mod tests {
         board.length.text = "100 mm".into();
         board.width.text = "50 mm".into();
         board.grain_override = Some(BoardGrain::Unrestricted);
-        app.dialog = Some(board);
+        app.modals.set_creation(Some(board));
         creation_frame(&mut app, &ctx, None);
         assert_eq!(
-            app.dialog.as_ref().unwrap().preview.unwrap().1.fit,
+            app.modals.creation().unwrap().preview.unwrap().1.fit,
             FirstFit::Allocated(stock)
         );
         // An intervening edit consumes that space. The old preview is never an allocation reservation.
@@ -9527,7 +9483,7 @@ mod tests {
             })
             .unwrap();
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
-        assert!(app.dialog.is_none());
+        assert!(app.modals.creation().is_none());
         assert_eq!(app.first_fit_notice, Some(FirstFit::NoFit));
         assert_eq!(app.editor.project().boards.len(), 2);
         assert_eq!(app.editor.project().allocations.len(), 1);
@@ -9542,10 +9498,10 @@ mod tests {
         material_draft.name = "Oak".into();
         material_draft.thickness.text = "18 mm".into();
         material_draft.color = Some(SrgbColor([226, 197, 156]));
-        app.dialog = Some(material_draft);
+        app.modals.set_creation(Some(material_draft));
         creation_frame(&mut app, &ctx, None);
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
-        assert!(app.dialog.is_none());
+        assert!(app.modals.creation().is_none());
         let id = app.editor.project().materials.last().unwrap().id;
         assert_eq!(
             app.editor.project().material_colors.get(&id),
@@ -9564,16 +9520,16 @@ mod tests {
         board.name = "Pending".into();
         board.length.text = "100 mm".into();
         board.width.text = "50 mm".into();
-        app.dialog = Some(board);
+        app.modals.set_creation(Some(board));
         creation_frame(&mut app, &ctx, None);
         let replacement = Project::new("Different project", Currency::Brl);
         app.editor = ProjectEditor::new(replacement.clone()).unwrap();
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
         assert_eq!(app.editor.project(), &replacement);
-        assert!(app.dialog.is_some());
-        assert_eq!(app.dialog.as_ref().unwrap().name, "Pending");
+        assert!(app.modals.creation().is_some());
+        assert_eq!(app.modals.creation().unwrap().name, "Pending");
         creation_frame(&mut app, &ctx, Some(egui::Key::Escape));
-        assert!(app.dialog.is_none());
+        assert!(app.modals.creation().is_none());
         assert_eq!(app.editor.project(), &replacement);
     }
 
@@ -9585,11 +9541,11 @@ mod tests {
         let mut board = CreationDialog::board(Some(material));
         board.length.text = "1000001 mm".into();
         board.width.text = "50 mm".into();
-        app.dialog = Some(board);
+        app.modals.set_creation(Some(board));
         creation_frame(&mut app, &ctx, None);
-        assert!(app.dialog.as_ref().unwrap().preview.is_none());
+        assert!(app.modals.creation().unwrap().preview.is_none());
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
-        assert!(app.dialog.is_some());
+        assert!(app.modals.creation().is_some());
         assert_eq!(app.editor.project(), &before);
     }
 
@@ -9603,14 +9559,14 @@ mod tests {
         board.length.consent = true;
         board.width.text = "50 mm".into();
         board.grain_override = Some(BoardGrain::Unrestricted);
-        app.dialog = Some(board);
+        app.modals.set_creation(Some(board));
         creation_frame(&mut app, &ctx, None);
-        app.suspended_board = app.dialog.take();
+        app.suspended_board = app.modals.take_creation();
         let mut material = CreationDialog::material();
         material.name = "Walnut".into();
         material.thickness.text = "18 mm".into();
         material.color = Some(SrgbColor([166, 136, 101]));
-        app.dialog = Some(material);
+        app.modals.set_creation(Some(material));
         creation_frame(&mut app, &ctx, None);
         creation_frame(&mut app, &ctx, Some(egui::Key::Enter));
         let new_material = app.editor.project().materials.last().unwrap().id;
@@ -9621,7 +9577,7 @@ mod tests {
         );
         assert!(app.editor.project().boards.is_empty());
         assert!(app.editor.project().allocations.is_empty());
-        let restored = app.dialog.as_ref().unwrap();
+        let restored = app.modals.creation().unwrap();
         assert_eq!(restored.name, "Pending shelf");
         assert_eq!(restored.length.text, "1/64 in");
         assert!(restored.length.consent);
@@ -9635,7 +9591,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut app = DesktopApp::default();
         let initial = app.editor.project().clone();
-        app.grid_dialog = Some(GridDialog::open(app.editor.project(), Locale::En));
+        app.modals.set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(
                 egui::RawInput {
@@ -9650,12 +9606,12 @@ mod tests {
         };
         draw(&mut app, vec![]);
         assert_eq!(app.editor.project(), &initial);
-        app.grid_dialog.as_mut().unwrap().value.text = "0 mm".into();
+        app.modals.grid_mut().unwrap().value.text = "0 mm".into();
         draw(&mut app, vec![]);
         assert_eq!(app.editor.project(), &initial);
-        app.grid_dialog.as_mut().unwrap().value.text = "1/64 in".into();
+        app.modals.grid_mut().unwrap().value.text = "1/64 in".into();
         draw(&mut app, vec![]);
-        assert!(!app.grid_dialog.as_ref().unwrap().value.consent);
+        assert!(!app.modals.grid().unwrap().value.consent);
         draw(
             &mut app,
             vec![egui::Event::Key {
@@ -9666,7 +9622,7 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        assert!(app.grid_dialog.is_none());
+        assert!(app.modals.grid().is_none());
         assert_eq!(app.editor.project(), &initial);
         assert!(!app.editor.can_undo());
     }
@@ -9699,16 +9655,16 @@ mod tests {
             ctx.run_ui(input, |ui| app.show_placement(ui.ctx()))
                 .drop_without_applying_deltas();
         };
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         if let placement_ui::PlacementDraft::Numeric { position, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             position[0].text = "25.0004 mm".into();
         }
         draw(&mut app, RawInput::default());
         assert!(app.editor.preview().is_none(), "rounding requires consent");
         if let placement_ui::PlacementDraft::Numeric { position, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             position[0].consent = true;
         }
@@ -9732,19 +9688,19 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert!(app.placement.is_none());
+        assert!(app.modals.placement().is_none());
         assert_eq!(app.editor.project(), &initial);
         assert!(app.editor.preview().is_none());
         assert_eq!(app.selection.active, Some(board_id));
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         if let placement_ui::PlacementDraft::Numeric { position, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             position[0].text = "25 mm".into();
         }
         draw(&mut app, RawInput::default());
         app.editor.commit_preview().unwrap();
-        app.placement = None;
+        app.modals.set_placement(None);
         assert_eq!(app.editor.project().revision, initial.revision + 1);
         assert_eq!(app.editor.project().boards[0].pose.translation_mm[0], 25.0);
         app.editor.undo().unwrap();
@@ -9790,7 +9746,7 @@ mod tests {
             })
             .unwrap();
         let before = app.editor.project().clone();
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         let draw = |app: &mut DesktopApp| {
             ctx.run_ui(RawInput::default(), |ui| app.show_placement(ui.ctx()))
                 .drop_without_applying_deltas();
@@ -9798,21 +9754,21 @@ mod tests {
         draw(&mut app);
         assert!(app.editor.preview().is_none());
         if let placement_ui::PlacementDraft::Numeric { frame, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             *frame = plan_my_cabinet::placement::CoordinateFrame::World;
         }
         draw(&mut app);
         assert!(app.editor.preview().is_none());
         if let placement_ui::PlacementDraft::Numeric { position, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             position[0].text = "5 mm".into();
         }
         draw(&mut app);
         assert!(app.editor.preview().is_some());
         if let placement_ui::PlacementDraft::Numeric { position, .. } =
-            &mut app.placement.as_mut().unwrap().draft
+            &mut app.modals.placement_mut().unwrap().draft
         {
             position[0].text = format!(
                 "{:.3}",
@@ -9853,7 +9809,7 @@ mod tests {
         let source = make_board(&mut app, "Source", 0.0);
         let target = make_board(&mut app, "Target", 200.0);
         let before = app.editor.project().clone();
-        app.placement = PlacementDialog::face(&app, source);
+        app.modals.set_placement(PlacementDialog::face(&app, source));
         if let placement_ui::PlacementDraft::Face {
             target: chosen,
             source_face,
@@ -9861,7 +9817,7 @@ mod tests {
             offset,
             gap,
             ..
-        } = &mut app.placement.as_mut().unwrap().draft
+        } = &mut app.modals.placement_mut().unwrap().draft
         {
             *chosen = target;
             *source_face = plan_my_cabinet::placement::BoardFace {
@@ -9885,7 +9841,7 @@ mod tests {
         );
         assert_eq!(app.editor.project(), &before);
         assert_eq!(
-            app.placement.as_ref().unwrap().highlighted().unwrap().2,
+            app.modals.placement().unwrap().highlighted().unwrap().2,
             target
         );
         ctx.run_ui(
@@ -9960,10 +9916,10 @@ mod tests {
         assert_eq!(app.editor.project(), &before);
         assert!(app.selection.ids.contains(&board));
         // There is currently no Delete scene action, including with viewport focus.
-        app.assembly_dialog = Some(assembly_ui::AssemblyDialog::new(
+        app.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(
             &app,
             assembly_ui::Operation::Transform,
-        ));
+        )));
         assert!(app.modal_open());
         ctx.run_ui(
             RawInput {
@@ -10056,10 +10012,10 @@ mod tests {
             }
             let project = app.editor.project();
             match kind {
-                "board" => app.dialog = Some(CreationDialog::board(Some(material_id))),
-                "material" => app.dialog = Some(CreationDialog::material()),
+                "board" => app.modals.set_creation(Some(CreationDialog::board(Some(material_id)))),
+                "material" => app.modals.set_creation(Some(CreationDialog::material())),
                 "edit" => {
-                    app.material_edit = Some(MaterialEditDialog {
+                    app.modals.set_material_edit(Some(MaterialEditDialog {
                         focus_on_open: true,
                         id: material_id,
                         name: "Plywood".into(),
@@ -10071,10 +10027,10 @@ mod tests {
                         anchor: Anchor::Centre,
                         choice: None,
                         error: None,
-                    });
+                    }));
                 }
                 "assign" => {
-                    app.board_material = Some(BoardMaterialDialog {
+                    app.modals.set_board_material(Some(BoardMaterialDialog {
                         focus_on_open: true,
                         board_id,
                         project_id: project.id,
@@ -10082,10 +10038,10 @@ mod tests {
                         material_id: Some(material_id),
                         anchor: Anchor::Centre,
                         error: None,
-                    });
+                    }));
                 }
                 "dimension" => {
-                    app.board_dimension = Some(BoardDimensionDialog {
+                    app.modals.set_board_dimension(Some(BoardDimensionDialog {
                         focus_on_open: true,
                         board_id,
                         project_id: project.id,
@@ -10097,10 +10053,10 @@ mod tests {
                         },
                         anchor: Anchor::Centre,
                         error: None,
-                    });
+                    }));
                 }
                 "batch" => {
-                    app.batch_dimension = Some(BatchDialog {
+                    app.modals.set_batch_dimension(Some(BatchDialog {
                         focus_on_open: true,
                         project_id: project.id,
                         revision: project.revision,
@@ -10109,25 +10065,25 @@ mod tests {
                         value: DimensionDraft::new(),
                         anchors: vec![(board_id, Anchor::Centre)],
                         error: None,
-                    });
+                    }));
                 }
-                "numeric" => app.placement = PlacementDialog::numeric(&app, board_id),
-                "face" => app.placement = PlacementDialog::face(&app, board_id),
-                "stock" => app.stock_dialog = Some(stock_ui::StockDialog::new(project)),
-                "currency" => app.currency_dialog = Some(currency_ui::CurrencyDialog::new(project)),
+                "numeric" => app.modals.set_placement(PlacementDialog::numeric(&app, board_id)),
+                "face" => app.modals.set_placement(PlacementDialog::face(&app, board_id)),
+                "stock" => app.modals.set_stock(Some(stock_ui::StockDialog::new(project))),
+                "currency" => app.modals.set_currency(Some(currency_ui::CurrencyDialog::new(project))),
                 "hardware" => {
-                    app.hardware_dialog = Some(hardware_ui::HardwareDialog::new(&app, None))
+                    app.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(&app, None)))
                 }
-                "hinge" => app.hinge_dialog = Some(hinge_ui::HingeDialog::new(&app, None)),
+                "hinge" => app.modals.set_hinge(Some(hinge_ui::HingeDialog::new(&app, None))),
                 "relationship" => {
-                    app.door_dialog = Some(door_joint_ui::DoorDialog::new(&app, None))
+                    app.modals.set_door(Some(door_joint_ui::DoorDialog::new(&app, None)))
                 }
                 "transform" => {
                     app.selection.choose(Some(board_id), false);
-                    app.assembly_dialog = Some(assembly_ui::AssemblyDialog::new(
+                    app.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(
                         &app,
                         assembly_ui::Operation::Transform,
-                    ));
+                    )));
                 }
                 "fee" | "grid" | "kerf" => {
                     app.invoke(Request::new(match kind {
@@ -10201,9 +10157,9 @@ mod tests {
         for relationship in [false, true] {
             let mut app = navigation_app();
             if relationship {
-                app.door_dialog = Some(door_joint_ui::DoorDialog::new(&app, None));
+                app.modals.set_door(Some(door_joint_ui::DoorDialog::new(&app, None)));
             } else {
-                app.hinge_dialog = Some(hinge_ui::HingeDialog::new(&app, None));
+                app.modals.set_hinge(Some(hinge_ui::HingeDialog::new(&app, None)));
             }
             let before = app.editor.project().clone();
             let ctx = egui::Context::default();
@@ -10266,11 +10222,11 @@ mod tests {
                     !egui::Popup::is_any_open(&ctx),
                     "relationship={relationship}"
                 );
-                assert!(app.hinge_dialog.is_some() || app.door_dialog.is_some());
+                assert!(app.modals.hinge().is_some() || app.modals.door().is_some());
                 assert_eq!(app.editor.project(), &before);
             }
             draw(&mut app, Some(egui::Key::Escape));
-            assert!(app.hinge_dialog.is_none() && app.door_dialog.is_none());
+            assert!(app.modals.hinge().is_none() && app.modals.door().is_none());
             assert_eq!(app.editor.project(), &before);
         }
     }
@@ -10325,7 +10281,7 @@ mod tests {
             app.invoke(Request::with(A::EditDimensions, Target::Board(board)))
                 .unwrap();
             let before = app.editor.project().clone();
-            let draft = app.board_dimension.as_mut().unwrap();
+            let draft = app.modals.board_dimension_mut().unwrap();
             draft.value.text = "1/64 in".into();
             let ctx = egui::Context::default();
             ctx.enable_accesskit();
@@ -10376,7 +10332,7 @@ mod tests {
             );
             assert!(!invalid.iter().any(|(label, _)| label == "Resize board"));
             assert_eq!(app.editor.project(), &before);
-            app.board_dimension.as_mut().unwrap().value.consent = true;
+            app.modals.board_dimension_mut().unwrap().value.consent = true;
             let ready = frame(&mut app, vec![]);
             let confirm = ready
                 .iter()
@@ -10397,7 +10353,7 @@ mod tests {
                     ],
                 );
             }
-            assert!(app.board_dimension.is_none());
+            assert!(app.modals.board_dimension().is_none());
             assert_eq!(app.editor.project().boards[0].length.micrometres(), 397);
             assert_eq!(app.editor.project().revision, before.revision + 1);
             assert!(app.editor.undo().unwrap());
@@ -10416,7 +10372,7 @@ mod tests {
             .find(|material| material.id != before.boards[0].material_id)
             .unwrap()
             .id;
-        app.board_material = Some(BoardMaterialDialog {
+        app.modals.set_board_material(Some(BoardMaterialDialog {
             focus_on_open: true,
             board_id,
             project_id: before.id,
@@ -10424,7 +10380,7 @@ mod tests {
             material_id: Some(before.boards[0].material_id),
             anchor: Anchor::Centre,
             error: None,
-        });
+        }));
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         theme::install_fonts(&ctx);
@@ -10465,7 +10421,7 @@ mod tests {
         };
         assert!(frame(&mut app, vec![]).is_none());
         assert_eq!(app.editor.project(), &before);
-        app.board_material.as_mut().unwrap().material_id = Some(alternate);
+        app.modals.board_material_mut().unwrap().material_id = Some(alternate);
         let confirm = frame(&mut app, vec![]).expect("valid material confirmation");
         for pressed in [true, false] {
             frame(
@@ -10481,7 +10437,7 @@ mod tests {
                 ],
             );
         }
-        assert!(app.board_material.is_none());
+        assert!(app.modals.board_material().is_none());
         assert!(!app.board_material_chrome.is_active());
         assert_eq!(app.editor.project().boards[0].material_id, alternate);
         assert_eq!(app.editor.project().revision, before.revision + 1);
@@ -10494,7 +10450,7 @@ mod tests {
         let mut app = navigation_app();
         let before = app.editor.project().clone();
         let material = before.materials[0].clone();
-        app.material_edit = Some(MaterialEditDialog {
+        app.modals.set_material_edit(Some(MaterialEditDialog {
             focus_on_open: true,
             id: material.id,
             name: material.name.clone(),
@@ -10506,7 +10462,7 @@ mod tests {
             anchor: Anchor::Centre,
             choice: None,
             error: None,
-        });
+        }));
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         theme::install_fonts(&ctx);
@@ -10547,7 +10503,7 @@ mod tests {
         };
         assert!(frame(&mut app, vec![]).is_none());
         assert_eq!(app.editor.project(), &before);
-        app.material_edit.as_mut().unwrap().choice = Some(DependantChoice::Preserve);
+        app.modals.material_edit_mut().unwrap().choice = Some(DependantChoice::Preserve);
         let confirm = frame(&mut app, vec![]).expect("choice enables confirmation");
         for pressed in [true, false] {
             frame(
@@ -10563,7 +10519,7 @@ mod tests {
                 ],
             );
         }
-        assert!(app.material_edit.is_none());
+        assert!(app.modals.material_edit().is_none());
         assert!(!app.material_edit_chrome.is_active());
         assert_eq!(
             app.editor.project().materials[0].default_thickness,
@@ -10586,9 +10542,9 @@ mod tests {
         board.grain_override = Some(BoardGrain::Width);
         let mut app = DesktopApp {
             suspended_board: Some(board),
-            dialog: Some(CreationDialog::material()),
             ..Default::default()
         };
+        app.modals.set_creation(Some(CreationDialog::material()));
         let initial = app.editor.project().clone();
         let mut background = String::new();
         let mut draw = |input| {
@@ -10601,7 +10557,7 @@ mod tests {
             (
                 background_id.unwrap(),
                 ctx.memory(|memory| memory.focused()),
-                app.dialog.as_ref().map(|dialog| dialog.kind),
+                app.modals.creation().map(|dialog| dialog.kind),
             )
         };
         let (background_id, material_focus, _) = draw(RawInput::default());
@@ -10619,7 +10575,7 @@ mod tests {
         let (_, board_focus, _) = draw(RawInput::default());
         assert!(board_focus.is_some() && board_focus != Some(background_id));
         assert_ne!(material_focus, board_focus);
-        let restored = app.dialog.as_ref().unwrap();
+        let restored = app.modals.creation().unwrap();
         assert_eq!(restored.name, "Unfinished shelf");
         assert_eq!(restored.length.text, "1/64 in");
         assert!(restored.length.consent);

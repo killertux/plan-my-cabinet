@@ -18,7 +18,7 @@ pub(super) struct HardwareDialog {
     original_world: [f64; 3],
     rotation: Quaternion,
     error: bool,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
 }
 
 /// Three-decimal draft text without needless zeros ("30", "12.5").
@@ -164,10 +164,8 @@ impl HardwareDialog {
             original_world: world.map_or([0.0; 3], |p| p.translation_mm),
             rotation: world.map_or(Quaternion::IDENTITY, |p| p.rotation),
             error: false,
-            chrome: Some(
-                ModalChrome::new(egui::Id::new("hardware-dialog"))
-                    .first_focus(egui::Id::new("hardware-dialog-name")),
-            ),
+            chrome: ModalChrome::new(egui::Id::new("hardware-dialog"))
+                .first_focus(egui::Id::new("hardware-dialog-name")),
         }
     }
 }
@@ -406,7 +404,7 @@ impl DesktopApp {
     }
 
     pub(super) fn show_hardware_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.hardware_dialog.take() else {
+        let Some(mut draft) = self.modals.take_hardware() else {
             return;
         };
         let mut valid = draft.project_id == self.editor.project().id
@@ -416,7 +414,7 @@ impl DesktopApp {
         } else {
             "hardware-new"
         });
-        let mut chrome = draft.chrome.take().expect("hardware modal controller");
+        let mut chrome = draft.chrome.detach();
         let result = chrome.show(
             ctx,
             &title,
@@ -544,8 +542,8 @@ impl DesktopApp {
                 Err(()) => draft.error = true,
             }
         }
-        draft.chrome = Some(chrome);
-        self.hardware_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_hardware(Some(draft));
     }
 }
 
@@ -557,7 +555,7 @@ mod tests {
     fn invalid_draft_and_escape_do_not_create_hardware() {
         let mut app = DesktopApp::default();
         let before = app.editor.project().clone();
-        app.hardware_dialog = Some(HardwareDialog::new(&app, None));
+        app.modals.set_hardware(Some(HardwareDialog::new(&app, None)));
         let ctx = egui::Context::default();
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(
@@ -575,7 +573,7 @@ mod tests {
             Some(egui::Id::new("hardware-dialog-name"))
         );
         assert_eq!(app.editor.project(), &before);
-        let draft = app.hardware_dialog.as_mut().unwrap();
+        let draft = app.modals.hardware_mut().unwrap();
         draft.name = "Foot".into();
         draft.dimensions[0].text = "0".into();
         draft.dimensions[1].text = "30".into();
@@ -592,7 +590,7 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        assert!(app.hardware_dialog.is_none());
+        assert!(app.modals.hardware().is_none());
         assert_eq!(app.editor.project(), &before);
     }
 
@@ -633,7 +631,7 @@ mod tests {
         assert!(app.action_availability(request).is_ok());
         app.invoke(request).unwrap();
         assert!(matches!(
-            app.removal_dialog.as_ref().map(|dialog| &dialog.target),
+            app.modals.removal().map(|dialog| &dialog.target),
             Some(door_joint_ui::DoorRemoval::Hardware(target)) if *target == id
         ));
         assert_eq!(app.editor.project(), &before);
@@ -657,7 +655,7 @@ mod tests {
             |ui| app.show_removal_dialog(ui.ctx()),
         )
         .drop_without_applying_deltas();
-        assert!(app.removal_dialog.is_none());
+        assert!(app.modals.removal().is_none());
         assert_eq!(app.editor.project(), &before);
     }
 }

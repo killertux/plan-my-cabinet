@@ -641,9 +641,9 @@ mod tests {
             assert!(dialog == Dialog::Palette || app.modal_open());
             assert_eq!(app.editor.project(), &before);
             assert!(match dialog {
-                Dialog::Board | Dialog::Material => app.dialog.is_some(),
-                Dialog::Position | Dialog::Face => app.placement.is_some(),
-                Dialog::Resize => app.batch_dimension.is_some(),
+                Dialog::Board | Dialog::Material => app.modals.creation().is_some(),
+                Dialog::Position | Dialog::Face => app.modals.placement().is_some(),
+                Dialog::Resize => app.modals.batch_dimension().is_some(),
                 Dialog::Unsaved => app.project_files.prompt.is_some(),
                 Dialog::Palette => app.palette.open,
             });

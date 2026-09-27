@@ -514,7 +514,7 @@ impl DesktopApp {
         if self.navigation.pending().is_some() {
             return;
         }
-        let Some(mut dialog) = self.placement.take() else {
+        let Some(mut dialog) = self.modals.take_placement() else {
             return;
         };
         let mut request = None;
@@ -1207,7 +1207,7 @@ impl DesktopApp {
             }
             dialog.error = Some(PlacementError::InvalidPose(UnitError::OutOfBounds));
         }
-        self.placement = Some(dialog);
+        self.modals.set_placement(Some(dialog));
     }
 }
 
@@ -1262,8 +1262,8 @@ mod preset_dialog_tests {
         app.selection.choose(Some(other_id), true);
         let original_selection = app.selection.ids.clone();
         let original = app.editor.project().clone();
-        app.placement = PlacementDialog::numeric(&app, board_id);
-        let dialog = app.placement.as_mut().unwrap();
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        let dialog = app.modals.placement_mut().unwrap();
         let PlacementDraft::Numeric {
             position,
             rotation,
@@ -1291,7 +1291,7 @@ mod preset_dialog_tests {
         assert_eq!(app.editor.project(), &original);
         assert_eq!(app.selection.ids, original_selection);
         let current = app.editor.preview().unwrap().boards[0].pose;
-        let dialog = app.placement.as_mut().unwrap();
+        let dialog = app.modals.placement_mut().unwrap();
         let PlacementDraft::Numeric {
             position,
             rotation,
@@ -1306,7 +1306,7 @@ mod preset_dialog_tests {
         ctx.run_ui(egui::RawInput::default(), |ui| app.show_placement(ui.ctx()))
             .drop_without_applying_deltas();
         assert_eq!(app.editor.preview().unwrap().boards[0].pose, turned);
-        let PlacementDraft::Numeric { position, .. } = &mut app.placement.as_mut().unwrap().draft
+        let PlacementDraft::Numeric { position, .. } = &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1331,7 +1331,7 @@ mod preset_dialog_tests {
         });
         ctx.run_ui(escape, |ui| app.show_placement(ui.ctx()))
             .drop_without_applying_deltas();
-        assert!(app.placement.is_none());
+        assert!(app.modals.placement().is_none());
         assert!(app.editor.preview().is_none());
         assert_eq!(app.editor.project(), &original);
         assert_eq!(app.selection.ids, original_selection);
@@ -1346,11 +1346,11 @@ mod preset_dialog_tests {
             editor: ProjectEditor::new(project).unwrap(),
             ..Default::default()
         };
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         let before = app.editor.project().clone();
         let PlacementDraft::Numeric {
             position, frame, ..
-        } = &mut app.placement.as_mut().unwrap().draft
+        } = &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1361,7 +1361,7 @@ mod preset_dialog_tests {
             .drop_without_applying_deltas();
         let PlacementDraft::Numeric {
             position, frame, ..
-        } = &app.placement.as_ref().unwrap().draft
+        } = &app.modals.placement().unwrap().draft
         else {
             unreachable!()
         };
@@ -1379,11 +1379,11 @@ mod preset_dialog_tests {
             editor: ProjectEditor::new(project).unwrap(),
             ..Default::default()
         };
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         let before = app.editor.project().clone();
         let PlacementDraft::Numeric {
             position, frame, ..
-        } = &mut app.placement.as_mut().unwrap().draft
+        } = &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1391,7 +1391,7 @@ mod preset_dialog_tests {
         *frame = CoordinateFrame::World;
         let PlacementDraft::Numeric {
             position, rotation, ..
-        } = &app.placement.as_ref().unwrap().draft
+        } = &app.modals.placement().unwrap().draft
         else {
             unreachable!()
         };
@@ -1409,7 +1409,7 @@ mod preset_dialog_tests {
             .drop_without_applying_deltas();
         let PlacementDraft::Numeric {
             position, frame, ..
-        } = &app.placement.as_ref().unwrap().draft
+        } = &app.modals.placement().unwrap().draft
         else {
             unreachable!()
         };
@@ -1438,13 +1438,13 @@ mod preset_dialog_tests {
             })
             .unwrap();
         let original = app.editor.project().clone();
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         let PlacementDraft::Numeric {
             position,
             rotation,
             preset,
             ..
-        } = &mut app.placement.as_mut().unwrap().draft
+        } = &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1466,7 +1466,7 @@ mod preset_dialog_tests {
             app.editor.preview().unwrap().boards[0].pose.translation_mm,
             original.boards[0].pose.translation_mm
         );
-        let PlacementDraft::Numeric { frame, .. } = &mut app.placement.as_mut().unwrap().draft
+        let PlacementDraft::Numeric { frame, .. } = &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1502,10 +1502,10 @@ mod preset_dialog_tests {
             })
             .unwrap();
         let original = app.editor.project().clone();
-        app.placement = PlacementDialog::numeric(&app, board_id);
+        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
         let ctx = egui::Context::default();
         for frame_choice in [CoordinateFrame::World, CoordinateFrame::LocalParent] {
-            let PlacementDraft::Numeric { frame, .. } = &mut app.placement.as_mut().unwrap().draft
+            let PlacementDraft::Numeric { frame, .. } = &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
@@ -1628,9 +1628,9 @@ mod reference_dialog_tests {
             let mut app = app();
             let id = app.editor.project().boards[0].id;
             let before = app.editor.project().clone();
-            app.placement = PlacementDialog::numeric(&app, id);
+            app.modals.set_placement(PlacementDialog::numeric(&app, id));
             let PlacementDraft::Numeric { position, .. } =
-                &mut app.placement.as_mut().unwrap().draft
+                &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
@@ -1641,7 +1641,7 @@ mod reference_dialog_tests {
             assert!(!buttons.iter().any(|(label, _)| label == "Apply"));
             assert_eq!(app.editor.project(), &before);
             let PlacementDraft::Numeric { position, .. } =
-                &mut app.placement.as_mut().unwrap().draft
+                &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
@@ -1650,20 +1650,20 @@ mod reference_dialog_tests {
             assert!(app.editor.preview().is_some());
             assert_eq!(app.editor.project(), &before);
             click(&mut app, &ctx, size, "Apply");
-            assert!(app.placement.is_none());
+            assert!(app.modals.placement().is_none());
             assert_eq!(app.editor.project().boards[0].pose.translation_mm[0], 29.0);
             assert!(app.editor.undo().unwrap());
             assert_eq!(app.editor.project().boards[0].pose, before.boards[0].pose);
-            app.placement = PlacementDialog::numeric(&app, id);
+            app.modals.set_placement(PlacementDialog::numeric(&app, id));
             let PlacementDraft::Numeric { position, .. } =
-                &mut app.placement.as_mut().unwrap().draft
+                &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
             position[0].text = "39 mm".into();
             render(&mut app, &ctx, size, vec![]);
             render(&mut app, &ctx, size, key(Key::Escape));
-            assert!(app.placement.is_none());
+            assert!(app.modals.placement().is_none());
             assert!(app.editor.preview().is_none());
             assert_eq!(app.editor.project().boards[0].pose, before.boards[0].pose);
         }
@@ -1675,8 +1675,8 @@ mod reference_dialog_tests {
             let mut app = app();
             let id = app.editor.project().boards[0].id;
             let before = app.editor.project().clone();
-            app.placement = PlacementDialog::face(&app, id);
-            let PlacementDraft::Face { gap, .. } = &mut app.placement.as_mut().unwrap().draft
+            app.modals.set_placement(PlacementDialog::face(&app, id));
+            let PlacementDraft::Face { gap, .. } = &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
@@ -1686,7 +1686,7 @@ mod reference_dialog_tests {
             let buttons = render(&mut app, &ctx, size, key(Key::Enter));
             assert!(!buttons.iter().any(|(label, _)| label == "Place"));
             assert_eq!(app.editor.project(), &before);
-            let PlacementDraft::Face { gap, .. } = &mut app.placement.as_mut().unwrap().draft
+            let PlacementDraft::Face { gap, .. } = &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };
@@ -1695,14 +1695,14 @@ mod reference_dialog_tests {
             assert!(app.editor.preview().is_some());
             assert_eq!(app.editor.project(), &before);
             click(&mut app, &ctx, size, "Place");
-            assert!(app.placement.is_none());
+            assert!(app.modals.placement().is_none());
             assert_ne!(app.editor.project().boards[0].pose, before.boards[0].pose);
             assert!(app.editor.undo().unwrap());
             assert_eq!(app.editor.project().boards[0].pose, before.boards[0].pose);
-            app.placement = PlacementDialog::face(&app, id);
+            app.modals.set_placement(PlacementDialog::face(&app, id));
             render(&mut app, &ctx, size, vec![]);
             render(&mut app, &ctx, size, key(Key::Escape));
-            assert!(app.placement.is_none());
+            assert!(app.modals.placement().is_none());
             assert!(app.editor.preview().is_none());
         }
     }
@@ -1713,7 +1713,7 @@ mod reference_dialog_tests {
             let mut app = app();
             let project = app.editor.project().clone();
             let ids: Vec<_> = [0, 2].map(|i| project.boards[i].id).to_vec();
-            app.batch_dimension = Some(BatchDialog {
+            app.modals.set_batch_dimension(Some(BatchDialog {
                 focus_on_open: true,
                 project_id: project.id,
                 revision: project.revision,
@@ -1725,29 +1725,29 @@ mod reference_dialog_tests {
                 },
                 anchors: ids.iter().map(|id| (*id, Anchor::Centre)).collect(),
                 error: None,
-            });
+            }));
             let ctx = egui::Context::default();
             ctx.enable_accesskit();
             let buttons = render(&mut app, &ctx, size, key(Key::Enter));
             assert!(!buttons.iter().any(|(label, _)| label == "Resize 2 boards"));
             assert_eq!(app.editor.project(), &project);
-            app.batch_dimension.as_mut().unwrap().value.consent = true;
+            app.modals.batch_dimension_mut().unwrap().value.consent = true;
             render(&mut app, &ctx, size, vec![Event::Text("2".into())]);
             assert!(
-                !app.batch_dimension.as_ref().unwrap().value.consent,
+                !app.modals.batch_dimension().unwrap().value.consent,
                 "editing after rounding consent must require fresh consent"
             );
-            app.batch_dimension.as_mut().unwrap().value.text = "1/64 in".into();
-            app.batch_dimension.as_mut().unwrap().value.consent = true;
+            app.modals.batch_dimension_mut().unwrap().value.text = "1/64 in".into();
+            app.modals.batch_dimension_mut().unwrap().value.consent = true;
             let buttons = render(&mut app, &ctx, size, vec![]);
             assert!(buttons.iter().any(|(label, _)| label == "Resize 2 boards"));
             click(&mut app, &ctx, size, "Resize 2 boards");
-            assert!(app.batch_dimension.is_none());
+            assert!(app.modals.batch_dimension().is_none());
             assert_eq!(app.editor.project().boards[0].length.micrometres(), 397);
             assert_eq!(app.editor.project().boards[2].length.micrometres(), 397);
             assert!(app.editor.undo().unwrap());
             assert_eq!(app.editor.project().boards, project.boards);
-            app.batch_dimension = Some(BatchDialog {
+            app.modals.set_batch_dimension(Some(BatchDialog {
                 focus_on_open: true,
                 project_id: project.id,
                 revision: app.editor.project().revision,
@@ -1759,10 +1759,10 @@ mod reference_dialog_tests {
                 },
                 anchors: ids.iter().map(|id| (*id, Anchor::Centre)).collect(),
                 error: None,
-            });
+            }));
             render(&mut app, &ctx, size, vec![]);
             render(&mut app, &ctx, size, key(Key::Escape));
-            assert!(app.batch_dimension.is_none());
+            assert!(app.modals.batch_dimension().is_none());
             assert_eq!(app.editor.project().boards, project.boards);
         }
     }

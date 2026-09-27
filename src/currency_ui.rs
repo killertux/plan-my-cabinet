@@ -12,7 +12,7 @@ pub(super) struct CurrencyDialog {
     cut_fee: String,
     stock_prices: Vec<(Uuid, String)>,
     error: Option<String>,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
 }
 
 fn amount_text(value: Option<Money>) -> String {
@@ -44,7 +44,7 @@ impl CurrencyDialog {
                 .map(|piece| (piece.id, String::new()))
                 .collect(),
             error: None,
-            chrome: Some(ModalChrome::new(egui::Id::new("currency-change-dialog")).width(500.0)),
+            chrome: ModalChrome::new(egui::Id::new("currency-change-dialog")).width(500.0),
         }
     }
 
@@ -85,12 +85,12 @@ impl CurrencyDialog {
 
 impl DesktopApp {
     pub(super) fn show_currency_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.currency_dialog.take() else {
+        let Some(mut draft) = self.modals.take_currency() else {
             return;
         };
         let project = self.editor.project();
         let current = draft.project_id == project.id && draft.revision == project.revision;
-        let mut chrome = draft.chrome.take().expect("currency modal controller");
+        let mut chrome = draft.chrome.detach();
         let opening = !chrome.is_active();
         let mut first_control = None;
         let result = chrome.show(
@@ -210,8 +210,8 @@ impl DesktopApp {
                 Err(error) => draft.error = Some(format!("{error:?}")),
             }
         }
-        draft.chrome = Some(chrome);
-        self.currency_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_currency(Some(draft));
     }
 }
 
@@ -269,7 +269,7 @@ mod tests {
         let before = app.editor.project().clone();
         app.invoke(Request::new(actions::ActionId::EditCurrency))
             .unwrap();
-        assert!(app.currency_dialog.is_some());
+        assert!(app.modals.currency().is_some());
         assert_eq!(app.editor.project(), &before);
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
@@ -304,7 +304,7 @@ mod tests {
                 .any(|label| label.contains("Replace known prices")),
             "{labels:?}"
         );
-        assert!(app.currency_dialog.is_some());
+        assert!(app.modals.currency().is_some());
         assert_eq!(app.editor.project(), &before);
     }
 }

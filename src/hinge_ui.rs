@@ -18,7 +18,7 @@ pub(super) struct HingeDialog {
     side: HingeMountingSide,
     values: [String; 4],
     error: bool,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
 }
 
 /// Draft text for a committed length: exact, without needless zeros.
@@ -556,11 +556,9 @@ impl HingeDialog {
                 },
             ),
             error: false,
-            chrome: Some(
-                ModalChrome::new(egui::Id::new("hinge-dialog"))
-                    .first_focus(egui::Id::new(("hinge-value-field", 0)))
-                    .width(560.0),
-            ),
+            chrome: ModalChrome::new(egui::Id::new("hinge-dialog"))
+                .first_focus(egui::Id::new(("hinge-value-field", 0)))
+                .width(560.0),
         }
     }
 
@@ -1970,7 +1968,7 @@ impl DesktopApp {
     }
 
     pub(super) fn show_hinge_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.hinge_dialog.take() else {
+        let Some(mut draft) = self.modals.take_hinge() else {
             return;
         };
         let current = draft.project_id == self.editor.project().id
@@ -1980,7 +1978,7 @@ impl DesktopApp {
         } else {
             "hinge-new"
         });
-        let mut chrome = draft.chrome.take().expect("hinge modal controller");
+        let mut chrome = draft.chrome.detach();
         let opening = !chrome.is_active();
         let mut first_control = None;
         let result = chrome.show(
@@ -2229,8 +2227,8 @@ impl DesktopApp {
             }
             draft.error = true;
         }
-        draft.chrome = Some(chrome);
-        self.hinge_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_hinge(Some(draft));
     }
 }
 
@@ -2339,7 +2337,7 @@ mod tests {
         draft.values[0] = "50".into();
         draft.mount = draft.door;
         assert!(draft.proposed(&app).is_none());
-        app.hinge_dialog = Some(draft);
+        app.modals.set_hinge(Some(draft));
         let ctx = egui::Context::default();
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.show_hinge_dialog(ui.ctx())
@@ -2360,7 +2358,7 @@ mod tests {
             |ui| app.show_hinge_dialog(ui.ctx()),
         )
         .drop_without_applying_deltas();
-        assert!(app.hinge_dialog.is_none());
+        assert!(app.modals.hinge().is_none());
         assert_eq!(app.editor.project(), &before);
     }
 

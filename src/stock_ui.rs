@@ -458,7 +458,7 @@ mod grouped_stock_tests {
         let before = app.editor.project().clone();
         app.invoke(Request::with(A::AddIssueStock, Target::Board(board.id)))
             .unwrap();
-        let draft = app.stock_dialog.as_ref().unwrap();
+        let draft = app.modals.stock().unwrap();
         assert_eq!(draft.material_id, Some(board.material_id));
         assert_eq!(draft.dimensions[2].value(Unit::Mm), Ok(board.thickness));
         assert_eq!(app.editor.project(), &before);
@@ -960,7 +960,23 @@ pub(super) struct StockDialog {
     price: String,
     quantity: String,
     error: Option<StockError>,
-    chrome: Option<ModalChrome>,
+    chrome: ModalChrome,
+}
+
+/// The cut fee draft and its dialog controller.
+pub(crate) struct CutFeeDialog {
+    pub(crate) text: String,
+    chrome: ModalChrome,
+}
+
+impl CutFeeDialog {
+    pub(crate) fn new(text: String) -> Self {
+        Self {
+            text,
+            chrome: ModalChrome::new(egui::Id::new("cut-fee-dialog"))
+                .first_focus(egui::Id::new("cut-fee-amount")),
+        }
+    }
 }
 
 fn locale(app: &DesktopApp) -> Locale {
@@ -1024,11 +1040,9 @@ impl StockDialog {
             price: String::new(),
             quantity: "1".into(),
             error: None,
-            chrome: Some(
-                ModalChrome::new(egui::Id::new("stock-dialog"))
-                    .first_focus(egui::Id::new("stock-dialog-name"))
-                    .width(540.0),
-            ),
+            chrome: ModalChrome::new(egui::Id::new("stock-dialog"))
+                .first_focus(egui::Id::new("stock-dialog-name"))
+                .width(540.0),
         }
     }
 
@@ -1115,11 +1129,9 @@ impl StockDialog {
             }),
             quantity: "1".into(),
             error: None,
-            chrome: Some(
-                ModalChrome::new(egui::Id::new("stock-dialog"))
-                    .first_focus(egui::Id::new("stock-dialog-name"))
-                    .width(540.0),
-            ),
+            chrome: ModalChrome::new(egui::Id::new("stock-dialog"))
+                .first_focus(egui::Id::new("stock-dialog-name"))
+                .width(540.0),
         }
     }
 
@@ -3543,32 +3555,10 @@ impl DesktopApp {
     // -----------------------------------------------------------------------
 
     pub(super) fn show_cut_fee_dialog(&mut self, ctx: &egui::Context) {
-        let state_id = egui::Id::new("cut-fee-modal-controller");
-        let Some(mut text) = self.cut_fee_dialog.take() else {
-            if let Some(controller) = ctx.data_mut(|data| {
-                let controller =
-                    data.get_temp::<std::sync::Arc<std::sync::Mutex<ModalChrome>>>(state_id);
-                data.remove::<std::sync::Arc<std::sync::Mutex<ModalChrome>>>(state_id);
-                controller
-            }) {
-                controller.lock().expect("fee modal controller").close(ctx);
-            }
+        let Some(mut dialog) = self.modals.take_cut_fee() else {
             return;
         };
-        // The fee draft is stored by the host as a String. Keep its controller
-        // with the egui context so it survives frames without changing host state.
-        let controller = ctx.data_mut(|data| {
-            data.get_temp::<std::sync::Arc<std::sync::Mutex<ModalChrome>>>(state_id)
-                .unwrap_or_else(|| {
-                    let controller = std::sync::Arc::new(std::sync::Mutex::new(
-                        ModalChrome::new(egui::Id::new("cut-fee-dialog"))
-                            .first_focus(egui::Id::new("cut-fee-amount")),
-                    ));
-                    data.insert_temp(state_id, controller.clone());
-                    controller
-                })
-        });
-        let mut chrome = controller.lock().expect("fee modal controller");
+        let CutFeeDialog { text, chrome } = &mut dialog;
         let currency = self.editor.project().currency;
         let result = chrome.show(
             ctx,
@@ -3581,7 +3571,7 @@ impl DesktopApp {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 let label = self.localizer.text("cut-fee");
                 field_label(ui, &label);
-                let invalid = !text.trim().is_empty() && Money::parse(currency, &text).is_err();
+                let invalid = !text.trim().is_empty() && Money::parse(currency, text).is_err();
                 let mut args = FluentArgs::new();
                 args.set("currency", currency.code());
                 let error = invalid.then(|| self.localizer.text("error-invalid-amount"));
@@ -3589,7 +3579,7 @@ impl DesktopApp {
                     ui,
                     egui::Id::new("cut-fee-amount"),
                     &label,
-                    &mut text,
+                    text,
                     &self.localizer.format("stock-per-cut", Some(&args)),
                     error.as_deref(),
                 );
@@ -3603,7 +3593,7 @@ impl DesktopApp {
                     )
                     .clicked()
                     {
-                        text = known_free_fee_text();
+                        *text = known_free_fee_text();
                     }
                 });
                 ui.label(
@@ -3616,32 +3606,26 @@ impl DesktopApp {
         );
         if actions::decision(A::CancelDialog, result.action == ModalAction::Cancel) {
             chrome.close(ctx);
-            ctx.data_mut(|data| {
-                data.remove::<std::sync::Arc<std::sync::Mutex<ModalChrome>>>(state_id)
-            });
             return;
         }
         if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm) {
             let fee = if text.trim().is_empty() {
                 Ok(None)
             } else {
-                Money::parse(self.editor.project().currency, &text).map(Some)
+                Money::parse(self.editor.project().currency, text).map(Some)
             };
             if let Ok(fee) = fee
                 && self.editor.set_cut_fee(fee).is_ok()
             {
                 chrome.close(ctx);
-                ctx.data_mut(|data| {
-                    data.remove::<std::sync::Arc<std::sync::Mutex<ModalChrome>>>(state_id)
-                });
                 return;
             }
         }
-        self.cut_fee_dialog = Some(text);
+        self.modals.set_cut_fee(Some(dialog));
     }
 
     pub(super) fn show_stock_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.stock_dialog.take() else {
+        let Some(mut draft) = self.modals.take_stock() else {
             return;
         };
         let project = self.editor.project();
@@ -3651,7 +3635,7 @@ impl DesktopApp {
         } else {
             "stock-new"
         });
-        let mut chrome = draft.chrome.take().expect("stock modal controller");
+        let mut chrome = draft.chrome.detach();
         let result = chrome.show(
             ctx,
             &title,
@@ -3901,8 +3885,8 @@ impl DesktopApp {
                 Err(_) => draft.error = Some(StockError::Invalid(StockField::Material)),
             }
         }
-        draft.chrome = Some(chrome);
-        self.stock_dialog = Some(draft);
+        draft.chrome = chrome;
+        self.modals.set_stock(Some(draft));
     }
 }
 
@@ -3962,10 +3946,9 @@ mod tests {
     fn explicit_free_fee_is_known_zero_not_unknown() {
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
-        let mut app = DesktopApp {
-            cut_fee_dialog: Some(String::new()),
-            ..Default::default()
-        };
+        let mut app = DesktopApp::default();
+        app.modals
+            .set_cut_fee(Some(CutFeeDialog::new(String::new())));
         let modal_frame = |app: &mut DesktopApp| {
             ctx.begin_pass(egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -3988,12 +3971,14 @@ mod tests {
             .any(|(_, node)| node.label() == Some("Free (0)"));
         output.drop_without_applying_deltas();
         assert!(free_action);
-        app.cut_fee_dialog = Some(known_free_fee_text());
-        assert_eq!(app.cut_fee_dialog.as_deref(), Some("0"));
+        app.modals
+            .set_cut_fee(Some(CutFeeDialog::new(known_free_fee_text())));
+        let text = &app.modals.cut_fee().unwrap().text;
+        assert_eq!(text, "0");
         assert_eq!(app.editor.project().cut_fee, None);
         let fee = Money::parse(
             app.editor.project().currency,
-            app.cut_fee_dialog.as_deref().unwrap(),
+            text,
         )
         .unwrap();
         app.editor.set_cut_fee(Some(fee)).unwrap();
@@ -4075,7 +4060,7 @@ mod tests {
             consent: false,
         });
         draft.quantity = "0".into();
-        app.stock_dialog = Some(draft);
+        app.modals.set_stock(Some(draft));
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(
                 egui::RawInput {
@@ -4089,7 +4074,7 @@ mod tests {
             .drop_without_applying_deltas();
         };
         draw(&mut app, vec![]);
-        assert!(app.stock_dialog.is_some());
+        assert!(app.modals.stock().is_some());
         assert_eq!(
             ctx.memory(|m| m.focused()),
             Some(egui::Id::new("stock-dialog-name"))
@@ -4105,7 +4090,7 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        assert!(app.stock_dialog.is_some());
+        assert!(app.modals.stock().is_some());
         assert_eq!(app.editor.project(), &initial);
         draw(
             &mut app,
@@ -4117,7 +4102,7 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        assert!(app.stock_dialog.is_none());
+        assert!(app.modals.stock().is_none());
         assert_eq!(app.editor.project(), &initial);
         assert_eq!(app.editor.project().revision, initial.revision);
     }
@@ -4141,7 +4126,7 @@ mod tests {
             text: text.into(),
             consent: false,
         });
-        app.stock_dialog = Some(draft);
+        app.modals.set_stock(Some(draft));
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(
                 egui::RawInput {
@@ -4168,12 +4153,12 @@ mod tests {
         let popup = egui::Id::new("stock-test-popup");
         egui::Popup::open_id(&ctx, popup);
         draw(&mut app, enter());
-        assert!(app.stock_dialog.is_some());
+        assert!(app.modals.stock().is_some());
         assert_eq!(app.editor.project().revision, before);
         egui::Popup::close_id(&ctx, popup);
         draw(&mut app, vec![]);
         draw(&mut app, enter());
-        assert!(app.stock_dialog.is_none());
+        assert!(app.modals.stock().is_none());
         assert_eq!(app.editor.project().revision, before + 1);
         assert_eq!(
             app.editor.project().stock[0].length,
@@ -4277,13 +4262,13 @@ mod tests {
             draft.input(Unit::Mm, initial.currency).unwrap_err(),
             StockError::Invalid(StockField::Trim)
         );
-        app.stock_dialog = Some(draft);
+        app.modals.set_stock(Some(draft));
         let ctx = egui::Context::default();
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.show_stock_dialog(ui.ctx())
         })
         .drop_without_applying_deltas();
-        assert!(app.stock_dialog.is_some());
+        assert!(app.modals.stock().is_some());
         assert_eq!(app.editor.project(), &initial);
     }
 }

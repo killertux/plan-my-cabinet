@@ -285,8 +285,8 @@ impl DesktopApp {
         match route {
             ResultRoute::Action(request) => {
                 if (self.sheet_repair.active()
-                    || self.board_dimension.is_some()
-                    || self.placement.is_some()
+                    || self.modals.board_dimension().is_some()
+                    || self.modals.placement().is_some()
                     || self.editor.preview().is_some())
                     && request.id != A::OpenHandoff
                 {
@@ -839,7 +839,7 @@ mod tests {
             .find(|r| r.route == ResultRoute::Action(Request::new(A::NewBoard)))
             .unwrap();
         assert_eq!(app.invoke_palette(&command), Err(Unavailable::PendingEdit));
-        assert!(app.dialog.is_none());
+        assert!(app.modals.creation().is_none());
         let row = results(
             app.editor.project(),
             &app.localizer,
@@ -883,7 +883,7 @@ mod tests {
         app.invoke(Request::with(A::EditDimensions, Target::Board(board)))
             .unwrap();
         assert_eq!(app.invoke_palette(&row), Err(Unavailable::ModalOpen));
-        app.board_dimension = None;
+        app.modals.set_board_dimension(None);
         // Pending edit resolution cannot be overridden by another result.
         let edit = crate::pending_navigation::EditBlock {
             kind: crate::pending_navigation::EditKind::Field,

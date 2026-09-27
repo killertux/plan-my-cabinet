@@ -2030,7 +2030,7 @@ impl DesktopApp {
     }
 
     pub(super) fn show_assembly_dialog(&mut self, ctx: &egui::Context) {
-        let Some(mut draft) = self.assembly_dialog.take() else {
+        let Some(mut draft) = self.modals.take_assembly() else {
             return;
         };
         let cancel;
@@ -2446,7 +2446,7 @@ impl DesktopApp {
                 Err(_) => draft.error = Some(self.localizer.text("assembly-invalid")),
             }
         }
-        self.assembly_dialog = Some(draft);
+        self.modals.set_assembly(Some(draft));
     }
 }
 
@@ -2925,7 +2925,7 @@ mod tests {
         let (mut app, board) = app_with_board();
         app.selection.choose(Some(board), false);
         let initial = app.editor.project().clone();
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Transform));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
         let ctx = egui::Context::default();
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(
@@ -2939,7 +2939,7 @@ mod tests {
         };
         draw(&mut app, vec![]);
         assert!(ctx.memory(|m| m.focused()).is_some());
-        app.assembly_dialog.as_mut().unwrap().translation[0].text = "invalid".into();
+        app.modals.assembly_mut().unwrap().translation[0].text = "invalid".into();
         draw(&mut app, vec![]);
         assert_eq!(app.editor.project(), &initial);
         draw(
@@ -2952,7 +2952,7 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        assert!(app.assembly_dialog.is_none());
+        assert!(app.modals.assembly().is_none());
         assert_eq!(app.editor.project(), &initial);
     }
 
@@ -2986,22 +2986,22 @@ mod tests {
         let initial = app.editor.project().clone();
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Group));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
         dialog_frame(&mut app, &ctx, vec![]);
         assert_eq!(
             ctx.memory(|m| m.focused()),
             Some(egui::Id::new("assembly-hierarchy-name"))
         );
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
-        assert!(app.assembly_dialog.is_some()); // empty name
+        assert!(app.modals.assembly().is_some()); // empty name
         assert_eq!(app.editor.project(), &initial);
-        app.assembly_dialog.as_mut().unwrap().name = "Cabinet".into();
-        app.assembly_dialog.as_mut().unwrap().pivot[0].text = "invalid".into();
+        app.modals.assembly_mut().unwrap().name = "Cabinet".into();
+        app.modals.assembly_mut().unwrap().pivot[0].text = "invalid".into();
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
         assert_eq!(app.editor.project(), &initial);
-        app.assembly_dialog.as_mut().unwrap().pivot[0].text = "0".into();
+        app.modals.assembly_mut().unwrap().pivot[0].text = "0".into();
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
-        assert!(app.assembly_dialog.is_none());
+        assert!(app.modals.assembly().is_none());
         assert_eq!(app.editor.project().assemblies.len(), 1);
         assert_eq!(
             app.editor.project().boards[0].parent_id,
@@ -3036,7 +3036,7 @@ mod tests {
         draft.operation = Operation::Reparent;
         draft.target = Some(child);
         assert!(!hierarchy_target_valid(app.editor.project(), &draft));
-        app.assembly_dialog = Some(draft);
+        app.modals.set_assembly(Some(draft));
         let initial = app.editor.project().clone();
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
@@ -3044,11 +3044,11 @@ mod tests {
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
         assert_eq!(app.editor.project(), &initial);
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Escape));
-        if app.assembly_dialog.is_some() {
+        if app.modals.assembly().is_some() {
             // The focused parent chooser consumes the first Escape.
             dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Escape));
         }
-        assert!(app.assembly_dialog.is_none());
+        assert!(app.modals.assembly().is_none());
         assert_eq!(app.editor.project(), &initial);
     }
 
@@ -3060,7 +3060,7 @@ mod tests {
             .group_objects(&[board], None, "Cabinet", [0.0; 3])
             .unwrap();
         app.selection.choose(Some(board), false);
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Reparent));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Reparent)));
         let original = app.editor.project().clone();
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
@@ -3078,18 +3078,18 @@ mod tests {
             },
         )
         .drop_without_applying_deltas();
-        assert!(app.assembly_dialog.is_some());
+        assert!(app.modals.assembly().is_some());
         assert_eq!(app.editor.project(), &original);
         // Move through the chooser and secondary action to the named confirmation.
         for _ in 0..3 {
             dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Tab));
         }
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
-        assert!(app.assembly_dialog.is_some()); // popup handles the first Enter
+        assert!(app.modals.assembly().is_some()); // popup handles the first Enter
         assert_eq!(app.editor.project(), &original);
-        app.assembly_dialog.as_mut().unwrap().target = None;
+        app.modals.assembly_mut().unwrap().target = None;
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
-        assert!(app.assembly_dialog.is_none());
+        assert!(app.modals.assembly().is_none());
         assert_eq!(app.editor.project().boards[0].parent_id, None);
         app.editor.undo().unwrap();
         assert_eq!(app.editor.project().boards[0].parent_id, Some(group));
@@ -3106,22 +3106,22 @@ mod tests {
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
         let initial = app.editor.project().clone();
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Duplicate));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
         dialog_frame(&mut app, &ctx, vec![]);
         assert_eq!(
             ctx.memory(|m| m.focused()),
             Some(egui::Id::new("assembly-duplicate-x"))
         );
-        app.assembly_dialog.as_mut().unwrap().translation[0].text = "1/64 in".into();
+        app.modals.assembly_mut().unwrap().translation[0].text = "1/64 in".into();
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
-        assert!(app.assembly_dialog.is_some()); // rounding needs explicit consent
+        assert!(app.modals.assembly().is_some()); // rounding needs explicit consent
         assert_eq!(app.editor.project(), &initial);
-        app.assembly_dialog.as_mut().unwrap().translation[0].text = "bad".into();
+        app.modals.assembly_mut().unwrap().translation[0].text = "bad".into();
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
         assert_eq!(app.editor.project(), &initial);
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Escape));
         assert_eq!(app.editor.project(), &initial);
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Duplicate));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
         dialog_frame(&mut app, &ctx, vec![]);
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
         assert_eq!(app.editor.project().assemblies.len(), 2);
@@ -3130,8 +3130,8 @@ mod tests {
         assert_eq!(app.editor.project().boards, initial.boards);
         app.editor.redo().unwrap();
         app.selection.choose(Some(group), false);
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Ungroup));
-        assert_eq!(app.assembly_dialog.as_ref().unwrap().active, Some(group));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Ungroup)));
+        assert_eq!(app.modals.assembly().unwrap().active, Some(group));
         dialog_frame(&mut app, &ctx, vec![]);
         dialog_frame(&mut app, &ctx, vec![]);
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Tab));
@@ -3170,7 +3170,7 @@ mod tests {
     fn hierarchy_modal_blocks_background_pointer_and_cancel_preserves_selection() {
         let (mut app, board) = app_with_board();
         app.selection.choose(Some(board), false);
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Group));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
         let initial = app.editor.project().clone();
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
@@ -3216,7 +3216,7 @@ mod tests {
         assert_eq!(app.selection.active, Some(board));
         assert_eq!(app.editor.project(), &initial);
         dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Escape));
-        assert!(app.assembly_dialog.is_none());
+        assert!(app.modals.assembly().is_none());
         assert_eq!(app.editor.project(), &initial);
     }
 
@@ -3392,7 +3392,7 @@ mod tests {
             app.action_availability(Request::new(A::DuplicateAssembly))
                 .is_ok()
         );
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Transform));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
         assert!(
             app.action_availability(Request::new(A::DeleteObject))
                 .is_err()
@@ -3515,7 +3515,7 @@ mod tests {
                 .is_err()
             );
         }
-        app.assembly_dialog = Some(AssemblyDialog::new(&app, Operation::Transform));
+        app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
         assert!(
             app.action_availability(Request::with(A::EditHardware, Target::Object(hardware)))
                 .is_err()
