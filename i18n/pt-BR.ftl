@@ -1050,3 +1050,105 @@ material-color-hint = Só muda a cor na vista 3D e nos diagramas.
 shell-next-step = Próximo: { $step }
 shell-next-step-hint = Projeto 3D → Estoque → Plano de corte → Ferragens → Entrega
 palette-keys = ↑↓ mover · ⏎ executar · Esc fechar
+
+# Stock workspace rework
+stock-subtitle = Chapas e sobras que você tem ou vai comprar. O first-fit tenta de cima para baixo.
+stock-cut-fee-chip = Tarifa de corte
+stock-fee-unknown = desconhecida
+stock-fee-set = Definir
+stock-fee-change = Alterar
+stock-view-grouped = Por material
+stock-view-priority = Ordem de prioridade
+stock-drag-hint = Arraste pela alça para mudar a ordem do first-fit
+stock-col-rank = #
+stock-col-id = ID
+stock-col-measured = Medida C × L × E
+stock-col-grain = Veio
+stock-col-trims = Refilos
+stock-col-ownership = Situação
+stock-col-on-plan = No plano
+stock-no-stock = sem estoque
+stock-group-detail = { $thickness } mm · { $count ->
+    [one] { $count } peça
+   *[other] { $count } peças
+}
+stock-add-material-sheet = Adicionar chapa de { $material }
+stock-missing-one = { $board } ({ $size }) só pode ser alocada quando houver uma peça de { $material } cadastrada.
+stock-missing-many = { $count } peças só podem ser alocadas quando houver uma peça de { $material } cadastrada.
+stock-grain-col-x = X
+stock-grain-col-y = Y
+stock-grain-short-x = Em X
+stock-grain-short-y = Em Y
+stock-grain-short-none = Nenhum
+stock-unused = sem uso
+stock-spare = reserva
+stock-parts-n = { $count ->
+    [one] { $count } peça
+   *[other] { $count } peças
+}
+stock-edit-ellipsis = Editar peça…
+stock-move-top = Mover para o topo
+stock-move-bottom = Mover para o fim
+stock-duplicate = Duplicar peça
+stock-delete = Excluir peça
+stock-delete-blocked = Há peças do projeto nesta chapa; mova-as antes de excluí-la
+stock-card-purchase = A comprar (usadas)
+stock-card-cutting = Corte
+stock-card-owned = Peças próprias consumidas
+stock-card-none-used = Nenhuma peça comprada em uso
+stock-card-unused = { $aliases } sem uso, não contabilizada(s)
+stock-cuts-times = { $cuts } cortes × { $fee }
+stock-card-set-fee = Defina a tarifa de corte para completar a estimativa
+stock-owned-of = { $used } de { $total }
+stock-owned-free = Livres para usar: { $aliases }
+stock-disclaimer = A estimativa não inclui impostos, frete, taxas de preparação nem descontos por empilhamento. Preço vazio = desconhecido; 0 = gratuito.
+stock-details = Detalhes
+stock-inspector-none = Nenhuma peça selecionada
+stock-priority = prioridade { $rank }
+stock-measured-size = Medida real
+stock-edit-short = Editar…
+stock-length-x = Compr. (X)
+stock-width-y = Largura (Y)
+stock-grain-heading = Veio
+stock-edge-trims = Refilos
+stock-trims-note = perda total da borda
+stock-cost = Custo
+stock-per-piece = { $currency } / peça
+stock-per-cut = { $currency } / corte
+stock-on-plan-title = No plano
+stock-cuts-short = { $cuts ->
+    [one] { $cuts } corte
+   *[other] { $cuts } cortes
+}
+stock-show-part = Mostrar esta peça no projeto
+stock-usable-size = útil { $size }
+stock-trim-short-top = topo
+stock-trim-short-bottom = base
+stock-trim-short-left = esq.
+stock-trim-short-right = dir.
+stock-price-short = Preço
+stock-quantity-short = Quantidade
+stock-pcs = pçs
+stock-material-line = { $thickness } mm · { $boards ->
+    [one] { $boards } peça
+   *[other] { $boards } peças
+} · { $pieces ->
+    [one] { $pieces } chapa
+   *[other] { $pieces } chapas
+}
+stock-all-line = { $pieces ->
+    [one] { $pieces } chapa
+   *[other] { $pieces } chapas
+} · { $materials ->
+    [one] { $materials } material
+   *[other] { $materials } materiais
+}
+stock-boards-n = { $count ->
+    [one] { $count } peça
+   *[other] { $count } peças
+}
+material-default-grain = Veio padrão
+material-used-by = Usado por
+material-edit-ellipsis = Editar material…
+material-edit-note = Ao editar, você escolhe se mantém ou atualiza as peças existentes.
+stock-grain-short-unknown = Indefinido

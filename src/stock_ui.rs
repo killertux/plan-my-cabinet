@@ -1,11 +1,15 @@
 //! Keyboard-operable stock form and priority controls; drafts never enter the project.
 use super::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
+use crate::icons::Icon;
+use crate::theme_widgets as tw;
 use plan_my_cabinet::cost_estimate::Feasibility;
 use plan_my_cabinet::domain::{Stock, StockGrain, StockSource};
 use plan_my_cabinet::money::{Money, MoneyLocale};
 use plan_my_cabinet::stock_commands::{MAX_STOCK_QUANTITY, StockError, StockField, StockInput};
-use plan_my_cabinet::stock_read_models::{StockPieceReadModel, StockReadModel};
+use plan_my_cabinet::stock_read_models::{
+    MaterialStockSummary, StockPieceReadModel, StockReadModel,
+};
 
 fn stock_visible_rows<'a>(
     model: &'a StockReadModel,
@@ -69,80 +73,6 @@ fn trim_preview_rect(outer: egui::Rect, piece: &StockPieceReadModel) -> egui::Re
     )
 }
 
-fn show_stock_trim_preview(ui: &mut egui::Ui, piece: &StockPieceReadModel, localizer: &Localizer) {
-    let width = ui.available_width().clamp(150.0, 316.0);
-    let (area, response) = ui.allocate_exact_size(egui::vec2(width, 120.0), egui::Sense::hover());
-    let locale = if localizer.language() == Language::En {
-        Locale::En
-    } else {
-        Locale::PtBr
-    };
-    response.on_hover_text(format!(
-        "{}: {} · {}: {} · {}: {} · {}: {}",
-        localizer.text("stock-trim-left"),
-        format_length(piece.trim[0], Unit::Mm, locale, 3),
-        localizer.text("stock-trim-right"),
-        format_length(piece.trim[1], Unit::Mm, locale, 3),
-        localizer.text("stock-trim-bottom"),
-        format_length(piece.trim[2], Unit::Mm, locale, 3),
-        localizer.text("stock-trim-top"),
-        format_length(piece.trim[3], Unit::Mm, locale, 3),
-    ));
-    let measured = egui::Rect::from_min_max(
-        area.min + egui::vec2(44.0, 25.0),
-        area.max - egui::vec2(44.0, 25.0),
-    );
-    let usable = trim_preview_rect(measured, piece);
-    let painter = ui.painter_at(area);
-    painter.rect_filled(measured, 3.0, egui::Color32::from_rgb(232, 224, 211));
-    if usable.is_positive() {
-        painter.rect_filled(usable, 2.0, egui::Color32::from_rgb(251, 250, 247));
-        painter.rect_stroke(
-            usable,
-            2.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(125, 108, 83)),
-            egui::StrokeKind::Inside,
-        );
-    }
-    painter.rect_stroke(
-        measured,
-        3.0,
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(125, 108, 83)),
-        egui::StrokeKind::Inside,
-    );
-    let value = |length: Length| compact_mm(length, locale);
-    for (position, align, label) in [
-        (
-            egui::pos2(measured.center().x, area.top()),
-            egui::Align2::CENTER_TOP,
-            value(piece.trim[3]),
-        ),
-        (
-            egui::pos2(area.left(), measured.center().y),
-            egui::Align2::LEFT_CENTER,
-            value(piece.trim[0]),
-        ),
-        (
-            egui::pos2(area.right(), measured.center().y),
-            egui::Align2::RIGHT_CENTER,
-            value(piece.trim[1]),
-        ),
-        (
-            egui::pos2(measured.center().x, area.bottom()),
-            egui::Align2::CENTER_BOTTOM,
-            value(piece.trim[2]),
-        ),
-    ] {
-        painter.text(
-            position,
-            align,
-            label,
-            egui::FontId::proportional(10.0),
-            egui::Color32::from_rgb(90, 82, 72),
-        );
-    }
-}
-
 #[cfg(test)]
 mod grouped_stock_tests {
     use super::*;
@@ -186,12 +116,12 @@ mod grouped_stock_tests {
                     .collect::<Vec<_>>();
                 let row = text
                     .iter()
-                    .find(|(label, _, _, _)| label.contains("S1 ·"))
+                    .find(|(label, _, _, _)| label == "S1")
                     .expect("first stock row")
                     .1;
                 let summary = text
                     .iter()
-                    .find(|(label, _, _, _)| *label == app.localizer.text("cost-material"))
+                    .find(|(label, _, _, _)| *label == app.localizer.text("stock-card-purchase"))
                     .expect("material summary card")
                     .1;
                 let title = text
@@ -203,14 +133,20 @@ mod grouped_stock_tests {
                     title < row && row < summary,
                     "{language:?} {width}: title {title}, row {row}, summary {summary}"
                 );
+                // Title, actions, the view toggle and the column header precede
+                // the first row; the summary cards must come after the table.
                 assert!(
-                    row - title < 220.0,
+                    row - title < 260.0,
                     "table must start below title/actions, not below cards: {row} - {title}"
                 );
                 for (label, _, x, clip) in &text {
-                    if ["cost-material", "cost-cutting", "cost-owned-consumed"]
-                        .iter()
-                        .any(|key| *label == app.localizer.text(key))
+                    if [
+                        "stock-card-purchase",
+                        "stock-card-cutting",
+                        "stock-card-owned",
+                    ]
+                    .iter()
+                    .any(|key| *label == app.localizer.text(key))
                     {
                         assert!(
                             *x < width && clip.right() <= width,
@@ -322,7 +258,7 @@ mod grouped_stock_tests {
             };
             app.localizer.set_language(language);
             app.session.stock_piece = Some(app.editor.project().stock[0].id);
-            let zero = format_length(Length::ZERO, Unit::Mm, locale(&app), 3);
+            let zero = compact_mm(Length::ZERO, locale(&app));
             let output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -429,9 +365,14 @@ mod grouped_stock_tests {
                 .unwrap_or_default();
             output.drop_without_applying_deltas();
             assert!(labels.contains(long_material), "{labels}");
-            assert!(labels.contains(long_stock), "{labels}");
+            // The table shows the alias; the piece name is the row's accessible
+            // identity and tooltip (never its UUID).
             assert!(
-                identities
+                identities.iter().any(|label| label.contains(long_stock)),
+                "{identities:?}"
+            );
+            assert!(
+                !identities
                     .iter()
                     .any(|label| label.contains(&stock_id.to_string()[..8])),
                 "{identities:?}"
@@ -817,7 +758,7 @@ mod grouped_stock_tests {
     }
 
     #[test]
-    fn global_position_button_moves_selected_piece_across_materials() {
+    fn context_menu_moves_piece_to_top_of_global_priority_across_materials() {
         let project = plan_my_cabinet::reference_fixture::project();
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
@@ -825,6 +766,7 @@ mod grouped_stock_tests {
             editor: ProjectEditor::new(project).unwrap(),
             ..Default::default()
         };
+        app.session.stock_global_order = true;
         let order: Vec<_> = app
             .editor
             .project()
@@ -843,57 +785,96 @@ mod grouped_stock_tests {
             })
             .unwrap();
         let alias = app.editor.project().stock_alias(chosen).unwrap().to_owned();
-        app.session.stock_piece = Some(chosen);
-        app.session.stock_global_target = 1;
-        let output = ctx.run_ui(egui::RawInput::default(), |ui| app.show_stock_list(ui));
-        let button = output
-            .platform_output
-            .accesskit_update
-            .as_ref()
-            .unwrap()
-            .nodes
+        let name = app
+            .editor
+            .project()
+            .stock
             .iter()
-            .find_map(|(_, node)| {
-                (node.label() == Some("Move selected globally"))
-                    .then(|| node.bounds())
-                    .flatten()
-            })
-            .expect("visible global-position action");
-        output.drop_without_applying_deltas();
-        let point = egui::pos2(
-            ((button.x0 + button.x1) / 2.0) as f32,
-            ((button.y0 + button.y1) / 2.0) as f32,
+            .find(|piece| piece.id == chosen)
+            .unwrap()
+            .name
+            .clone();
+        let row_label = format!("{alias} · {name}");
+        let find = |output: &egui::FullOutput, label: &str| {
+            output
+                .platform_output
+                .accesskit_update
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .find_map(|(_, node)| {
+                    (node.label() == Some(label))
+                        .then(|| node.bounds())
+                        .flatten()
+                })
+                .map(|b| egui::pos2(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32))
+        };
+        let screen = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(900.0, 800.0),
+        ));
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: screen,
+                ..Default::default()
+            },
+            |ui| app.show_stock_list(ui),
         );
-        for events in [
-            vec![
-                egui::Event::PointerMoved(point),
-                egui::Event::PointerButton {
+        let row = find(&output, &row_label).expect("visible stock row");
+        output.drop_without_applying_deltas();
+        let click = |app: &mut DesktopApp, point: egui::Pos2, button| {
+            let mut last = None;
+            for events in [
+                vec![
+                    egui::Event::PointerMoved(point),
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                vec![egui::Event::PointerButton {
                     pos: point,
-                    button: egui::PointerButton::Primary,
-                    pressed: true,
+                    button,
+                    pressed: false,
                     modifiers: egui::Modifiers::NONE,
-                },
-            ],
-            vec![egui::Event::PointerButton {
-                pos: point,
-                button: egui::PointerButton::Primary,
-                pressed: false,
-                modifiers: egui::Modifiers::NONE,
-            }],
-        ] {
-            ctx.run_ui(
-                egui::RawInput {
-                    events,
-                    ..Default::default()
-                },
-                |ui| app.show_stock_list(ui),
-            )
-            .drop_without_applying_deltas();
-        }
+                }],
+                vec![],
+            ] {
+                if let Some(output) = last.take() {
+                    egui::FullOutput::drop_without_applying_deltas(output);
+                }
+                last = Some(ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: screen,
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| app.show_stock_list(ui),
+                ));
+            }
+            last.unwrap()
+        };
+        let output = click(&mut app, row, egui::PointerButton::Secondary);
+        let item = find(&output, "Move to top").expect("context menu action");
+        output.drop_without_applying_deltas();
+        click(&mut app, item, egui::PointerButton::Primary).drop_without_applying_deltas();
         assert_eq!(app.editor.project().ordered_stock()[0].id, chosen);
         assert_eq!(
             app.editor.project().stock_alias(chosen),
             Some(alias.as_str())
+        );
+        app.editor.undo().unwrap();
+        assert_eq!(
+            app.editor
+                .project()
+                .ordered_stock()
+                .iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>(),
+            order
         );
     }
 
@@ -1002,6 +983,19 @@ fn compact_mm(value: Length, locale: Locale) -> String {
         .to_owned()
 }
 
+/// Dialog prefill for a stored length. In a millimetre project the field
+/// already shows the "mm" suffix, so the text is the bare number.
+fn draft_length(project: &Project, value: Length, locale: Locale) -> DimensionDraft {
+    DimensionDraft {
+        text: if project.display_unit == Unit::Mm {
+            compact_mm(value, locale)
+        } else {
+            format_length(value, Unit::Mm, locale, 3)
+        },
+        consent: false,
+    }
+}
+
 fn known_free_fee_text() -> String {
     String::from("0")
 }
@@ -1050,7 +1044,8 @@ impl StockDialog {
         let Some(preset) = plan_my_cabinet::material_presets::preset_for(material) else {
             return;
         };
-        let blank = self.dimensions[0].text.trim().is_empty() && self.dimensions[1].text.trim().is_empty();
+        let blank =
+            self.dimensions[0].text.trim().is_empty() && self.dimensions[1].text.trim().is_empty();
         let from_other_preset = plan_my_cabinet::material_presets::BR_STANDARD
             .iter()
             .any(|p| {
@@ -1084,10 +1079,7 @@ impl StockDialog {
         if let Some(material) = project.materials.iter().find(|m| m.id == material_id) {
             draft.material_id = Some(material.id);
             draft.fill_from_preset(project);
-            draft.dimensions[2] = DimensionDraft {
-                text: format_length(material.default_thickness, Unit::Mm, Locale::En, 3),
-                consent: false,
-            };
+            draft.dimensions[2] = draft_length(project, material.default_thickness, Locale::En);
         }
         draft
     }
@@ -1097,10 +1089,7 @@ impl StockDialog {
         if let Some(board) = project.boards.iter().find(|board| board.id == board_id) {
             draft.material_id = Some(board.material_id);
             draft.fill_from_preset(project);
-            draft.dimensions[2] = DimensionDraft {
-                text: format_length(board.thickness, Unit::Mm, Locale::En, 3),
-                consent: false,
-            };
+            draft.dimensions[2] = draft_length(project, board.thickness, Locale::En);
         }
         draft
     }
@@ -1112,12 +1101,11 @@ impl StockDialog {
             edit_id: Some(piece.id),
             name: piece.name.clone(),
             material_id: Some(piece.material_id),
-            dimensions: [piece.length, piece.width, piece.thickness].map(|value| DimensionDraft {
-                text: format_length(value, Unit::Mm, locale, 3),
-                consent: false,
-            }),
+            dimensions: [piece.length, piece.width, piece.thickness]
+                .map(|value| draft_length(project, value, locale)),
+            // Trims are always entered in millimetres.
             trim: piece.trim.map(|value| DimensionDraft {
-                text: format_length(value, Unit::Mm, locale, 3),
+                text: compact_mm(value, locale),
                 consent: false,
             }),
             grain: piece.grain,
@@ -1188,51 +1176,411 @@ fn trim_value(field: &DimensionDraft) -> Result<Length, InputError> {
     Ok(value)
 }
 
-fn trim_field(ui: &mut egui::Ui, localizer: &Localizer, label: &str, field: &mut DimensionDraft) {
-    ui.horizontal(|ui| {
-        ui.label(localizer.text(label));
-        if ui.text_edit_singleline(&mut field.text).changed() {
-            field.consent = false;
-        }
-    });
-    match parse_length(&field.text, Unit::Mm) {
-        Ok(parsed) if parsed.conversion.suggested().micrometres() >= 0 => {
-            let value = parsed.conversion.suggested();
-            let locale = if localizer.language() == Language::En {
-                Locale::En
-            } else {
-                Locale::PtBr
-            };
-            if matches!(parsed.conversion, Conversion::NeedsConfirmation(_)) {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("entered", field.text.as_str());
-                args.set("rounded", format_length(value, Unit::Mm, locale, 3));
-                ui.checkbox(
-                    &mut field.consent,
-                    localizer.format("rounding-confirmation", Some(&args)),
-                );
-            } else {
-                ui.small(format_length(value, Unit::Mm, locale, 3));
-            }
-        }
-        Ok(_) | Err(_) => {
-            if !field.text.is_empty() {
-                ui.colored_label(
-                    egui::Color32::LIGHT_RED,
-                    localizer.text("stock-invalid-trim"),
-                );
-            }
+// ---------------------------------------------------------------------------
+// Presentation helpers (private to the Stock workspace).
+// ---------------------------------------------------------------------------
+
+const CHIP_PURCHASE_INK: egui::Color32 = egui::Color32::from_rgb(122, 68, 16);
+const WARN_TEXT: egui::Color32 = egui::Color32::from_rgb(92, 62, 16);
+const SELECTED_SOFT_INK: egui::Color32 = egui::Color32::from_rgb(138, 84, 24);
+const HANDLE_IDLE: egui::Color32 = egui::Color32::from_rgb(191, 181, 165);
+const HANDLE_ACTIVE: egui::Color32 = egui::Color32::from_rgb(176, 106, 28);
+const ALL_STOCK_SWATCH: egui::Color32 = egui::Color32::from_rgb(225, 219, 207);
+const HATCH_FILL: egui::Color32 = egui::Color32::from_rgb(239, 235, 227);
+const HATCH_LINE: egui::Color32 = egui::Color32::from_rgb(231, 225, 213);
+const HATCH_STROKE: egui::Color32 = egui::Color32::from_rgb(156, 144, 126);
+const TRIM_LOSS: egui::Color32 = egui::Color32::from_rgb(226, 218, 203);
+
+/// Table columns: handle, #, ID, measured (fluid), grain, trims, ownership,
+/// price, on plan. The fluid column never shrinks below `MIN_FLUID`.
+const COLUMNS: [f32; 9] = [30.0, 40.0, 60.0, 0.0, 84.0, 60.0, 108.0, 84.0, 110.0];
+const TABLE_PAD: f32 = 10.0;
+const MIN_FLUID: f32 = 150.0;
+const MATERIAL_FILTER_THRESHOLD: usize = 8;
+
+fn table_min_width() -> f32 {
+    COLUMNS.iter().sum::<f32>() + MIN_FLUID + 2.0 * TABLE_PAD
+}
+
+fn column_rects(row: egui::Rect) -> [egui::Rect; 9] {
+    let fixed: f32 = COLUMNS.iter().sum();
+    let fluid = (row.width() - 2.0 * TABLE_PAD - fixed).max(MIN_FLUID);
+    let mut x = row.left() + TABLE_PAD;
+    std::array::from_fn(|index| {
+        let width = if index == 3 { fluid } else { COLUMNS[index] };
+        let rect = egui::Rect::from_min_max(
+            egui::pos2(x, row.top()),
+            egui::pos2(x + width, row.bottom()),
+        );
+        x += width;
+        rect
+    })
+}
+
+fn paint_in(
+    painter: &egui::Painter,
+    cell: egui::Rect,
+    align: egui::Align2,
+    text: impl ToString,
+    font: egui::FontId,
+    color: egui::Color32,
+) {
+    let anchor = match align.x() {
+        egui::Align::Min => cell.left_center(),
+        egui::Align::Center => cell.center(),
+        egui::Align::Max => cell.right_center() - egui::vec2(8.0, 0.0),
+    };
+    painter
+        .with_clip_rect(cell.intersect(painter.clip_rect()))
+        .text(anchor, align, text, font, color);
+}
+
+/// Two columns of three dots (the ⋮⋮ drag grip).
+fn paint_grip(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    for dx in [-2.5, 2.5] {
+        for dy in [-4.0, 0.0, 4.0] {
+            painter.circle_filled(center + egui::vec2(dx, dy), 1.2, color);
         }
     }
 }
 
-fn stock_grain_key(grain: StockGrain) -> &'static str {
+fn paint_chip(
+    painter: &egui::Painter,
+    left_center: egui::Pos2,
+    text: &str,
+    fill: egui::Color32,
+    ink: egui::Color32,
+) {
+    let galley = painter.layout_no_wrap(text.to_owned(), egui::FontId::proportional(11.0), ink);
+    let size = galley.size() + egui::vec2(16.0, 5.0);
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(left_center.x, left_center.y - size.y / 2.0),
+        size,
+    );
+    painter.rect_filled(rect, 9.0, fill);
+    painter.galley(rect.center() - galley.size() / 2.0, galley, ink);
+}
+
+fn tracked_job(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    color: egui::Color32,
+) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &text.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: tw::weighted_font(ui, size, crate::theme::Typeface::SansSemibold),
+            color,
+            extra_letter_spacing: size * 0.06,
+            ..Default::default()
+        },
+    );
+    job
+}
+
+fn money_amount(money: Money, locale: MoneyLocale) -> String {
+    let text = money.display(locale);
+    text.split_once(' ')
+        .map_or_else(|| text.clone(), |(_, amount)| amount.to_owned())
+}
+
+fn usage_fraction(piece: &StockPieceReadModel) -> Option<f32> {
+    piece
+        .proof
+        .utilization()
+        .filter(|(_, root)| *root > 0)
+        .map(|(part, root)| (part as f64 / root as f64).clamp(0.0, 1.0) as f32)
+}
+
+fn sum_trims(piece: &StockPieceReadModel) -> Length {
+    piece.trim.iter().copied().fold(Length::ZERO, |sum, trim| {
+        Length::from_micrometres(sum.micrometres() + trim.micrometres())
+    })
+}
+
+fn stock_grain_short_key(grain: StockGrain) -> &'static str {
     match grain {
-        StockGrain::AlongX => "stock-grain-x",
-        StockGrain::AlongY => "stock-grain-y",
-        StockGrain::Nondirectional => "stock-grain-none",
-        StockGrain::Unknown => "stock-grain-unknown",
+        StockGrain::AlongX => "stock-grain-short-x",
+        StockGrain::AlongY => "stock-grain-short-y",
+        StockGrain::Nondirectional => "stock-grain-short-none",
+        StockGrain::Unknown => "stock-grain-short-unknown",
     }
+}
+
+fn stock_grain_column_key(grain: StockGrain) -> &'static str {
+    match grain {
+        StockGrain::AlongX => "stock-grain-col-x",
+        StockGrain::AlongY => "stock-grain-col-y",
+        StockGrain::Nondirectional => "stock-grain-short-none",
+        StockGrain::Unknown => "stock-grain-short-unknown",
+    }
+}
+
+/// Equal-width segmented control. Returns the newly picked value, if any;
+/// committing it is the caller's decision.
+fn full_segmented<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    value: T,
+    options: &[(T, String)],
+    enabled: bool,
+) -> Option<T> {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 7.0, tw::VIEWPORT);
+    let inner = rect.shrink(2.0);
+    let count = options.len().max(1) as f32;
+    let segment = (inner.width() - 2.0 * (count - 1.0)) / count;
+    let mut picked = None;
+    for (index, (candidate, label)) in options.iter().enumerate() {
+        let r = egui::Rect::from_min_size(
+            inner.min + egui::vec2(index as f32 * (segment + 2.0), 0.0),
+            egui::vec2(segment, inner.height()),
+        );
+        let response = ui.interact(
+            r,
+            id.with(index),
+            if enabled {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            },
+        );
+        let selected = *candidate == value;
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label)
+        });
+        let painter = ui.painter();
+        if selected {
+            painter.rect_filled(r.translate(egui::vec2(0.0, 1.0)), 5.0, tw::BORDER_SOFT);
+            painter.rect_filled(r, 5.0, tw::PANEL);
+        } else if enabled && response.hovered() {
+            painter.rect_filled(r, 5.0, egui::Color32::from_rgb(228, 223, 214));
+        }
+        if response.has_focus() {
+            painter.rect_stroke(
+                r,
+                5.0,
+                egui::Stroke::new(1.0, tw::FOCUS),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let font = if selected {
+            tw::weighted_font(ui, 12.0, crate::theme::Typeface::SansMedium)
+        } else {
+            egui::FontId::proportional(12.0)
+        };
+        let color = if !enabled {
+            tw::DISABLED
+        } else if selected {
+            tw::TEXT
+        } else {
+            tw::SECONDARY
+        };
+        paint_in(painter, r, egui::Align2::CENTER_CENTER, label, font, color);
+        if response.clicked() && !selected {
+            picked = Some(*candidate);
+        }
+    }
+    picked
+}
+
+/// Read-only value box styled like an input; clicking opens the edit dialog.
+#[allow(clippy::too_many_arguments)]
+fn value_box(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    accessible_name: &str,
+    value: &str,
+    muted_value: bool,
+    tail: Option<&str>,
+    centered: bool,
+    width: f32,
+    enabled: bool,
+) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::hover());
+    let response = ui.interact(
+        rect,
+        id,
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, accessible_name)
+    });
+    let hovered = enabled && response.hovered();
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        6.0,
+        if hovered { tw::CARD } else { tw::APP },
+        egui::Stroke::new(
+            1.0,
+            if response.has_focus() {
+                tw::FOCUS
+            } else if hovered {
+                tw::BORDER_STRONG
+            } else {
+                tw::BORDER_SOFT
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let value_color = if muted_value { tw::FAINT } else { tw::TEXT };
+    let value_font = egui::FontId::monospace(12.5);
+    if centered {
+        let value_galley = painter.layout_no_wrap(value.to_owned(), value_font, value_color);
+        let tail_galley = tail.map(|tail| {
+            painter.layout_no_wrap(tail.to_owned(), egui::FontId::proportional(11.0), tw::FAINT)
+        });
+        let total = value_galley.size().x
+            + tail_galley
+                .as_ref()
+                .map_or(0.0, |galley| galley.size().x + 4.0);
+        let mut x = rect.center().x - total / 2.0;
+        let y = rect.center().y;
+        let vw = value_galley.size();
+        painter.galley(egui::pos2(x, y - vw.y / 2.0), value_galley, value_color);
+        x += vw.x + 4.0;
+        if let Some(galley) = tail_galley {
+            let size = galley.size();
+            painter.galley(egui::pos2(x, y - size.y / 2.0), galley, tw::FAINT);
+        }
+    } else {
+        let clip = rect.shrink2(egui::vec2(8.0, 0.0));
+        paint_in(
+            painter,
+            clip,
+            egui::Align2::LEFT_CENTER,
+            value,
+            value_font,
+            value_color,
+        );
+        if let Some(tail) = tail {
+            painter.text(
+                rect.right_center() - egui::vec2(8.0, 0.0),
+                egui::Align2::RIGHT_CENTER,
+                tail,
+                egui::FontId::proportional(12.0),
+                tw::FAINT,
+            );
+        }
+    }
+    if enabled {
+        response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(accessible_name)
+    } else {
+        response
+    }
+}
+
+fn field_label(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    ui.label(egui::RichText::new(text).size(12.0).color(tw::MUTED))
+}
+
+/// `unit_field` sizes its text to the available width and then adds its frame
+/// margins; keep the whole field inside narrow dialog columns.
+fn fitted_unit_field(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    label: &str,
+    text: &mut String,
+    unit: &str,
+    error: Option<&str>,
+) -> egui::Response {
+    ui.scope(|ui| {
+        ui.set_max_width((ui.available_width() - 18.0).max(40.0));
+        tw::unit_field(ui, id, label, text, unit, error)
+    })
+    .inner
+}
+
+/// Length input used by the stock dialog: label above, unit suffix, inline
+/// error and an explicit rounding consent when the value needs it.
+#[allow(clippy::too_many_arguments)]
+fn stock_length_field(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    id: &'static str,
+    label: &str,
+    field: &mut DimensionDraft,
+    unit: Unit,
+    suffix: &str,
+    trim: bool,
+) {
+    field_label(ui, label);
+    let parsed: Result<Conversion, InputError> = if trim {
+        parse_length(&field.text, Unit::Mm).and_then(|parsed| {
+            if parsed.conversion.suggested().micrometres() < 0 {
+                Err(InputError::Unit(UnitError::InvalidNumber))
+            } else {
+                Ok(parsed.conversion)
+            }
+        })
+    } else {
+        parse_length(&field.text, unit)
+            .and_then(|parsed| dimension(parsed.conversion).map_err(InputError::Unit))
+    };
+    let error = match (&parsed, trim) {
+        (Err(error), false) if !field.text.is_empty() => Some(localizer.text(error_key(*error))),
+        _ => None,
+    };
+    if fitted_unit_field(
+        ui,
+        egui::Id::new(id),
+        label,
+        &mut field.text,
+        suffix,
+        error.as_deref(),
+    )
+    .changed()
+    {
+        field.consent = false;
+    }
+    if let Ok(Conversion::NeedsConfirmation(value)) = parsed {
+        let locale = if localizer.language() == Language::En {
+            Locale::En
+        } else {
+            Locale::PtBr
+        };
+        let mut args = FluentArgs::new();
+        args.set("entered", field.text.as_str());
+        args.set("rounded", format_length(value, Unit::Mm, locale, 3));
+        ui.checkbox(
+            &mut field.consent,
+            egui::RichText::new(localizer.format("rounding-confirmation", Some(&args))).size(11.5),
+        );
+    }
+}
+
+/// A deferred UI decision; applied after the frame's widgets are drawn.
+enum StockUiAction {
+    Request(Request),
+    Duplicate(Uuid),
+    Delete(Uuid),
+    Grain(Uuid, StockGrain),
+    Source(Uuid, StockSource),
+    OpenSheet(Uuid),
+    OpenBoard(Uuid),
+}
+
+enum TableItem<'a> {
+    Header(&'a MaterialStockSummary),
+    Row {
+        piece: &'a StockPieceReadModel,
+        /// Zero-based target in the move scope (material subset or global).
+        target: usize,
+        scope_len: usize,
+        shown_rank: usize,
+    },
+    Warn(&'a MaterialStockSummary),
 }
 
 impl DesktopApp {
@@ -1253,117 +1601,257 @@ impl DesktopApp {
             .map(|(_, model)| model.clone())
     }
 
-    pub(super) fn show_stock_materials(&mut self, ui: &mut egui::Ui) {
-        crate::theme_widgets::section_header(ui, &self.localizer.text("stock-materials-heading"));
-        ui.add(
-            egui::TextEdit::singleline(&mut self.session.stock.filter)
-                .hint_text(self.localizer.text("shell-filter-materials")),
+    fn apply_stock_action(&mut self, action: StockUiAction) {
+        match action {
+            StockUiAction::Request(request) => {
+                let _ = self.invoke(request);
+            }
+            StockUiAction::Duplicate(id) => {
+                if let Ok(new) = self.editor.duplicate_stock(id) {
+                    self.session.stock_piece = Some(new);
+                }
+            }
+            StockUiAction::Delete(id) => {
+                if self.editor.delete_stock(id).is_ok() && self.session.stock_piece == Some(id) {
+                    self.session.stock_piece = None;
+                }
+            }
+            StockUiAction::Grain(id, grain) => {
+                self.commit_stock_field(id, |input| input.grain = grain)
+            }
+            StockUiAction::Source(id, source) => {
+                self.commit_stock_field(id, |input| input.source = source)
+            }
+            StockUiAction::OpenSheet(id) => {
+                let _ = self.request_navigation(NavigationRoute::Entity(Destination::Sheet(id)));
+            }
+            StockUiAction::OpenBoard(id) => {
+                let _ = self.request_navigation(NavigationRoute::Entity(Destination::Board(id)));
+            }
+        }
+    }
+
+    /// One atomic, undoable stock edit through the same command the dialog uses.
+    fn commit_stock_field(&mut self, id: Uuid, change: impl FnOnce(&mut StockInput)) {
+        let Some(stock) = self.editor.project().stock.iter().find(|s| s.id == id) else {
+            return;
+        };
+        let mut input = StockInput::from(stock);
+        change(&mut input);
+        if self.editor.edit_stock(id, input).is_ok() {
+            self.material_conflicts = allocation_conflicts(self.editor.project());
+        }
+    }
+
+    fn stock_edit_allowed(&self, id: Uuid) -> bool {
+        self.action_availability(Request::with(A::EditStock, Target::Stock(id)))
+            .is_ok()
+    }
+
+    fn material_line(&self, material: &MaterialStockSummary) -> String {
+        let mut args = FluentArgs::new();
+        args.set(
+            "thickness",
+            compact_mm(material.default_thickness, locale(self)),
         );
+        args.set("boards", material.board_count);
+        args.set("pieces", material.stock_piece_count);
+        self.localizer.format("stock-material-line", Some(&args))
+    }
+
+    // -----------------------------------------------------------------------
+    // Left pane: materials
+    // -----------------------------------------------------------------------
+
+    pub(super) fn show_stock_materials(&mut self, ui: &mut egui::Ui) {
+        let modal = self.modal_open();
         let Some(model) = self.stock_snapshot() else {
             ui.label(self.localizer.text("cost-invalid"));
             return;
         };
-        if ui
-            .selectable_label(
-                self.session.stock_material_filter.is_none(),
-                format!(
-                    "{} · {} {}",
-                    self.localizer.text("stock-all-materials"),
-                    model.pieces.len(),
-                    self.localizer.text("stock-pieces-count")
-                ),
-            )
-            .clicked()
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 6,
+                right: 0,
+                top: 0,
+                bottom: 0,
+            })
+            .show(ui, |ui| {
+                tw::section_bar(ui, &self.localizer.text("stock-materials-heading"), |ui| {
+                    let request = Request::new(A::NewMaterial);
+                    if tw::ghost_icon_sized(
+                        ui,
+                        Icon::Plus,
+                        &A::NewMaterial.label(&self.localizer),
+                        tw::MUTED,
+                        15.0,
+                        24.0,
+                        self.action_availability(request).is_ok(),
+                        false,
+                    )
+                    .clicked()
+                    {
+                        let _ = self.invoke(request);
+                    }
+                });
+            });
+        if model.materials.len() > MATERIAL_FILTER_THRESHOLD
+            || !self.session.stock.filter.is_empty()
         {
+            egui::Frame::new()
+                .fill(tw::APP)
+                .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                .corner_radius(6)
+                .inner_margin(egui::Margin::symmetric(8, 3))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(icons::icon(Icon::Search, tw::FAINT, 13.0));
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.session.stock.filter)
+                                .frame(egui::Frame::NONE)
+                                .hint_text(self.localizer.text("shell-filter-materials"))
+                                .desired_width(ui.available_width()),
+                        );
+                    });
+                });
+            ui.add_space(4.0);
+        }
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let all_selected = self.session.stock_material_filter.is_none();
+        let all_label = self.localizer.text("stock-all-materials");
+        let mut args = FluentArgs::new();
+        args.set("pieces", model.pieces.len());
+        args.set("materials", model.materials.len());
+        let all_detail = self.localizer.format("stock-all-line", Some(&args));
+        let (all, ()) = tw::list_row(
+            ui,
+            egui::Id::new("stock-material-all"),
+            44.0,
+            if all_selected {
+                tw::RowState::Active
+            } else {
+                tw::RowState::Normal
+            },
+            !modal,
+            &all_label,
+            |ui| {
+                tw::swatch(ui, ALL_STOCK_SWATCH, egui::vec2(10.0, 28.0));
+                ui.add_space(4.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.label(tw::medium(ui, &all_label, 13.0).color(if all_selected {
+                        tw::ACCENT_INK
+                    } else {
+                        tw::TEXT
+                    }));
+                    ui.label(egui::RichText::new(&all_detail).size(11.0).color(tw::FAINT));
+                });
+            },
+        );
+        if all.clicked() {
             self.session.stock_material_filter = None;
-            self.session.stock_piece = None;
             self.session.inspector = None;
         }
         let query = self.session.stock.filter.to_lowercase();
+        let mut pending = None;
         for material in model
             .materials
             .iter()
             .filter(|material| material.name.to_lowercase().contains(&query))
         {
             let selected = self.session.stock_material_filter == Some(material.id);
-            egui::Frame::new()
-                .fill(if selected {
-                    crate::theme_widgets::ACCENT_BG
+            let needs_stock = material.board_count > 0 && material.stock_piece_count == 0;
+            let color = self.editor.project().material_color(material.id);
+            let swatch = egui::Color32::from_rgb(color.0[0], color.0[1], color.0[2]);
+            let line = self.material_line(material);
+            let (row, ()) = tw::list_row(
+                ui,
+                egui::Id::new(("stock-material-row", material.id)),
+                44.0,
+                if selected {
+                    tw::RowState::Active
                 } else {
-                    crate::theme_widgets::PANEL
-                })
-                .corner_radius(7)
-                .inner_margin(egui::Margin::symmetric(6, 5))
-                .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        let color = self.editor.project().material_color(material.id);
-                        let swatch = egui::Color32::from_rgb(color.0[0], color.0[1], color.0[2]);
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 3.0, swatch);
-                        ui.painter().rect_stroke(
-                            rect,
-                            3.0,
-                            egui::Stroke::new(0.8, egui::Color32::GRAY),
-                            egui::StrokeKind::Inside,
-                        );
-                        if ui
-                            .selectable_label(selected, &material.name)
-                            .on_hover_text(material.id.to_string())
-                            .clicked()
-                        {
-                            self.session.stock_material_filter = Some(material.id);
-                            self.session.stock_global_order = false;
-                            self.session.stock_piece = None;
-                            self.session.inspector = Some(InspectorTarget::Material(material.id));
-                        }
-                    });
-                    ui.small(format!(
-                        "{} mm · {} {} · {} {}",
-                        compact_mm(material.default_thickness, locale(self)),
-                        material.board_count,
-                        self.localizer.text("stock-boards-count"),
-                        material.stock_piece_count,
-                        self.localizer.text("stock-pieces-count")
-                    ));
-                    if material.board_count > 0 && material.stock_piece_count == 0 {
-                        ui.colored_label(
-                            egui::Color32::DARK_RED,
-                            format!(
-                                "{}: {}",
-                                self.localizer.text("stock-material-without-stock"),
-                                material.unallocated_board_count
-                            ),
-                        );
-                        if ui
-                            .add_enabled(
-                                !self.modal_open(),
-                                egui::Button::new(self.localizer.text("stock-new")),
-                            )
-                            .clicked()
-                        {
-                            let _ = self
-                                .invoke(Request::with(A::NewStock, Target::Material(material.id)));
-                        }
+                    tw::RowState::Normal
+                },
+                !modal,
+                &material.name,
+                |ui| {
+                    tw::swatch(ui, swatch, egui::vec2(10.0, 28.0));
+                    ui.add_space(4.0);
+                    let text_width =
+                        (ui.available_width() - if needs_stock { 22.0 } else { 0.0 }).max(40.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(text_width, 34.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.y = 1.0;
+                            ui.set_width(text_width);
+                            ui.add(
+                                egui::Label::new(
+                                    tw::medium(ui, &material.name, 13.0).color(if selected {
+                                        tw::ACCENT_INK
+                                    } else {
+                                        tw::TEXT
+                                    }),
+                                )
+                                .truncate()
+                                .selectable(false),
+                            );
+                            ui.add(
+                                egui::Label::new(tw::mono(&line, 11.0).color(if selected {
+                                    SELECTED_SOFT_INK
+                                } else {
+                                    tw::FAINT
+                                }))
+                                .truncate()
+                                .selectable(false),
+                            );
+                        },
+                    );
+                    if needs_stock {
+                        ui.add(icons::icon(Icon::Warning, tw::WARN, 14.0))
+                            .on_hover_text(self.localizer.text("stock-material-without-stock"));
                     }
-                    // Material editing remains available without expanding every list row.
-                    ui.menu_button("⋯", |ui| {
-                        if ui
-                            .add_enabled(
-                                !self.modal_open(),
-                                egui::Button::new(self.localizer.text("material-edit")),
-                            )
-                            .clicked()
-                        {
-                            let _ = self.invoke(Request::with(
-                                A::EditMaterial,
-                                Target::Material(material.id),
-                            ));
-                            ui.close();
-                        }
-                    });
-                });
+                },
+            );
+            if row.clicked() {
+                self.session.stock_material_filter = Some(material.id);
+                self.session.stock_global_order = false;
+                self.session.inspector = Some(InspectorTarget::Material(material.id));
+                if self.session.stock_piece.is_some_and(|id| {
+                    model
+                        .pieces
+                        .iter()
+                        .any(|piece| piece.id == id && piece.material_id != material.id)
+                }) {
+                    self.session.stock_piece = None;
+                }
+            }
+            row.context_menu(|ui| {
+                if ui
+                    .add_enabled(
+                        !modal,
+                        egui::Button::new(self.localizer.text("material-edit-ellipsis")),
+                    )
+                    .clicked()
+                {
+                    pending = Some(Request::with(
+                        A::EditMaterial,
+                        Target::Material(material.id),
+                    ));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(!modal, egui::Button::new(self.localizer.text("stock-new")))
+                    .clicked()
+                {
+                    pending = Some(Request::with(A::NewStock, Target::Material(material.id)));
+                    ui.close();
+                }
+            });
+        }
+        if let Some(request) = pending {
+            let _ = self.invoke(request);
         }
         if !model.materials.is_empty()
             && !model
@@ -1371,355 +1859,993 @@ impl DesktopApp {
                 .iter()
                 .any(|material| material.name.to_lowercase().contains(&query))
         {
-            ui.label(self.localizer.text("stock-filter-no-materials"));
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(self.localizer.text("stock-filter-no-materials"))
+                    .size(12.0)
+                    .color(tw::FAINT),
+            );
+        }
+        ui.add_space(12.0);
+        tw::divider(ui);
+        let summary = self.session.stock_material_filter.or_else(|| {
+            self.session.stock_piece.and_then(|id| {
+                model
+                    .pieces
+                    .iter()
+                    .find(|piece| piece.id == id)
+                    .map(|piece| piece.material_id)
+            })
+        });
+        if let Some(material) =
+            summary.and_then(|id| model.materials.iter().find(|material| material.id == id))
+        {
+            self.show_material_summary(ui, material, modal);
+        }
+    }
+
+    fn show_material_summary(
+        &mut self,
+        ui: &mut egui::Ui,
+        material: &MaterialStockSummary,
+        modal: bool,
+    ) {
+        let grain = self
+            .editor
+            .project()
+            .materials
+            .iter()
+            .find(|m| m.id == material.id)
+            .map(|m| m.default_grain);
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 6,
+                right: 4,
+                top: 4,
+                bottom: 12,
+            })
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                tw::inspector_heading(
+                    ui,
+                    &format!("{} · {}", self.localizer.text("material"), material.name),
+                    |_| {},
+                );
+                tw::prop_row(ui, &self.localizer.text("board-thickness"), 96.0, |ui| {
+                    ui.label(
+                        tw::mono(
+                            format!(
+                                "{} mm",
+                                compact_mm(material.default_thickness, locale(self))
+                            ),
+                            12.5,
+                        )
+                        .color(tw::TEXT),
+                    );
+                });
+                if let Some(grain) = grain {
+                    tw::prop_row(
+                        ui,
+                        &self.localizer.text("material-default-grain"),
+                        96.0,
+                        |ui| {
+                            ui.label(self.localizer.text(match grain {
+                                BoardGrain::Length => "grain-length",
+                                BoardGrain::Width => "grain-width",
+                                BoardGrain::Unrestricted => "grain-unrestricted",
+                            }));
+                        },
+                    );
+                }
+                let mut args = FluentArgs::new();
+                args.set("count", material.board_count);
+                tw::prop_row(ui, &self.localizer.text("material-used-by"), 96.0, |ui| {
+                    ui.label(self.localizer.format("stock-boards-n", Some(&args)));
+                });
+                ui.add_space(8.0);
+                let request = Request::with(A::EditMaterial, Target::Material(material.id));
+                let label = self.localizer.text("material-edit-ellipsis");
+                if ui
+                    .with_layout(
+                        egui::Layout::top_down_justified(egui::Align::Center),
+                        |ui| {
+                            ui.add_enabled(
+                                !modal && self.action_availability(request).is_ok(),
+                                egui::Button::new(tw::medium(ui, &label, 13.0).color(tw::TEXT))
+                                    .fill(tw::VIEWPORT)
+                                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                                    .corner_radius(7)
+                                    .min_size(egui::vec2(ui.available_width(), 30.0)),
+                            )
+                        },
+                    )
+                    .inner
+                    .clicked()
+                {
+                    let _ = self.invoke(request);
+                }
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(self.localizer.text("material-edit-note"))
+                        .size(11.0)
+                        .color(tw::FAINT),
+                );
+            });
+    }
+
+    // -----------------------------------------------------------------------
+    // Centre: title, stock table, spending summary
+    // -----------------------------------------------------------------------
+
+    fn show_stock_title(&mut self, ui: &mut egui::Ui, modal: bool) {
+        let title = |app: &Self, ui: &mut egui::Ui| {
+            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.label(tw::semibold(ui, app.localizer.text("stock-list"), 20.0).color(tw::TEXT));
+            ui.label(
+                egui::RichText::new(app.localizer.text("stock-subtitle"))
+                    .size(12.5)
+                    .color(tw::MUTED),
+            );
+        };
+        let mut action = None;
+        let actions = |app: &Self, ui: &mut egui::Ui, action: &mut Option<Request>| {
+            // Right-to-left: the primary action sits at the far right.
+            if tw::icon_text_button(
+                ui,
+                Icon::Plus,
+                &app.localizer.text("stock-new"),
+                true,
+                !modal && app.action_availability(Request::new(A::NewStock)).is_ok(),
+            )
+            .clicked()
+            {
+                *action = Some(Request::new(A::NewStock));
+            }
+            if app.fee_chip(ui, modal).clicked() {
+                *action = Some(Request::new(A::EditCutFee));
+            }
+        };
+        if ui.available_width() >= 640.0 {
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), 52.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    actions(self, ui, &mut action);
+                    ui.add_space(6.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| title(self, ui),
+                    );
+                },
+            );
+        } else {
+            ui.vertical(|ui| title(self, ui));
+            ui.add_space(8.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), 34.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        actions(self, ui, &mut action)
+                    });
+                },
+            );
+        }
+        if let Some(request) = action {
+            let _ = self.invoke(request);
+        }
+    }
+
+    fn fee_chip(&self, ui: &mut egui::Ui, modal: bool) -> egui::Response {
+        let fee = self.editor.project().cut_fee;
+        let enabled = !modal
+            && self
+                .action_availability(Request::new(A::EditCutFee))
+                .is_ok();
+        let painter = ui.painter().clone();
+        let label = painter.layout_no_wrap(
+            self.localizer.text("stock-cut-fee-chip"),
+            egui::FontId::proportional(13.0),
+            tw::MUTED,
+        );
+        let value = match fee {
+            Some(fee) => painter.layout_no_wrap(
+                fee.display(self.stock_money_locale()),
+                egui::FontId::monospace(12.5),
+                tw::TEXT,
+            ),
+            None => painter.layout_no_wrap(
+                self.localizer.text("stock-fee-unknown"),
+                egui::FontId::proportional(13.0),
+                tw::WARN_INK,
+            ),
+        };
+        let link = painter.layout_no_wrap(
+            self.localizer.text(if fee.is_some() {
+                "stock-fee-change"
+            } else {
+                "stock-fee-set"
+            }),
+            egui::FontId::proportional(12.0),
+            if enabled {
+                tw::ACCENT_DARK
+            } else {
+                tw::DISABLED
+            },
+        );
+        let width = 12.0 + label.size().x + 8.0 + value.size().x + 8.0 + link.size().x + 12.0;
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::hover());
+        let name = A::EditCutFee.label(&self.localizer);
+        let response = ui.interact(
+            rect,
+            egui::Id::new("stock-cut-fee-chip"),
+            if enabled {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            },
+        );
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
+        painter.rect(
+            rect,
+            8.0,
+            if enabled && response.hovered() {
+                tw::CARD
+            } else {
+                tw::PANEL
+            },
+            egui::Stroke::new(
+                1.0,
+                if enabled && response.hovered() {
+                    tw::BORDER_STRONG
+                } else {
+                    tw::BORDER_SOFT
+                },
+            ),
+            egui::StrokeKind::Inside,
+        );
+        let mut x = rect.left() + 12.0;
+        for galley in [label, value, link] {
+            let size = galley.size();
+            painter.galley(
+                egui::pos2(x, rect.center().y - size.y / 2.0),
+                galley,
+                tw::TEXT,
+            );
+            x += size.x + 8.0;
+        }
+        response
+            .on_hover_text(self.localizer.text("cut-fee-hint"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    }
+
+    fn missing_stock_reason(&self, material: &MaterialStockSummary) -> String {
+        let project = self.editor.project();
+        let waiting: Vec<_> = project
+            .boards
+            .iter()
+            .filter(|board| {
+                board.material_id == material.id
+                    && !project.allocations.iter().any(|a| a.board_id == board.id)
+            })
+            .collect();
+        let mut args = FluentArgs::new();
+        args.set("material", material.name.as_str());
+        if let [board] = waiting.as_slice() {
+            let loc = locale(self);
+            args.set("board", board.name.as_str());
+            args.set(
+                "size",
+                format!(
+                    "{} × {} × {}",
+                    compact_mm(board.length, loc),
+                    compact_mm(board.width, loc),
+                    compact_mm(board.thickness, loc)
+                ),
+            );
+            self.localizer.format("stock-missing-one", Some(&args))
+        } else {
+            args.set("count", waiting.len().max(material.board_count));
+            self.localizer.format("stock-missing-many", Some(&args))
         }
     }
 
     pub(super) fn show_stock_list(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            ui.heading(self.localizer.text("stock-list"));
-            if ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(self.localizer.text("stock-new")),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::NewStock));
-            }
-            let fee = self.editor.project().cut_fee.map_or_else(
-                || self.localizer.text("stock-price-unknown"),
-                |fee| fee.display(self.stock_money_locale()),
-            );
-            if ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(format!(
-                        "{}: {} · {}",
-                        self.localizer.text("cut-fee"),
-                        fee,
-                        self.localizer.text("cut-fee-edit")
-                    )),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::EditCutFee));
-            }
-            if ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(format!(
-                        "{} · {}",
-                        self.editor.project().currency.code(),
-                        self.localizer.text("currency-change-heading")
-                    )),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::EditCurrency));
-            }
-        });
+        let modal = self.modal_open();
+        self.show_stock_title(ui, modal);
+        ui.add_space(14.0);
         let Some(model) = self.stock_snapshot() else {
-            ui.colored_label(egui::Color32::DARK_RED, self.localizer.text("cost-invalid"));
+            ui.label(egui::RichText::new(self.localizer.text("cost-invalid")).color(tw::DANGER));
             return;
         };
-        ui.horizontal_wrapped(|ui| {
-            ui.selectable_value(
-                &mut self.session.stock_global_order,
-                false,
-                self.localizer.text("stock-grouped-view"),
-            );
-            if ui
-                .selectable_value(
-                    &mut self.session.stock_global_order,
-                    true,
-                    self.localizer.text("stock-priority-view"),
-                )
-                .clicked()
-            {
+        let loc = locale(self);
+        let money_locale = self.stock_money_locale();
+        let query = self.session.stock.filter.to_lowercase();
+        let filter = self.session.stock_material_filter;
+        let global = self.session.stock_global_order;
+        let rows = stock_visible_rows(&model, filter, global, &query);
+        let visible_materials: Vec<_> = model
+            .materials
+            .iter()
+            .filter(|material| {
+                filter.is_none_or(|id| id == material.id)
+                    && material.name.to_lowercase().contains(&query)
+            })
+            .collect();
+        let needs_stock = |m: &MaterialStockSummary| m.board_count > 0 && m.stock_piece_count == 0;
+        let mut items = Vec::new();
+        if global {
+            for &piece in &rows {
+                items.push(TableItem::Row {
+                    piece,
+                    target: piece.global_rank - 1,
+                    scope_len: model.pieces.len(),
+                    shown_rank: piece.global_rank,
+                });
+            }
+            for &material in visible_materials.iter().filter(|m| needs_stock(m)) {
+                items.push(TableItem::Header(material));
+                items.push(TableItem::Warn(material));
+            }
+        } else {
+            for &material in &visible_materials {
+                items.push(TableItem::Header(material));
+                let group: Vec<&StockPieceReadModel> = rows
+                    .iter()
+                    .copied()
+                    .filter(|piece| piece.material_id == material.id)
+                    .collect();
+                for (index, &piece) in group.iter().enumerate() {
+                    items.push(TableItem::Row {
+                        piece,
+                        target: index,
+                        scope_len: group.len(),
+                        shown_rank: index + 1,
+                    });
+                }
+                if needs_stock(material) {
+                    items.push(TableItem::Warn(material));
+                }
+            }
+        }
+        let empty_message = if model.materials.is_empty() {
+            Some("stock-no-materials")
+        } else if visible_materials.is_empty() {
+            Some("stock-filter-no-materials")
+        } else if model.pieces.is_empty() {
+            Some("stock-no-pieces")
+        } else if rows.is_empty() && global {
+            Some("stock-filter-empty")
+        } else {
+            None
+        };
+
+        let drag_label = self.localizer.text("stock-drag-handle");
+        let drag_help = self.localizer.text("stock-drag-help");
+        let mut action: Option<StockUiAction> = None;
+        let mut drag_stopped = false;
+        let mut drag_targets: Vec<(Uuid, Uuid, usize, usize, egui::Rect)> = Vec::new();
+        let width = ui.available_width();
+        let table_width = width.max(table_min_width());
+        let item_count = items.len();
+        let mut toggled_global = None;
+        egui::ScrollArea::horizontal()
+            .id_salt(("stock-table-scroll", self.editor.project().id))
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(tw::PANEL)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                    .corner_radius(10)
+                    .show(ui, |ui| {
+                        ui.set_width(table_width - 2.0);
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let w = ui.available_width();
+                        // Toolbar: view mode as a compact segmented control.
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(w, 40.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add_space(10.0);
+                                let mut value = global;
+                                let grouped = self.localizer.text("stock-view-grouped");
+                                let priority = self.localizer.text("stock-view-priority");
+                                let response = tw::segmented(
+                                    ui,
+                                    &mut value,
+                                    &[(false, grouped.as_str()), (true, priority.as_str())],
+                                );
+                                response.on_hover_text(
+                                    self.localizer.text("stock-priority-distinction"),
+                                );
+                                if value != global {
+                                    toggled_global = Some(value);
+                                }
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.add_space(12.0);
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.localizer.text("stock-drag-hint"),
+                                            )
+                                            .size(11.5)
+                                            .color(tw::FAINT),
+                                        );
+                                    },
+                                );
+                            },
+                        );
+                        let (line, _) =
+                            ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
+                        ui.painter().hline(
+                            line.x_range(),
+                            line.center().y,
+                            egui::Stroke::new(1.0, tw::BORDER_SOFT),
+                        );
+                        // Column header.
+                        let (header, _) =
+                            ui.allocate_exact_size(egui::vec2(w, 34.0), egui::Sense::hover());
+                        let cols = column_rects(header);
+                        for (index, key) in [
+                            "",
+                            "stock-col-rank",
+                            "stock-col-id",
+                            "stock-col-measured",
+                            "stock-col-grain",
+                            "stock-col-trims",
+                            "stock-col-ownership",
+                            "stock-price-heading",
+                            "stock-col-on-plan",
+                        ]
+                        .iter()
+                        .enumerate()
+                        {
+                            if key.is_empty() {
+                                continue;
+                            }
+                            let job = tracked_job(ui, &self.localizer.text(key), 10.5, tw::FAINT);
+                            let galley = ui.painter().layout_job(job);
+                            let cell = cols[index];
+                            let pos = if index == 7 {
+                                egui::pos2(
+                                    cell.right() - 8.0 - galley.size().x,
+                                    cell.center().y - galley.size().y / 2.0,
+                                )
+                            } else if index == 8 {
+                                egui::pos2(
+                                    cell.left() + 14.0,
+                                    cell.center().y - galley.size().y / 2.0,
+                                )
+                            } else {
+                                egui::pos2(cell.left(), cell.center().y - galley.size().y / 2.0)
+                            };
+                            ui.painter()
+                                .with_clip_rect(cell)
+                                .galley(pos, galley, tw::FAINT);
+                        }
+                        ui.painter().hline(
+                            header.x_range(),
+                            header.bottom() - 0.5,
+                            egui::Stroke::new(1.0, tw::BORDER_SOFT),
+                        );
+                        if let Some(key) = empty_message {
+                            egui::Frame::new()
+                                .inner_margin(egui::Margin::symmetric(16, 14))
+                                .show(ui, |ui| {
+                                    ui.set_width(w - 32.0);
+                                    ui.label(
+                                        egui::RichText::new(self.localizer.text(key))
+                                            .size(12.5)
+                                            .color(tw::MUTED),
+                                    );
+                                    if key == "stock-no-materials"
+                                        && tw::icon_text_button(
+                                            ui,
+                                            Icon::Plus,
+                                            &A::NewMaterial.label(&self.localizer),
+                                            false,
+                                            !modal,
+                                        )
+                                        .clicked()
+                                    {
+                                        action = Some(StockUiAction::Request(Request::new(
+                                            A::NewMaterial,
+                                        )));
+                                    }
+                                });
+                        }
+                        for (index, item) in items.iter().enumerate() {
+                            let last = index + 1 == item_count;
+                            match item {
+                                TableItem::Header(material) => {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(w, 30.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(rect, 0.0, tw::APP);
+                                    ui.painter().hline(
+                                        rect.x_range(),
+                                        rect.bottom() - 0.5,
+                                        egui::Stroke::new(1.0, tw::RULE),
+                                    );
+                                    let color = self.editor.project().material_color(material.id);
+                                    let swatch = egui::Rect::from_center_size(
+                                        egui::pos2(rect.left() + 19.0, rect.center().y),
+                                        egui::vec2(10.0, 10.0),
+                                    );
+                                    ui.painter().rect(
+                                        swatch,
+                                        2.0,
+                                        egui::Color32::from_rgb(color.0[0], color.0[1], color.0[2]),
+                                        egui::Stroke::new(1.0, egui::Color32::from_black_alpha(28)),
+                                        egui::StrokeKind::Inside,
+                                    );
+                                    let name_font = tw::weighted_font(
+                                        ui,
+                                        12.0,
+                                        crate::theme::Typeface::SansSemibold,
+                                    );
+                                    let name = ui.painter().layout_no_wrap(
+                                        material.name.clone(),
+                                        name_font,
+                                        tw::TEXT,
+                                    );
+                                    let name_width = name.size().x.min(w - 200.0);
+                                    let text_rect = egui::Rect::from_min_max(
+                                        egui::pos2(rect.left() + 32.0, rect.top()),
+                                        egui::pos2(rect.right() - 40.0, rect.bottom()),
+                                    );
+                                    ui.painter().with_clip_rect(text_rect).galley(
+                                        egui::pos2(
+                                            text_rect.left(),
+                                            rect.center().y - name.size().y / 2.0,
+                                        ),
+                                        name,
+                                        tw::TEXT,
+                                    );
+                                    let detail = if material.stock_piece_count == 0 {
+                                        self.localizer.text("stock-no-stock")
+                                    } else {
+                                        let mut args = FluentArgs::new();
+                                        args.set(
+                                            "thickness",
+                                            compact_mm(material.default_thickness, loc),
+                                        );
+                                        args.set("count", material.stock_piece_count);
+                                        self.localizer.format("stock-group-detail", Some(&args))
+                                    };
+                                    ui.painter().with_clip_rect(text_rect).text(
+                                        egui::pos2(
+                                            text_rect.left() + name_width + 8.0,
+                                            rect.center().y,
+                                        ),
+                                        egui::Align2::LEFT_CENTER,
+                                        detail,
+                                        egui::FontId::proportional(12.0),
+                                        tw::FAINT,
+                                    );
+                                    let icon_rect = egui::Rect::from_center_size(
+                                        egui::pos2(rect.right() - 22.0, rect.center().y),
+                                        egui::vec2(24.0, 24.0),
+                                    );
+                                    let mut child = ui.new_child(
+                                        egui::UiBuilder::new().max_rect(icon_rect).layout(
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                        ),
+                                    );
+                                    let mut args = FluentArgs::new();
+                                    args.set("material", material.name.as_str());
+                                    if tw::ghost_icon_sized(
+                                        &mut child,
+                                        Icon::Plus,
+                                        &self
+                                            .localizer
+                                            .format("stock-add-material-sheet", Some(&args)),
+                                        tw::MUTED,
+                                        13.0,
+                                        22.0,
+                                        !modal,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        action = Some(StockUiAction::Request(Request::with(
+                                            A::NewStock,
+                                            Target::Material(material.id),
+                                        )));
+                                    }
+                                }
+                                TableItem::Warn(material) => {
+                                    let reason = self.missing_stock_reason(material);
+                                    let mut args = FluentArgs::new();
+                                    args.set("material", material.name.as_str());
+                                    let button = self
+                                        .localizer
+                                        .format("stock-add-material-sheet", Some(&args));
+                                    let radius = if last {
+                                        egui::CornerRadius {
+                                            nw: 0,
+                                            ne: 0,
+                                            sw: 9,
+                                            se: 9,
+                                        }
+                                    } else {
+                                        egui::CornerRadius::ZERO
+                                    };
+                                    egui::Frame::new()
+                                        .fill(tw::WARN_BG)
+                                        .corner_radius(radius)
+                                        .inner_margin(egui::Margin::symmetric(16, 10))
+                                        .show(ui, |ui| {
+                                            ui.set_width(w - 32.0);
+                                            ui.horizontal(|ui| {
+                                                ui.spacing_mut().item_spacing.x = 12.0;
+                                                ui.add(icons::icon(Icon::Warning, tw::WARN, 16.0));
+                                                let button_width = ui
+                                                    .painter()
+                                                    .layout_no_wrap(
+                                                        button.clone(),
+                                                        egui::FontId::proportional(12.0),
+                                                        tw::PANEL,
+                                                    )
+                                                    .size()
+                                                    .x
+                                                    + 44.0;
+                                                let text_width =
+                                                    (ui.available_width() - button_width - 12.0)
+                                                        .max(120.0);
+                                                ui.allocate_ui_with_layout(
+                                                    egui::vec2(text_width, 28.0),
+                                                    egui::Layout::left_to_right(
+                                                        egui::Align::Center,
+                                                    )
+                                                    .with_main_wrap(true),
+                                                    |ui| {
+                                                        ui.set_width(text_width);
+                                                        ui.add(
+                                                            egui::Label::new(
+                                                                egui::RichText::new(&reason)
+                                                                    .size(13.0)
+                                                                    .color(WARN_TEXT),
+                                                            )
+                                                            .wrap(),
+                                                        );
+                                                    },
+                                                );
+                                                if ui
+                                                    .add_enabled(
+                                                        !modal,
+                                                        egui::Button::image_and_text(
+                                                            icons::icon(
+                                                                Icon::Plus,
+                                                                tw::PANEL,
+                                                                13.0,
+                                                            ),
+                                                            tw::medium(ui, &button, 12.0)
+                                                                .color(tw::PANEL),
+                                                        )
+                                                        .fill(tw::TEXT)
+                                                        .corner_radius(6)
+                                                        .min_size(egui::vec2(0.0, 28.0)),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    action = Some(StockUiAction::Request(
+                                                        Request::with(
+                                                            A::NewStock,
+                                                            Target::Material(material.id),
+                                                        ),
+                                                    ));
+                                                }
+                                            });
+                                        });
+                                }
+                                TableItem::Row {
+                                    piece,
+                                    target,
+                                    scope_len,
+                                    shown_rank,
+                                } => {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(w, 40.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    let label = format!("{} · {}", piece.alias, piece.name);
+                                    let selected = self.session.stock_piece == Some(piece.id);
+                                    let response = ui.interact(
+                                        rect,
+                                        egui::Id::new(("stock-row", piece.id)),
+                                        if modal {
+                                            egui::Sense::hover()
+                                        } else {
+                                            egui::Sense::click()
+                                        },
+                                    );
+                                    response.widget_info(|| {
+                                        egui::WidgetInfo::selected(
+                                            egui::WidgetType::SelectableLabel,
+                                            !modal,
+                                            selected,
+                                            &label,
+                                        )
+                                    });
+                                    let cols = column_rects(rect);
+                                    let handle = ui.interact(
+                                        cols[0],
+                                        egui::Id::new(("stock-drag", piece.id)),
+                                        if modal {
+                                            egui::Sense::hover()
+                                        } else {
+                                            egui::Sense::click_and_drag()
+                                        },
+                                    );
+                                    handle.widget_info(|| {
+                                        egui::WidgetInfo::labeled(
+                                            egui::WidgetType::Button,
+                                            !modal,
+                                            &drag_label,
+                                        )
+                                    });
+                                    if handle.drag_started() {
+                                        self.session.stock_drag = Some(piece.id);
+                                    }
+                                    drag_stopped |= handle.drag_stopped();
+                                    let dragging = self.session.stock_drag == Some(piece.id);
+                                    let hovered =
+                                        !modal && (response.hovered() || handle.hovered());
+                                    let radius = if last {
+                                        egui::CornerRadius {
+                                            nw: 0,
+                                            ne: 0,
+                                            sw: 9,
+                                            se: 9,
+                                        }
+                                    } else {
+                                        egui::CornerRadius::ZERO
+                                    };
+                                    let painter = ui.painter().clone();
+                                    if selected || dragging {
+                                        painter.rect_filled(rect, radius, tw::ACCENT_BG);
+                                    } else if hovered {
+                                        painter.rect_filled(rect, radius, tw::HOVER_ROW);
+                                    }
+                                    if !last {
+                                        painter.hline(
+                                            rect.x_range(),
+                                            rect.bottom() - 0.5,
+                                            egui::Stroke::new(
+                                                1.0,
+                                                if selected { tw::WARN_STROKE } else { tw::RULE },
+                                            ),
+                                        );
+                                    }
+                                    let handle_color = if selected || dragging || handle.hovered() {
+                                        HANDLE_ACTIVE
+                                    } else {
+                                        HANDLE_IDLE
+                                    };
+                                    paint_grip(&painter, cols[0].center(), handle_color);
+                                    let soft = if selected {
+                                        SELECTED_SOFT_INK
+                                    } else {
+                                        tw::FAINT
+                                    };
+                                    let ink = if selected {
+                                        egui::Color32::from_rgb(62, 35, 5)
+                                    } else {
+                                        tw::TEXT
+                                    };
+                                    let mono = egui::FontId::monospace(12.5);
+                                    paint_in(
+                                        &painter,
+                                        cols[1],
+                                        egui::Align2::LEFT_CENTER,
+                                        shown_rank,
+                                        mono.clone(),
+                                        soft,
+                                    );
+                                    paint_in(
+                                        &painter,
+                                        cols[2],
+                                        egui::Align2::LEFT_CENTER,
+                                        &piece.alias,
+                                        egui::FontId::monospace(12.0),
+                                        ink,
+                                    );
+                                    paint_in(
+                                        &painter,
+                                        cols[3],
+                                        egui::Align2::LEFT_CENTER,
+                                        format!(
+                                            "{} × {} × {}",
+                                            compact_mm(piece.length, loc),
+                                            compact_mm(piece.width, loc),
+                                            compact_mm(piece.measured_thickness, loc)
+                                        ),
+                                        mono.clone(),
+                                        ink,
+                                    );
+                                    paint_in(
+                                        &painter,
+                                        cols[4],
+                                        egui::Align2::LEFT_CENTER,
+                                        self.localizer.text(stock_grain_column_key(piece.grain)),
+                                        egui::FontId::proportional(13.0),
+                                        if selected { ink } else { tw::SECONDARY },
+                                    );
+                                    paint_in(
+                                        &painter,
+                                        cols[5],
+                                        egui::Align2::LEFT_CENTER,
+                                        compact_mm(sum_trims(piece), loc),
+                                        mono.clone(),
+                                        soft,
+                                    );
+                                    let (chip_text, chip_fill, chip_ink) = if piece.source
+                                        == StockSource::Owned
+                                    {
+                                        (self.localizer.text("stock-owned"), tw::OK_BG, tw::OK_INK)
+                                    } else {
+                                        (
+                                            self.localizer.text("stock-purchase"),
+                                            if selected { tw::PANEL } else { tw::ACCENT_BG },
+                                            CHIP_PURCHASE_INK,
+                                        )
+                                    };
+                                    paint_chip(
+                                        &painter,
+                                        cols[6].left_center(),
+                                        &chip_text,
+                                        chip_fill,
+                                        chip_ink,
+                                    );
+                                    match piece.price {
+                                        Some(price) => paint_in(
+                                            &painter,
+                                            cols[7],
+                                            egui::Align2::RIGHT_CENTER,
+                                            money_amount(price, money_locale),
+                                            mono.clone(),
+                                            ink,
+                                        ),
+                                        None => paint_in(
+                                            &painter,
+                                            cols[7],
+                                            egui::Align2::RIGHT_CENTER,
+                                            "—",
+                                            mono.clone(),
+                                            tw::FAINT,
+                                        ),
+                                    }
+                                    let plan = cols[8].with_min_x(cols[8].left() + 14.0);
+                                    if piece.parts.is_empty() {
+                                        paint_in(
+                                            &painter,
+                                            plan,
+                                            egui::Align2::LEFT_CENTER,
+                                            self.localizer.text(
+                                                if piece.source == StockSource::Owned {
+                                                    "stock-unused"
+                                                } else {
+                                                    "stock-spare"
+                                                },
+                                            ),
+                                            egui::FontId::proportional(11.5),
+                                            tw::FAINT,
+                                        );
+                                    } else {
+                                        let bar = egui::Rect::from_min_size(
+                                            egui::pos2(plan.left(), plan.center().y - 2.0),
+                                            egui::vec2(40.0, 4.0),
+                                        );
+                                        painter.rect_filled(
+                                            bar,
+                                            2.0,
+                                            if selected {
+                                                tw::WARN_STROKE
+                                            } else {
+                                                tw::VIEWPORT
+                                            },
+                                        );
+                                        if let Some(fraction) = usage_fraction(piece) {
+                                            painter.rect_filled(
+                                                bar.with_max_x(bar.left() + bar.width() * fraction),
+                                                2.0,
+                                                if selected { HANDLE_ACTIVE } else { tw::FAINT },
+                                            );
+                                        }
+                                        let mut args = FluentArgs::new();
+                                        args.set("count", piece.parts.len());
+                                        paint_in(
+                                            &painter,
+                                            plan.with_min_x(bar.right() + 6.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            self.localizer.format("stock-parts-n", Some(&args)),
+                                            egui::FontId::proportional(11.5),
+                                            if selected { ink } else { tw::SECONDARY },
+                                        );
+                                    }
+                                    drag_targets.push((
+                                        piece.id,
+                                        piece.material_id,
+                                        *target,
+                                        piece.global_rank,
+                                        rect,
+                                    ));
+                                    if response.clicked() {
+                                        self.session.stock_piece = Some(piece.id);
+                                    }
+                                    response.context_menu(|ui| {
+                                        ui.set_min_width(180.0);
+                                        let item = |ui: &mut egui::Ui, key: &str, enabled: bool| {
+                                            ui.add_enabled(
+                                                enabled && !modal,
+                                                egui::Button::new(self.localizer.text(key)),
+                                            )
+                                            .clicked()
+                                        };
+                                        let movement = |to: usize| {
+                                            StockUiAction::Request(
+                                                Request::with(
+                                                    A::StockMove,
+                                                    Target::Stock(piece.id),
+                                                )
+                                                .argument(Argument::StockPriority {
+                                                    target: to,
+                                                    subset: !global,
+                                                }),
+                                            )
+                                        };
+                                        let mut chosen = None;
+                                        if item(ui, "stock-edit-ellipsis", true) {
+                                            chosen = Some(StockUiAction::Request(Request::with(
+                                                A::EditStock,
+                                                Target::Stock(piece.id),
+                                            )));
+                                        }
+                                        ui.separator();
+                                        if item(ui, "stock-move-top", *target > 0) {
+                                            chosen = Some(movement(0));
+                                        }
+                                        if item(ui, "stock-up", *target > 0) {
+                                            chosen = Some(movement(target - 1));
+                                        }
+                                        if item(ui, "stock-down", target + 1 < *scope_len) {
+                                            chosen = Some(movement(target + 1));
+                                        }
+                                        if item(ui, "stock-move-bottom", target + 1 < *scope_len) {
+                                            chosen = Some(movement(scope_len - 1));
+                                        }
+                                        ui.separator();
+                                        if item(ui, "stock-duplicate", true) {
+                                            chosen = Some(StockUiAction::Duplicate(piece.id));
+                                        }
+                                        if item(ui, "stock-delete", piece.parts.is_empty()) {
+                                            chosen = Some(StockUiAction::Delete(piece.id));
+                                        }
+                                        if chosen.is_some() {
+                                            action = chosen;
+                                            ui.close();
+                                        }
+                                    });
+                                    response.on_hover_text(label.as_str());
+                                    handle
+                                        .on_hover_text(drag_help.as_str())
+                                        .on_hover_cursor(egui::CursorIcon::Grab);
+                                }
+                            }
+                        }
+                    });
+            });
+        if let Some(value) = toggled_global {
+            self.session.stock_global_order = value;
+            if value {
                 self.session.stock_material_filter = None;
                 self.session.stock.filter.clear();
             }
-        });
-        let rows = stock_visible_rows(
-            &model,
-            self.session.stock_material_filter,
-            self.session.stock_global_order,
-            &self.session.stock.filter,
-        );
-        let matching_material = model.materials.iter().any(|material| {
-            self.session
-                .stock_material_filter
-                .is_none_or(|id| id == material.id)
-                && material
-                    .name
-                    .to_lowercase()
-                    .contains(&self.session.stock.filter.to_lowercase())
-        });
-        if rows.is_empty() && (!matching_material || self.session.stock_global_order) {
-            ui.label(self.localizer.text(if model.materials.is_empty() {
-                "stock-no-materials"
-            } else if !self.session.stock.filter.is_empty()
-                && !model.materials.iter().any(|material| {
-                    material
-                        .name
-                        .to_lowercase()
-                        .contains(&self.session.stock.filter.to_lowercase())
-                })
-            {
-                "stock-filter-no-materials"
-            } else if model.pieces.is_empty() {
-                "stock-no-pieces"
-            } else {
-                "stock-filter-empty"
-            }));
-            if let Some(id) = self.session.stock_material_filter
-                && ui
-                    .add_enabled(
-                        !self.modal_open(),
-                        egui::Button::new(self.localizer.text("stock-new")),
-                    )
-                    .clicked()
-            {
-                let _ = self.invoke(Request::with(A::NewStock, Target::Material(id)));
-            }
-            self.show_stock_global_move(ui, model.pieces.len());
-            self.show_stock_summary(ui, &model);
-            return;
-        }
-        let mut action = None;
-        let mut drag_stopped = false;
-        let mut drag_targets = Vec::new();
-        let groups: Vec<Option<Uuid>> = if self.session.stock_global_order {
-            vec![None]
-        } else {
-            model
-                .materials
-                .iter()
-                .filter(|material| {
-                    self.session
-                        .stock_material_filter
-                        .is_none_or(|id| id == material.id)
-                        && material
-                            .name
-                            .to_lowercase()
-                            .contains(&self.session.stock.filter.to_lowercase())
-                })
-                .map(|material| Some(material.id))
-                .collect()
-        };
-        for group in groups {
-            if let Some(id) = group {
-                let material = model
-                    .materials
-                    .iter()
-                    .find(|material| material.id == id)
-                    .unwrap();
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} · {} {}",
-                        material.name,
-                        material.stock_piece_count,
-                        self.localizer.text("stock-pieces-count")
-                    ))
-                    .strong(),
-                );
-                if material.stock_piece_count == 0 && material.board_count > 0 {
-                    ui.colored_label(
-                        egui::Color32::DARK_RED,
-                        format!(
-                            "{} · {} {}",
-                            self.localizer.text("stock-material-without-stock"),
-                            material.unallocated_board_count,
-                            self.localizer.text("stock-unallocated-count")
-                        ),
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(self.localizer.text("stock-new")),
-                        )
-                        .clicked()
-                    {
-                        action = Some(Request::with(A::NewStock, Target::Material(id)));
-                    }
-                }
-            }
-            let group_rows: Vec<_> = rows
-                .iter()
-                .copied()
-                .filter(|piece| group.is_none_or(|id| piece.material_id == id))
-                .collect();
-            if group_rows.is_empty() {
-                continue;
-            }
-            // The table is wider than a compact center pane. Keep its horizontal
-            // movement local to the table: the global-move control and spending
-            // cards below must remain within the visible center viewport.
-            egui::ScrollArea::horizontal()
-                .id_salt(("stock-priority-scroll", group))
-                .show(ui, |ui| {
-                    egui::Grid::new(("stock-priority-table", group))
-                        .striped(true)
-                        .spacing(egui::vec2(8.0, 3.0))
-                        .show(ui, |ui| {
-                            for key in [
-                                "stock-global-rank",
-                                "stock-piece-label",
-                                "stock-piece-dimensions",
-                                "stock-grain",
-                                "stock-source",
-                                "stock-price-heading",
-                                "stock-parts-heading",
-                                "stock-actions-heading",
-                            ] {
-                                ui.strong(self.localizer.text(key));
-                                if key == "stock-grain" {
-                                    ui.strong("∑ mm")
-                                        .on_hover_text(self.localizer.text("stock-trim-hint"));
-                                }
-                            }
-                            ui.end_row();
-                            for (visible_index, piece) in group_rows.iter().enumerate() {
-                                let target = if self.session.stock_global_order {
-                                    piece.global_rank - 1
-                                } else {
-                                    visible_index
-                                };
-                                let rank_cell = ui
-                                    .horizontal(|ui| {
-                                        let handle = ui
-                                            .add_enabled(
-                                                !self.modal_open(),
-                                                egui::Button::new(
-                                                    self.localizer.text("stock-drag-handle"),
-                                                )
-                                                .sense(egui::Sense::click_and_drag()),
-                                            )
-                                            .on_hover_text(self.localizer.text("stock-drag-help"));
-                                        if handle.drag_started() {
-                                            self.session.stock_drag = Some(piece.id);
-                                        }
-                                        drag_stopped |= handle.drag_stopped();
-                                        ui.monospace(format!("#{}", piece.global_rank));
-                                    })
-                                    .response;
-                                drag_targets.push((
-                                    piece.id,
-                                    target,
-                                    piece.global_rank,
-                                    rank_cell.rect,
-                                ));
-                                let label = format!(
-                                    "{} · {} ({})",
-                                    piece.alias,
-                                    piece.name,
-                                    &piece.id.to_string()[..8]
-                                );
-                                let display = format!("{} · {}", piece.alias, piece.name);
-                                let response = ui
-                                    .selectable_label(
-                                        self.session.stock_piece == Some(piece.id),
-                                        display,
-                                    )
-                                    .on_hover_text(format!("{}\n{}", label, piece.id));
-                                response.widget_info(|| {
-                                    egui::WidgetInfo::labeled(
-                                        egui::WidgetType::SelectableLabel,
-                                        response.enabled(),
-                                        &label,
-                                    )
-                                });
-                                if response.clicked() {
-                                    self.session.stock_piece = Some(piece.id);
-                                }
-                                ui.label(format!(
-                                    "{} × {} × {} mm",
-                                    compact_mm(piece.length, locale(self)),
-                                    compact_mm(piece.width, locale(self)),
-                                    compact_mm(piece.measured_thickness, locale(self))
-                                ));
-                                ui.label(self.localizer.text(stock_grain_key(piece.grain)));
-                                ui.monospace(format!(
-                                    "{} mm",
-                                    compact_mm(
-                                        piece.trim.iter().copied().fold(
-                                            Length::ZERO,
-                                            |sum, trim| {
-                                                Length::from_micrometres(
-                                                    sum.micrometres() + trim.micrometres(),
-                                                )
-                                            }
-                                        ),
-                                        locale(self)
-                                    )
-                                ));
-                                ui.label(self.localizer.text(
-                                    if piece.source == StockSource::Owned {
-                                        "stock-owned"
-                                    } else {
-                                        "stock-purchase"
-                                    },
-                                ));
-                                ui.label(piece.price.map_or_else(
-                                    || self.localizer.text("stock-price-unknown"),
-                                    |p| p.display(self.stock_money_locale()),
-                                ));
-                                ui.label(piece.parts.len().to_string());
-                                ui.horizontal(|ui| {
-                                    if ui
-                                        .add_enabled(
-                                            !self.modal_open(),
-                                            egui::Button::new(self.localizer.text("stock-edit")),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(Request::with(
-                                            A::EditStock,
-                                            Target::Stock(piece.id),
-                                        ));
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !self.modal_open() && target > 0,
-                                            egui::Button::new(self.localizer.text("stock-up")),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(
-                                            Request::with(A::StockMove, Target::Stock(piece.id))
-                                                .argument(Argument::StockPriority {
-                                                    target: target - 1,
-                                                    subset: !self.session.stock_global_order,
-                                                }),
-                                        );
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !self.modal_open()
-                                                && target + 1
-                                                    < if self.session.stock_global_order {
-                                                        model.pieces.len()
-                                                    } else {
-                                                        group_rows.len()
-                                                    },
-                                            egui::Button::new(self.localizer.text("stock-down")),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(
-                                            Request::with(A::StockMove, Target::Stock(piece.id))
-                                                .argument(Argument::StockPriority {
-                                                    target: target + 1,
-                                                    subset: !self.session.stock_global_order,
-                                                }),
-                                        );
-                                    }
-                                });
-                                ui.end_row();
-                            }
-                        })
-                });
         }
         if let Some(dragged) = self.session.stock_drag
             && let Some(pointer) = ui.ctx().pointer_latest_pos()
@@ -1729,18 +2855,15 @@ impl DesktopApp {
                 .iter()
                 .find(|row| row.id == dragged)
                 .map(|row| row.material_id);
-            if let Some((_, target, rank, rect)) = drag_targets.iter().find(|(id, _, _, rect)| {
-                rect.contains(pointer)
-                    && (self.session.stock_global_order
-                        || model
-                            .pieces
-                            .iter()
-                            .any(|row| row.id == *id && Some(row.material_id) == source_material))
-            }) {
+            if let Some((_, _, target, rank, rect)) =
+                drag_targets.iter().find(|(_, material, _, _, rect)| {
+                    rect.contains(pointer) && (global || Some(*material) == source_material)
+                })
+            {
                 ui.painter().rect_stroke(
                     *rect,
-                    2.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(174, 113, 31)),
+                    0.0,
+                    egui::Stroke::new(1.5, tw::ACCENT),
                     egui::StrokeKind::Inside,
                 );
                 egui::Tooltip::always_open(
@@ -1754,7 +2877,7 @@ impl DesktopApp {
                         "{}: #{} · {}",
                         self.localizer.text("stock-target-rank"),
                         rank,
-                        self.localizer.text(if self.session.stock_global_order {
+                        self.localizer.text(if global {
                             "stock-global-scope"
                         } else {
                             "stock-visible-scope"
@@ -1762,51 +2885,25 @@ impl DesktopApp {
                     ));
                 });
                 if drag_stopped {
-                    action = Some(
+                    action = Some(StockUiAction::Request(
                         Request::with(A::StockMove, Target::Stock(dragged)).argument(
                             Argument::StockPriority {
                                 target: *target,
-                                subset: !self.session.stock_global_order,
+                                subset: !global,
                             },
                         ),
-                    );
+                    ));
                 }
             }
         }
         if drag_stopped {
             self.session.stock_drag = None;
         }
-        if let Some(request) = action {
-            let _ = self.invoke(request);
+        if let Some(action) = action {
+            self.apply_stock_action(action);
         }
-        self.show_stock_global_move(ui, model.pieces.len());
-        ui.add_space(12.0);
+        ui.add_space(14.0);
         self.show_stock_summary(ui, &model);
-    }
-
-    fn show_stock_global_move(&mut self, ui: &mut egui::Ui, count: usize) {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(self.localizer.text("stock-global-position"));
-            ui.add(
-                egui::DragValue::new(&mut self.session.stock_global_target).range(1..=count.max(1)),
-            );
-            if ui
-                .add_enabled(
-                    !self.modal_open() && self.session.stock_piece.is_some() && count > 0,
-                    egui::Button::new(self.localizer.text("stock-move-global")),
-                )
-                .on_hover_text(self.localizer.text("stock-priority-distinction"))
-                .clicked()
-                && let Some(id) = self.session.stock_piece
-            {
-                let _ = self.invoke(Request::with(A::StockMove, Target::Stock(id)).argument(
-                    Argument::StockPriority {
-                        target: self.session.stock_global_target - 1,
-                        subset: false,
-                    },
-                ));
-            }
-        });
     }
 
     fn stock_money_locale(&self) -> MoneyLocale {
@@ -1819,81 +2916,207 @@ impl DesktopApp {
 
     fn show_stock_summary(&self, ui: &mut egui::Ui, model: &StockReadModel) {
         let result = &model.estimate;
-        let amount = |value: Option<Money>| {
-            value.map_or_else(
-                || self.localizer.text("stock-price-unknown"),
-                |value| value.display(self.stock_money_locale()),
-            )
-        };
+        let money_locale = self.stock_money_locale();
         let usage = model.usage_summary();
+        let alias = |id: Uuid| {
+            model
+                .pieces
+                .iter()
+                .find(|piece| piece.id == id)
+                .map(|piece| piece.alias.clone())
+        };
+        let used: Vec<Uuid> = result
+            .used_stock
+            .iter()
+            .map(|entry| entry.stock_id)
+            .collect();
+        let purchase_used: Vec<String> = result
+            .used_stock
+            .iter()
+            .filter(|entry| entry.source == StockSource::ToPurchase)
+            .filter_map(|entry| alias(entry.stock_id))
+            .collect();
+        let purchase_unused: Vec<String> = model
+            .pieces
+            .iter()
+            .filter(|piece| piece.source == StockSource::ToPurchase && !used.contains(&piece.id))
+            .map(|piece| piece.alias.clone())
+            .collect();
+        let owned_total = model
+            .pieces
+            .iter()
+            .filter(|piece| piece.source == StockSource::Owned)
+            .count();
+        let owned_unused: Vec<String> = model
+            .pieces
+            .iter()
+            .filter(|piece| piece.source == StockSource::Owned && !used.contains(&piece.id))
+            .map(|piece| piece.alias.clone())
+            .collect();
+        let unknown = self.localizer.text("stock-fee-unknown");
+
+        let purchase_value = result
+            .material
+            .map_or_else(|| unknown.clone(), |value| value.display(money_locale));
+        let mut purchase_detail = if purchase_used.is_empty() {
+            self.localizer.text("stock-card-none-used")
+        } else {
+            purchase_used.join(", ")
+        };
+        if !purchase_unused.is_empty() {
+            let mut args = FluentArgs::new();
+            args.set("aliases", purchase_unused.join(", "));
+            purchase_detail = format!(
+                "{} · {}",
+                purchase_detail,
+                self.localizer.format("stock-card-unused", Some(&args))
+            );
+        }
+        let (cutting_value, cutting_warn, cutting_detail) =
+            match (model.cut_fee, usage.physical_cuts) {
+                (_, None) => (
+                    "?".to_owned(),
+                    true,
+                    self.localizer.text("stock-cuts-unverified"),
+                ),
+                (None, Some(cuts)) => {
+                    let mut args = FluentArgs::new();
+                    args.set("cuts", cuts);
+                    args.set("fee", "?");
+                    (
+                        self.localizer.format("stock-cuts-times", Some(&args)),
+                        true,
+                        self.localizer.text("stock-card-set-fee"),
+                    )
+                }
+                (Some(fee), Some(cuts)) => {
+                    let mut args = FluentArgs::new();
+                    args.set("cuts", cuts);
+                    args.set("fee", money_amount(fee, money_locale));
+                    (
+                        result
+                            .cutting
+                            .map_or_else(|| unknown.clone(), |value| value.display(money_locale)),
+                        false,
+                        self.localizer.format("stock-cuts-times", Some(&args)),
+                    )
+                }
+            };
+        let mut args = FluentArgs::new();
+        args.set("used", usage.consumed_owned_pieces);
+        args.set("total", owned_total);
+        let owned_value = self.localizer.format("stock-owned-of", Some(&args));
+        let owned_detail = if owned_unused.is_empty() {
+            String::new()
+        } else {
+            let mut args = FluentArgs::new();
+            args.set("aliases", owned_unused.join(", "));
+            self.localizer.format("stock-owned-free", Some(&args))
+        };
         let cards = [
             (
-                "cost-material",
-                amount(result.material),
-                format!(
-                    "{} {}",
-                    usage.used_purchased_pieces,
-                    self.localizer.text("stock-pieces-count")
-                ),
+                "stock-card-purchase",
+                purchase_value,
+                result.material.is_none(),
+                purchase_detail,
             ),
             (
-                "cost-cutting",
-                amount(result.cutting),
-                usage.physical_cuts.map_or_else(
-                    || self.localizer.text("stock-cuts-unverified"),
-                    |cuts| format!("{} {}", cuts, self.localizer.text("stock-physical-cuts")),
-                ),
+                "stock-card-cutting",
+                cutting_value,
+                cutting_warn,
+                cutting_detail,
             ),
-            (
-                "cost-owned-consumed",
-                usage.consumed_owned_pieces.to_string(),
-                format!(
-                    "{} {}",
-                    usage.consumed_owned_pieces,
-                    self.localizer.text("stock-pieces-count")
-                ),
-            ),
+            ("stock-card-owned", owned_value, false, owned_detail),
         ];
         let columns = if ui.available_width() >= 540.0 { 3 } else { 1 };
+        ui.spacing_mut().item_spacing.x = 10.0;
         ui.columns(columns, |uis| {
-            for (index, (key, value, detail)) in cards.iter().enumerate() {
-                crate::theme_widgets::card().show(&mut uis[index % columns], |ui| {
-                    ui.set_min_width((ui.available_width() - 2.0).max(80.0));
-                    ui.small(self.localizer.text(key));
-                    ui.strong(value);
-                    ui.small(detail);
-                });
+            for (index, (key, value, warn, detail)) in cards.iter().enumerate() {
+                let ui = &mut uis[index % columns];
+                egui::Frame::new()
+                    .fill(tw::PANEL)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                    .corner_radius(10)
+                    .inner_margin(egui::Margin::symmetric(14, 12))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.set_min_height(58.0);
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        ui.label(
+                            egui::RichText::new(self.localizer.text(key))
+                                .size(11.5)
+                                .color(tw::MUTED),
+                        );
+                        ui.add(
+                            egui::Label::new(tw::mono(value, 17.0).color(if *warn {
+                                tw::WARN_INK
+                            } else {
+                                tw::TEXT
+                            }))
+                            .truncate(),
+                        );
+                        ui.label(egui::RichText::new(detail).size(11.0).color(tw::FAINT));
+                    });
+                if columns == 1 {
+                    ui.add_space(8.0);
+                }
             }
         });
-        ui.small(format!(
-            "{}: {}",
-            self.localizer.text("cost-total"),
-            result.total.map_or_else(
-                || self.localizer.text("cost-incomplete"),
-                |value| value.display(self.stock_money_locale()),
-            )
-        ));
-        if result.feasibility != Feasibility::Verified {
-            ui.small(self.localizer.text("cost-feasibility"));
-        }
-        ui.small(self.localizer.text("cost-exclusions"));
-        ui.collapsing(self.localizer.text("stock-cost-details"), |ui| {
-            ui.small(self.localizer.text("cut-fee-hint"));
-            ui.label(format!(
+        ui.add_space(10.0);
+        ui.label(
+            egui::RichText::new(self.localizer.text("stock-disclaimer"))
+                .size(11.5)
+                .color(tw::FAINT),
+        );
+        egui::CollapsingHeader::new(
+            egui::RichText::new(self.localizer.text("stock-details"))
+                .size(11.5)
+                .color(tw::MUTED),
+        )
+        .id_salt("stock-estimate-details")
+        .show(ui, |ui| {
+            let small = |text: String| egui::RichText::new(text).size(11.5).color(tw::MUTED);
+            ui.label(small(format!(
                 "{}: {}",
-                self.localizer.text("cost-material"),
-                amount(result.material)
-            ));
-            ui.label(format!(
-                "{}: {}",
-                self.localizer.text("cost-cutting"),
-                amount(result.cutting)
-            ));
+                self.localizer.text("cost-total"),
+                result.total.map_or_else(
+                    || self.localizer.text("cost-incomplete"),
+                    |value| value.display(money_locale),
+                )
+            )));
+            if result.feasibility != Feasibility::Verified {
+                ui.label(small(self.localizer.text("cost-feasibility")));
+            }
+            ui.label(small(self.localizer.text("cut-fee-hint")));
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Right: piece inspector
+    // -----------------------------------------------------------------------
+
+    fn show_stock_inspector_empty(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(14, 16))
+            .show(ui, |ui| {
+                ui.add_space(40.0);
+                ui.vertical_centered(|ui| {
+                    ui.add(icons::icon(Icon::Sheet, tw::DISABLED, 28.0));
+                    ui.add_space(8.0);
+                    ui.label(
+                        tw::medium(ui, self.localizer.text("stock-inspector-none"), 13.0)
+                            .color(tw::MUTED),
+                    );
+                    ui.label(
+                        egui::RichText::new(self.localizer.text("stock-inspector-empty"))
+                            .size(12.0)
+                            .color(tw::FAINT),
+                    );
+                });
+            });
+    }
+
     pub(super) fn show_stock_inspector(&mut self, ui: &mut egui::Ui) {
-        crate::theme_widgets::section_header(ui, &self.localizer.text("stock-inspector"));
         let Some(model) = self.stock_snapshot() else {
             ui.label(self.localizer.text("cost-invalid"));
             return;
@@ -1902,183 +3125,426 @@ impl DesktopApp {
             .session
             .stock_piece
             .and_then(|id| model.pieces.iter().find(|piece| piece.id == id))
+            .cloned()
         else {
-            if let Some(id) = self.session.stock_material_filter
-                && let Some(material) = model.materials.iter().find(|material| material.id == id)
-            {
-                ui.label(&material.name);
-                ui.label(format!(
-                    "{} {} · {} {}",
-                    material.board_count,
-                    self.localizer.text("stock-boards-count"),
-                    material.stock_piece_count,
-                    self.localizer.text("stock-pieces-count")
-                ));
-                if material.stock_piece_count == 0 && material.board_count > 0 {
-                    ui.colored_label(
-                        egui::Color32::DARK_RED,
-                        self.localizer.text("stock-material-without-stock"),
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(self.localizer.text("stock-new")),
-                        )
-                        .clicked()
-                    {
-                        let _ = self.invoke(Request::with(A::NewStock, Target::Material(id)));
-                    }
-                }
-                return;
-            }
-            ui.label(self.localizer.text("stock-inspector-empty"));
+            self.show_stock_inspector_empty(ui);
             return;
         };
-        ui.strong(format!("{} · {}", piece.alias, piece.name));
-        ui.small(format!(
-            "{}: #{} · {}",
-            self.localizer.text("stock-global-rank"),
-            piece.global_rank,
-            &piece.id.to_string()[..8]
-        ));
-        ui.separator();
-        let mut edit = false;
-        ui.small(self.localizer.text("stock-piece-dimensions"));
-        egui::Grid::new("stock-inspector-size")
-            .num_columns(2)
-            .spacing(egui::vec2(8.0, 4.0))
+        let loc = locale(self);
+        let money_locale = self.stock_money_locale();
+        let can_edit = !self.modal_open() && self.stock_edit_allowed(piece.id);
+        let edit_label = self.localizer.text("stock-edit");
+        let mut action: Option<StockUiAction> = None;
+        let edit = || StockUiAction::Request(Request::with(A::EditStock, Target::Stock(piece.id)));
+
+        // Header: icon tile, name, alias/priority, duplicate + delete.
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 14,
+                right: 10,
+                top: 14,
+                bottom: 12,
+            })
             .show(ui, |ui| {
-                for (key, value) in [
-                    ("board-length", piece.length),
-                    ("board-width", piece.width),
-                    ("board-thickness", piece.measured_thickness),
-                ] {
-                    ui.label(self.localizer.text(key));
-                    edit |= ui
-                        .add_enabled(
-                            !self.modal_open(),
-                            egui::Button::new(format_length(value, Unit::Mm, locale(self), 3))
-                                .min_size(egui::vec2(112.0, 24.0)),
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let (tile, _) =
+                        ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
+                    ui.painter().rect_filled(tile, 8.0, tw::ACCENT_BG);
+                    icons::icon(Icon::Sheet, tw::ACCENT_DARK, 18.0).paint_at(
+                        ui,
+                        egui::Rect::from_center_size(tile.center(), egui::vec2(18.0, 18.0)),
+                    );
+                    let text_width = (ui.available_width() - 70.0).max(60.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(text_width, 36.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.set_width(text_width);
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add(
+                                egui::Label::new(
+                                    tw::semibold(ui, &piece.name, 15.0).color(tw::TEXT),
+                                )
+                                .truncate(),
+                            );
+                            let mut args = FluentArgs::new();
+                            args.set("rank", piece.global_rank);
+                            ui.label(
+                                tw::mono(
+                                    format!(
+                                        "{} · {}",
+                                        piece.alias,
+                                        self.localizer.format("stock-priority", Some(&args))
+                                    ),
+                                    11.0,
+                                )
+                                .color(tw::FAINT),
+                            );
+                        },
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let deletable = piece.parts.is_empty();
+                        let delete_label = self.localizer.text(if deletable {
+                            "stock-delete"
+                        } else {
+                            "stock-delete-blocked"
+                        });
+                        if tw::ghost_icon_sized(
+                            ui,
+                            Icon::Trash,
+                            &delete_label,
+                            tw::MUTED,
+                            15.0,
+                            28.0,
+                            can_edit && deletable,
+                            false,
                         )
-                        .on_hover_text(self.localizer.text("stock-edit"))
-                        .clicked();
-                    ui.end_row();
-                }
+                        .clicked()
+                        {
+                            action = Some(StockUiAction::Delete(piece.id));
+                        }
+                        if tw::ghost_icon_sized(
+                            ui,
+                            Icon::Duplicate,
+                            &self.localizer.text("stock-duplicate"),
+                            tw::MUTED,
+                            15.0,
+                            28.0,
+                            can_edit,
+                            false,
+                        )
+                        .clicked()
+                        {
+                            action = Some(StockUiAction::Duplicate(piece.id));
+                        }
+                    });
+                });
             });
-        ui.small(format!(
-            "{}: {} × {}",
-            self.localizer.text("stock-usable"),
-            format_length(piece.usable_extent[0], Unit::Mm, locale(self), 3),
-            format_length(piece.usable_extent[1], Unit::Mm, locale(self), 3)
-        ));
-        ui.small(self.localizer.text("stock-grain"));
-        ui.horizontal_wrapped(|ui| {
-            for grain in [
-                StockGrain::AlongX,
-                StockGrain::AlongY,
-                StockGrain::Nondirectional,
-                StockGrain::Unknown,
-            ] {
-                edit |= ui
-                    .add_enabled(
-                        !self.modal_open(),
-                        egui::Button::new(self.localizer.text(stock_grain_key(grain)))
-                            .selected(piece.grain == grain),
+        tw::divider(ui);
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 14,
+                right: 14,
+                top: 2,
+                bottom: 16,
+            })
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                tw::inspector_heading(ui, &self.localizer.text("stock-measured-size"), |ui| {
+                    if tw::text_button(
+                        ui,
+                        &self.localizer.text("stock-edit-short"),
+                        tw::ACCENT_DARK,
+                        can_edit,
                     )
-                    .on_hover_text(self.localizer.text("stock-edit"))
-                    .clicked();
-            }
-        });
-        ui.small(self.localizer.text("stock-trim-hint"));
-        show_stock_trim_preview(ui, piece, &self.localizer);
-        // A translated trim label and numeric button cannot share a 316-point
-        // inspector row. Stack them instead of allowing a grid to push the
-        // editable value outside the visible pane at compact widths.
-        for (key, trim) in [
-            "stock-trim-left",
-            "stock-trim-right",
-            "stock-trim-top",
-            "stock-trim-bottom",
-        ]
-        .into_iter()
-        .zip([piece.trim[0], piece.trim[1], piece.trim[3], piece.trim[2]])
-        {
-            ui.small(self.localizer.text(key));
-            edit |= ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(format_length(trim, Unit::Mm, locale(self), 3))
-                        .min_size(egui::vec2(112.0, 24.0)),
-                )
-                .on_hover_text(self.localizer.text("stock-edit"))
-                .clicked();
-        }
-        ui.horizontal_wrapped(|ui| {
-            ui.label(self.localizer.text("stock-source"));
-            for (source, key) in [
-                (StockSource::Owned, "stock-owned"),
-                (StockSource::ToPurchase, "stock-purchase"),
-            ] {
-                edit |= ui
-                    .add_enabled(
-                        !self.modal_open(),
-                        egui::Button::new(self.localizer.text(key))
-                            .selected(piece.source == source),
+                    .on_hover_text(edit_label.as_str())
+                    .clicked()
+                    {
+                        action = Some(edit());
+                    }
+                });
+                for (key, value, salt) in [
+                    ("stock-length-x", piece.length, "length"),
+                    ("stock-width-y", piece.width, "width"),
+                    ("board-thickness", piece.measured_thickness, "thickness"),
+                ] {
+                    let label = self.localizer.text(key);
+                    tw::prop_row(ui, &label, 88.0, |ui| {
+                        if value_box(
+                            ui,
+                            egui::Id::new(("stock-inspector-size", salt)),
+                            &format!("{label} · {edit_label}"),
+                            &compact_mm(value, loc),
+                            false,
+                            Some("mm"),
+                            false,
+                            ui.available_width(),
+                            can_edit,
+                        )
+                        .clicked()
+                        {
+                            action = Some(edit());
+                        }
+                    });
+                }
+
+                tw::inspector_heading(ui, &self.localizer.text("stock-grain-heading"), |_| {});
+                let grains = [
+                    StockGrain::AlongX,
+                    StockGrain::AlongY,
+                    StockGrain::Nondirectional,
+                    StockGrain::Unknown,
+                ]
+                .map(|grain| (grain, self.localizer.text(stock_grain_short_key(grain))));
+                if let Some(grain) = full_segmented(
+                    ui,
+                    egui::Id::new("stock-inspector-grain"),
+                    piece.grain,
+                    &grains,
+                    can_edit,
+                ) {
+                    action = Some(StockUiAction::Grain(piece.id, grain));
+                }
+
+                tw::inspector_heading(ui, &self.localizer.text("stock-edge-trims"), |ui| {
+                    ui.label(
+                        egui::RichText::new(self.localizer.text("stock-trims-note"))
+                            .size(11.0)
+                            .color(tw::MUTED),
                     )
-                    .on_hover_text(self.localizer.text("stock-edit"))
-                    .clicked();
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(self.localizer.text("stock-price-heading"));
-            edit |= ui
-                .add_enabled(
-                    !self.modal_open(),
-                    egui::Button::new(piece.price.map_or_else(
-                        || self.localizer.text("stock-price-unknown"),
-                        |price| price.display(self.stock_money_locale()),
-                    )),
+                    .on_hover_text(self.localizer.text("stock-trim-hint"));
+                });
+                ui.add_space(2.0);
+                if self.show_trim_diagram(ui, &piece, can_edit) {
+                    action = Some(edit());
+                }
+
+                tw::inspector_heading(ui, &self.localizer.text("stock-cost"), |_| {});
+                let sources = [
+                    (StockSource::Owned, self.localizer.text("stock-owned")),
+                    (
+                        StockSource::ToPurchase,
+                        self.localizer.text("stock-purchase"),
+                    ),
+                ];
+                if let Some(source) = full_segmented(
+                    ui,
+                    egui::Id::new("stock-inspector-source"),
+                    piece.source,
+                    &sources,
+                    can_edit,
+                ) {
+                    action = Some(StockUiAction::Source(piece.id, source));
+                }
+                ui.add_space(2.0);
+                let mut args = FluentArgs::new();
+                args.set("currency", self.editor.project().currency.code());
+                let per_piece = self.localizer.format("stock-per-piece", Some(&args));
+                let (price, unknown) = piece.price.map_or_else(
+                    || (self.localizer.text("stock-fee-unknown"), true),
+                    |price| (money_amount(price, money_locale), false),
+                );
+                if value_box(
+                    ui,
+                    egui::Id::new("stock-inspector-price"),
+                    &format!(
+                        "{} · {edit_label}",
+                        self.localizer.text("stock-price-heading")
+                    ),
+                    &price,
+                    unknown,
+                    Some(&per_piece),
+                    false,
+                    ui.available_width(),
+                    can_edit,
                 )
-                .on_hover_text(self.localizer.text("stock-edit"))
-                .clicked();
-        });
-        if edit {
-            let _ = self.invoke(Request::with(A::EditStock, Target::Stock(piece.id)));
-        }
-        if ui
-            .add_enabled(
-                !self.modal_open(),
-                egui::Button::new(self.localizer.text("stock-edit")),
-            )
-            .clicked()
-        {
-            let _ = self.invoke(Request::with(A::EditStock, Target::Stock(piece.id)));
-        }
-        if ui
-            .button(self.localizer.text("stock-open-cut-plan"))
-            .clicked()
-        {
-            let _ = self.request_navigation(NavigationRoute::Entity(Destination::Sheet(piece.id)));
-        }
-        ui.separator();
-        ui.heading(self.localizer.text("stock-assigned-parts"));
-        if piece.parts.is_empty() {
-            ui.label(self.localizer.text("stock-no-assigned-parts"));
-        }
-        for part in &piece.parts {
-            if ui
-                .button(format!(
-                    "{} · {}",
-                    part.name,
-                    &part.board_id.to_string()[..8]
-                ))
                 .clicked()
-            {
-                let _ = self
-                    .request_navigation(NavigationRoute::Entity(Destination::Board(part.board_id)));
-            }
+                {
+                    action = Some(edit());
+                }
+
+                ui.add_space(16.0);
+                tw::card().inner_margin(12).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 6.0;
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            tw::semibold(ui, self.localizer.text("stock-on-plan-title"), 13.0)
+                                .color(tw::TEXT),
+                        );
+                        let mut stats = Vec::new();
+                        if let Some(fraction) = usage_fraction(&piece) {
+                            stats.push(format!("{:.0}%", fraction * 100.0));
+                        }
+                        if let Some(cuts) = piece.proof.cut_count() {
+                            let mut args = FluentArgs::new();
+                            args.set("cuts", cuts);
+                            stats.push(self.localizer.format("stock-cuts-short", Some(&args)));
+                        }
+                        if !stats.is_empty() {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(tw::mono(stats.join(" · "), 11.0).color(tw::MUTED));
+                                },
+                            );
+                        }
+                    });
+                    if piece.parts.is_empty() {
+                        ui.label(
+                            egui::RichText::new(self.localizer.text("stock-no-assigned-parts"))
+                                .size(12.0)
+                                .color(tw::FAINT),
+                        );
+                    } else {
+                        ui.spacing_mut().interact_size.y = 18.0;
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
+                            ui.spacing_mut().button_padding = egui::vec2(0.0, 1.0);
+                            let count = piece.parts.len();
+                            for (index, part) in piece.parts.iter().enumerate() {
+                                let name = if index + 1 < count {
+                                    format!("{},\u{a0}", part.name)
+                                } else {
+                                    part.name.clone()
+                                };
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new(name).size(12.0).color(tw::MUTED),
+                                        )
+                                        .frame(false),
+                                    )
+                                    .on_hover_text(self.localizer.text("stock-show-part"))
+                                    .clicked()
+                                {
+                                    action = Some(StockUiAction::OpenBoard(part.board_id));
+                                }
+                            }
+                        });
+                    }
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.spacing_mut().button_padding = egui::vec2(0.0, 1.0);
+                        if tw::text_button(
+                            ui,
+                            &self.localizer.text("stock-open-cut-plan"),
+                            tw::ACCENT_DARK,
+                            true,
+                        )
+                        .clicked()
+                        {
+                            action = Some(StockUiAction::OpenSheet(piece.id));
+                        }
+                        ui.label(egui::RichText::new("→").size(12.0).color(tw::ACCENT_DARK));
+                    });
+                });
+            });
+        if let Some(action) = action {
+            self.apply_stock_action(action);
         }
     }
+
+    /// Four trim values around a hatched "usable" rectangle. Returns whether
+    /// any trim value was clicked (to open the edit dialog).
+    fn show_trim_diagram(
+        &self,
+        ui: &mut egui::Ui,
+        piece: &StockPieceReadModel,
+        enabled: bool,
+    ) -> bool {
+        let loc = locale(self);
+        let side = 62.0;
+        let gap = 6.0;
+        let width = ui.available_width();
+        let center_width = (width - 2.0 * side - 2.0 * gap).max(60.0);
+        let (area, _) = ui.allocate_exact_size(
+            egui::vec2(width, 28.0 + 70.0 + 28.0 + 2.0 * gap),
+            egui::Sense::hover(),
+        );
+        let middle = egui::Rect::from_min_size(
+            area.min + egui::vec2(side + gap, 28.0 + gap),
+            egui::vec2(center_width, 70.0),
+        );
+        let painter = ui.painter().clone();
+        let usable = trim_preview_rect(middle, piece);
+        if usable != middle {
+            painter.rect_filled(middle, 0.0, TRIM_LOSS);
+        }
+        if usable.is_positive() {
+            painter.rect_filled(usable, 0.0, HATCH_FILL);
+            let hatch = painter.with_clip_rect(usable);
+            let mut x = usable.left() + 8.0;
+            while x < usable.right() {
+                hatch.vline(x, usable.y_range(), egui::Stroke::new(1.0, HATCH_LINE));
+                x += 9.0;
+            }
+        }
+        painter.rect_stroke(
+            middle,
+            0.0,
+            egui::Stroke::new(1.5, HATCH_STROKE),
+            egui::StrokeKind::Inside,
+        );
+        let mut args = FluentArgs::new();
+        args.set(
+            "size",
+            format!(
+                "{} × {}",
+                compact_mm(piece.usable_extent[0], loc),
+                compact_mm(piece.usable_extent[1], loc)
+            ),
+        );
+        paint_in(
+            &painter,
+            middle,
+            egui::Align2::CENTER_CENTER,
+            self.localizer.format("stock-usable-size", Some(&args)),
+            egui::FontId::proportional(11.0),
+            tw::MUTED,
+        );
+        let edit = self.localizer.text("stock-edit");
+        let top = egui::Rect::from_min_size(
+            egui::pos2(middle.left(), area.top()),
+            egui::vec2(center_width, 28.0),
+        );
+        let bottom = egui::Rect::from_min_size(
+            egui::pos2(middle.left(), middle.bottom() + gap),
+            egui::vec2(center_width, 28.0),
+        );
+        let left = egui::Rect::from_min_size(
+            egui::pos2(area.left(), middle.center().y - 14.0),
+            egui::vec2(side, 28.0),
+        );
+        let right = egui::Rect::from_min_size(
+            egui::pos2(middle.right() + gap, middle.center().y - 14.0),
+            egui::vec2(side, 28.0),
+        );
+        let [trim_left, trim_right, trim_bottom, trim_top] = piece.trim;
+        let mut clicked = false;
+        for (rect, value, key, tail) in [
+            (
+                top,
+                trim_top,
+                "stock-trim-top",
+                Some("stock-trim-short-top"),
+            ),
+            (left, trim_left, "stock-trim-left", None),
+            (right, trim_right, "stock-trim-right", None),
+            (
+                bottom,
+                trim_bottom,
+                "stock-trim-bottom",
+                Some("stock-trim-short-bottom"),
+            ),
+        ] {
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            let tail = tail.map(|key| self.localizer.text(key));
+            clicked |= value_box(
+                &mut child,
+                egui::Id::new(("stock-inspector-trim", key)),
+                &format!("{} · {edit}", self.localizer.text(key)),
+                &compact_mm(value, loc),
+                false,
+                tail.as_deref(),
+                true,
+                rect.width(),
+                enabled,
+            )
+            .clicked();
+        }
+        clicked
+    }
+
+    // -----------------------------------------------------------------------
+    // Dialog bodies (chrome belongs to `modal_chrome`)
+    // -----------------------------------------------------------------------
 
     pub(super) fn show_cut_fee_dialog(&mut self, ctx: &egui::Context) {
         let state_id = egui::Id::new("cut-fee-modal-controller");
@@ -2107,6 +3573,7 @@ impl DesktopApp {
                 })
         });
         let mut chrome = controller.lock().expect("fee modal controller");
+        let currency = self.editor.project().currency;
         let result = chrome.show(
             ctx,
             &self.localizer.text("cut-fee-edit"),
@@ -2115,29 +3582,40 @@ impl DesktopApp {
                 confirm: &self.localizer.text("cut-fee-edit"),
             },
             |ui| {
-                ui.label(format!(
-                    "{} ({})",
-                    self.localizer.text("cut-fee"),
-                    self.editor.project().currency.code()
-                ));
-                ui.add(egui::TextEdit::singleline(&mut text).id(egui::Id::new("cut-fee-amount")));
-                if ui.button(self.localizer.text("cut-fee-free")).clicked() {
-                    text = known_free_fee_text();
-                }
-                ui.small(self.localizer.text("cut-fee-hint"));
-                if !text.trim().is_empty()
-                    && Money::parse(self.editor.project().currency, &text).is_err()
-                {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text("error-invalid-amount"),
-                    );
-                }
-                (
-                    (),
-                    text.trim().is_empty()
-                        || Money::parse(self.editor.project().currency, &text).is_ok(),
-                )
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let label = self.localizer.text("cut-fee");
+                field_label(ui, &label);
+                let invalid = !text.trim().is_empty() && Money::parse(currency, &text).is_err();
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.code());
+                let error = invalid.then(|| self.localizer.text("error-invalid-amount"));
+                tw::unit_field(
+                    ui,
+                    egui::Id::new("cut-fee-amount"),
+                    &label,
+                    &mut text,
+                    &self.localizer.format("stock-per-cut", Some(&args)),
+                    error.as_deref(),
+                );
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().button_padding = egui::vec2(0.0, 2.0);
+                    if tw::text_button(
+                        ui,
+                        &self.localizer.text("cut-fee-free"),
+                        tw::ACCENT_DARK,
+                        true,
+                    )
+                    .clicked()
+                    {
+                        text = known_free_fee_text();
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(self.localizer.text("cut-fee-hint"))
+                        .size(11.5)
+                        .color(tw::FAINT),
+                );
+                ((), !invalid)
             },
         );
         if actions::decision(A::CancelDialog, result.action == ModalAction::Cancel) {
@@ -2186,22 +3664,26 @@ impl DesktopApp {
                 confirm: &title,
             },
             |ui| {
-                if let Some(id) = draft.edit_id {
-                    ui.small(format!(
-                        "{} · {}",
-                        project.stock_alias(id).unwrap_or("?"),
-                        id
-                    ));
-                }
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let localizer = &self.localizer;
+                let gap = |ui: &mut egui::Ui| ui.add_space(8.0);
+                // Name (with the fixed alias when editing).
                 ui.horizontal(|ui| {
-                    ui.label(self.localizer.text("stock-name"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.name)
-                            .id(egui::Id::new("stock-dialog-name")),
-                    );
+                    field_label(ui, &localizer.text("stock-name"));
+                    if let Some(alias) = draft.edit_id.and_then(|id| project.stock_alias(id)) {
+                        ui.label(tw::mono(alias, 11.0).color(tw::FAINT));
+                    }
                 });
+                ui.add(
+                    egui::TextEdit::singleline(&mut draft.name)
+                        .id(egui::Id::new("stock-dialog-name"))
+                        .desired_width(f32::INFINITY),
+                );
+                gap(ui);
+                field_label(ui, &localizer.text("material"));
                 let previous_material = draft.material_id;
-                egui::ComboBox::from_label(self.localizer.text("material"))
+                egui::ComboBox::from_id_salt("stock-dialog-material")
+                    .width(ui.available_width())
                     .selected_text(
                         project
                             .materials
@@ -2226,100 +3708,166 @@ impl DesktopApp {
                 if draft.material_id != previous_material && draft.edit_id.is_none() {
                     draft.fill_from_preset(project);
                 }
-                for (index, key) in ["board-length", "board-width", "board-thickness"]
-                    .iter()
+                gap(ui);
+                let unit = project.display_unit;
+                let unit_text = localizer.text(unit_key(unit));
+                ui.spacing_mut().item_spacing.x = 10.0;
+                ui.columns(3, |columns| {
+                    for (index, (key, id)) in [
+                        ("stock-length-x", "stock-dialog-length"),
+                        ("stock-width-y", "stock-dialog-width"),
+                        ("board-thickness", "stock-dialog-thickness"),
+                    ]
+                    .into_iter()
                     .enumerate()
-                {
-                    dimension_field(
-                        ui,
-                        &self.localizer,
-                        key,
-                        &mut draft.dimensions[index],
-                        project.display_unit,
-                    );
-                }
-                egui::ComboBox::from_label(self.localizer.text("stock-grain"))
-                    .selected_text(self.localizer.text(stock_grain_key(draft.grain)))
-                    .show_ui(ui, |ui| {
-                        for grain in [
-                            StockGrain::AlongX,
-                            StockGrain::AlongY,
-                            StockGrain::Nondirectional,
-                            StockGrain::Unknown,
-                        ] {
-                            combo_option(
-                                ui,
-                                &mut draft.grain,
-                                grain,
-                                self.localizer.text(stock_grain_key(grain)),
-                            );
-                        }
-                    });
-                egui::ComboBox::from_label(self.localizer.text("stock-source"))
-                    .selected_text(self.localizer.text(if draft.source == StockSource::Owned {
-                        "stock-owned"
-                    } else {
-                        "stock-purchase"
-                    }))
-                    .show_ui(ui, |ui| {
-                        for (source, key) in [
-                            (StockSource::Owned, "stock-owned"),
-                            (StockSource::ToPurchase, "stock-purchase"),
-                        ] {
-                            combo_option(ui, &mut draft.source, source, self.localizer.text(key));
-                        }
-                    });
-                for (index, key) in [
-                    "stock-trim-left",
-                    "stock-trim-right",
-                    "stock-trim-bottom",
-                    "stock-trim-top",
+                    {
+                        stock_length_field(
+                            &mut columns[index],
+                            localizer,
+                            id,
+                            &localizer.text(key),
+                            &mut draft.dimensions[index],
+                            unit,
+                            &unit_text,
+                            false,
+                        );
+                    }
+                });
+                gap(ui);
+                field_label(ui, &localizer.text("stock-grain-heading"));
+                let grains = [
+                    StockGrain::AlongX,
+                    StockGrain::AlongY,
+                    StockGrain::Nondirectional,
+                    StockGrain::Unknown,
                 ]
-                .iter()
-                .enumerate()
-                {
-                    trim_field(ui, &self.localizer, key, &mut draft.trim[index]);
+                .map(|grain| (grain, localizer.text(stock_grain_short_key(grain))));
+                if let Some(grain) = full_segmented(
+                    ui,
+                    egui::Id::new("stock-dialog-grain"),
+                    draft.grain,
+                    &grains,
+                    true,
+                ) {
+                    draft.grain = grain;
                 }
-                ui.label(self.localizer.text("stock-trim-hint"));
-                ui.horizontal(|ui| {
-                    ui.label(format!(
-                        "{} ({})",
-                        self.localizer.text("stock-price"),
-                        project.currency.code()
-                    ));
-                    ui.text_edit_singleline(&mut draft.price);
+                gap(ui);
+                let price_invalid = !draft.price.trim().is_empty()
+                    && Money::parse(project.currency, &draft.price).is_err();
+                ui.columns(2, |columns| {
+                    field_label(&mut columns[0], &localizer.text("stock-source"));
+                    let sources = [
+                        (StockSource::Owned, localizer.text("stock-owned")),
+                        (StockSource::ToPurchase, localizer.text("stock-purchase")),
+                    ];
+                    if let Some(source) = full_segmented(
+                        &mut columns[0],
+                        egui::Id::new("stock-dialog-source"),
+                        draft.source,
+                        &sources,
+                        true,
+                    ) {
+                        draft.source = source;
+                    }
+                    let price_label = localizer.text("stock-price-short");
+                    field_label(&mut columns[1], &price_label)
+                        .on_hover_text(localizer.text("stock-price"));
+                    let mut args = FluentArgs::new();
+                    args.set("currency", project.currency.code());
+                    let error = price_invalid.then(|| localizer.text("error-invalid-amount"));
+                    fitted_unit_field(
+                        &mut columns[1],
+                        egui::Id::new("stock-dialog-price"),
+                        &localizer.text("stock-price"),
+                        &mut draft.price,
+                        &localizer.format("stock-per-piece", Some(&args)),
+                        error.as_deref(),
+                    );
                 });
                 if draft.edit_id.is_none() {
-                    ui.horizontal(|ui| {
-                        ui.label(self.localizer.text("stock-quantity"));
-                        ui.text_edit_singleline(&mut draft.quantity);
-                    });
+                    gap(ui);
+                    field_label(ui, &localizer.text("stock-quantity-short"))
+                        .on_hover_text(localizer.text("stock-quantity"));
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(140.0, 30.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            tw::unit_field(
+                                ui,
+                                egui::Id::new("stock-dialog-quantity"),
+                                &localizer.text("stock-quantity"),
+                                &mut draft.quantity,
+                                &localizer.text("stock-pcs"),
+                                None,
+                            );
+                        },
+                    );
                 }
+                gap(ui);
+                field_label(ui, &localizer.text("stock-edge-trims"))
+                    .on_hover_text(localizer.text("stock-trim-hint"));
+                ui.columns(4, |columns| {
+                    for (index, (key, id)) in [
+                        ("stock-trim-short-left", "stock-dialog-trim-left"),
+                        ("stock-trim-short-right", "stock-dialog-trim-right"),
+                        ("stock-trim-short-bottom", "stock-dialog-trim-bottom"),
+                        ("stock-trim-short-top", "stock-dialog-trim-top"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        stock_length_field(
+                            &mut columns[index],
+                            localizer,
+                            id,
+                            &localizer.text(key),
+                            &mut draft.trim[index],
+                            Unit::Mm,
+                            "mm",
+                            true,
+                        );
+                    }
+                });
                 let quantity = draft
                     .quantity
                     .parse::<u32>()
                     .ok()
                     .filter(|&n| n > 0 && n <= MAX_STOCK_QUANTITY);
                 let parsed = draft.input(project.display_unit, project.currency);
+                let error_line = |ui: &mut egui::Ui, text: String| {
+                    ui.label(egui::RichText::new(text).size(11.5).color(tw::DANGER));
+                };
+                if !current
+                    || draft.error.is_some()
+                    || parsed.is_err()
+                    || (draft.edit_id.is_none() && quantity.is_none())
+                {
+                    ui.add_space(4.0);
+                }
                 if !current {
-                    ui.colored_label(egui::Color32::LIGHT_RED, self.localizer.text("stock-stale"));
+                    error_line(ui, localizer.text("stock-stale"));
                 }
                 if let Some(error) = draft.error.or_else(|| parsed.as_ref().err().copied()) {
                     let key = match error {
                         StockError::MissingMaterial(_)
-                        | StockError::Invalid(StockField::Material) => "error-material-missing",
-                        StockError::Invalid(StockField::Price) => "error-invalid-amount",
-                        StockError::Invalid(StockField::Quantity) => "stock-invalid-quantity",
-                        StockError::Invalid(StockField::Trim) => "stock-invalid-trim",
-                        _ => "stock-invalid",
+                        | StockError::Invalid(StockField::Material) => {
+                            Some("error-material-missing")
+                        }
+                        // Shown inline under the price field already.
+                        StockError::Invalid(StockField::Price) if draft.error.is_none() => None,
+                        StockError::Invalid(StockField::Price) => Some("error-invalid-amount"),
+                        StockError::Invalid(StockField::Quantity) => Some("stock-invalid-quantity"),
+                        StockError::Invalid(StockField::Trim) => Some("stock-invalid-trim"),
+                        // Blank sizes simply keep the confirm button disabled.
+                        _ if draft.dimensions.iter().any(|d| d.text.trim().is_empty()) => None,
+                        _ => Some("stock-invalid"),
                     };
-                    ui.colored_label(egui::Color32::LIGHT_RED, self.localizer.text(key));
+                    if let Some(key) = key {
+                        error_line(ui, localizer.text(key));
+                    }
                 }
                 if draft.edit_id.is_none() && quantity.is_none() {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text("stock-invalid-quantity"),
-                    );
+                    error_line(ui, localizer.text("stock-invalid-quantity"));
                 }
                 (
                     (),
@@ -2366,6 +3914,53 @@ impl DesktopApp {
 mod tests {
     use super::*;
     use plan_my_cabinet::board_commands::NewMaterial;
+
+    #[test]
+    fn inspector_grain_and_ownership_commit_atomically_and_undo() {
+        let project = plan_my_cabinet::reference_fixture::project();
+        let mut app = DesktopApp {
+            editor: ProjectEditor::new(project).unwrap(),
+            ..Default::default()
+        };
+        let id = app.editor.project().stock[0].id;
+        let before = app.editor.project().clone();
+        let original = before.stock[0].clone();
+        let grain = if original.grain == StockGrain::AlongY {
+            StockGrain::AlongX
+        } else {
+            StockGrain::AlongY
+        };
+        app.apply_stock_action(StockUiAction::Grain(id, grain));
+        assert_eq!(app.editor.project().revision, before.revision + 1);
+        let edited = &app.editor.project().stock[0];
+        assert_eq!(edited.grain, grain);
+        assert_eq!(
+            (
+                edited.length,
+                edited.width,
+                edited.trim,
+                edited.price,
+                edited.source
+            ),
+            (
+                original.length,
+                original.width,
+                original.trim,
+                original.price,
+                original.source
+            )
+        );
+        app.editor.undo().unwrap();
+        assert_eq!(app.editor.project().stock, before.stock);
+        let source = if original.source == StockSource::Owned {
+            StockSource::ToPurchase
+        } else {
+            StockSource::Owned
+        };
+        app.apply_stock_action(StockUiAction::Source(id, source));
+        assert_eq!(app.editor.project().stock[0].source, source);
+        assert_eq!(app.editor.project().stock[0].grain, original.grain);
+    }
 
     #[test]
     fn explicit_free_fee_is_known_zero_not_unknown() {
@@ -2443,7 +4038,7 @@ mod tests {
             )
             .unwrap()[0];
         let output = ctx.run_ui(egui::RawInput::default(), |ui| app.show_stock_list(ui));
-        let expected = format!("O1 · Offcut ({})", &id.to_string()[..8]);
+        let expected = String::from("O1 · Offcut");
         let labels: Vec<_> = output
             .platform_output
             .accesskit_update
@@ -2454,11 +4049,14 @@ mod tests {
             .filter_map(|(_, node)| node.label().or_else(|| node.value()).map(str::to_owned))
             .collect();
         output.drop_without_applying_deltas();
+        assert!(labels.iter().any(|label| label == &expected), "{labels:?}");
         assert!(
-            labels.iter().any(|label| label.contains(&expected)),
+            !labels
+                .iter()
+                .any(|label| label.contains(&id.to_string()[..8])),
             "{labels:?}"
         );
-        assert!(labels.iter().any(|label| label == "#1"), "{labels:?}");
+        assert!(labels.iter().any(|label| label == "Drag"), "{labels:?}");
     }
 
     #[test]
@@ -2649,7 +4247,7 @@ mod tests {
             .find(|piece| piece.id == id)
             .unwrap();
         let edited = StockDialog::edit(app.editor.project(), piece, Locale::En);
-        assert_eq!(edited.trim[0].text, "0.397 mm");
+        assert_eq!(edited.trim[0].text, "0.397");
         assert!(edited.trim.iter().all(|field| !field.consent));
         assert_eq!(
             edited

@@ -1047,3 +1047,105 @@ material-color-hint = Only tints the 3D view and sheet diagrams.
 shell-next-step = Next: { $step }
 shell-next-step-hint = Design → Stock → Cut plan → Hardware → Handoff
 palette-keys = ↑↓ move · ⏎ run · Esc close
+
+# Stock workspace rework
+stock-subtitle = Sheets and offcuts you own or plan to buy. First-fit tries them top to bottom.
+stock-cut-fee-chip = Cut fee
+stock-fee-unknown = unknown
+stock-fee-set = Set
+stock-fee-change = Change
+stock-view-grouped = By material
+stock-view-priority = Priority order
+stock-drag-hint = Drag a row by its handle to change first-fit order
+stock-col-rank = #
+stock-col-id = ID
+stock-col-measured = Measured L × W × T
+stock-col-grain = Grain
+stock-col-trims = Trims
+stock-col-ownership = Ownership
+stock-col-on-plan = On plan
+stock-no-stock = no stock
+stock-group-detail = { $thickness } mm · { $count ->
+    [one] { $count } piece
+   *[other] { $count } pieces
+}
+stock-add-material-sheet = Add { $material } sheet
+stock-missing-one = { $board } ({ $size }) can't be allocated until a { $material } piece is declared.
+stock-missing-many = { $count } boards can't be allocated until a { $material } piece is declared.
+stock-grain-col-x = X
+stock-grain-col-y = Y
+stock-grain-short-x = Along X
+stock-grain-short-y = Along Y
+stock-grain-short-none = None
+stock-unused = unused
+stock-spare = spare
+stock-parts-n = { $count ->
+    [one] { $count } part
+   *[other] { $count } parts
+}
+stock-edit-ellipsis = Edit piece…
+stock-move-top = Move to top
+stock-move-bottom = Move to bottom
+stock-duplicate = Duplicate piece
+stock-delete = Delete piece
+stock-delete-blocked = Parts are placed on this piece; move them before deleting it
+stock-card-purchase = To purchase (used)
+stock-card-cutting = Cutting
+stock-card-owned = Owned pieces consumed
+stock-card-none-used = No purchased piece used yet
+stock-card-unused = { $aliases } unused, not counted
+stock-cuts-times = { $cuts } cuts × { $fee }
+stock-card-set-fee = Set a cut fee to complete the estimate
+stock-owned-of = { $used } of { $total }
+stock-owned-free = Free to use: { $aliases }
+stock-disclaimer = Estimate excludes taxes, delivery, setup fees and stacking discounts. Blank price = unknown; 0 = known free.
+stock-details = Details
+stock-inspector-none = No piece selected
+stock-priority = priority { $rank }
+stock-measured-size = Measured size
+stock-edit-short = Edit…
+stock-length-x = Length (X)
+stock-width-y = Width (Y)
+stock-grain-heading = Grain
+stock-edge-trims = Edge trims
+stock-trims-note = total edge loss
+stock-cost = Cost
+stock-per-piece = { $currency } / piece
+stock-per-cut = { $currency } / cut
+stock-on-plan-title = On the plan
+stock-cuts-short = { $cuts ->
+    [one] { $cuts } cut
+   *[other] { $cuts } cuts
+}
+stock-show-part = Show this part in the design
+stock-usable-size = usable { $size }
+stock-trim-short-top = top
+stock-trim-short-bottom = bottom
+stock-trim-short-left = left
+stock-trim-short-right = right
+stock-price-short = Price
+stock-quantity-short = Quantity
+stock-pcs = pcs
+stock-material-line = { $thickness } mm · { $boards ->
+    [one] { $boards } board
+   *[other] { $boards } boards
+} · { $pieces ->
+    [one] { $pieces } pc
+   *[other] { $pieces } pcs
+}
+stock-all-line = { $pieces ->
+    [one] { $pieces } piece
+   *[other] { $pieces } pieces
+} · { $materials ->
+    [one] { $materials } material
+   *[other] { $materials } materials
+}
+stock-boards-n = { $count ->
+    [one] { $count } board
+   *[other] { $count } boards
+}
+material-default-grain = Default grain
+material-used-by = Used by
+material-edit-ellipsis = Edit material…
+material-edit-note = Editing asks whether to preserve or update existing boards.
+stock-grain-short-unknown = Unknown
