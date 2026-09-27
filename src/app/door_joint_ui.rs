@@ -1,11 +1,11 @@
 //! Explicit relationship drafts and dependency-aware object removal.
-use super::*;
+use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
 use plan_my_cabinet::door_joint::{self, JointPreview};
 
-pub(super) struct DoorDialog {
+pub(crate) struct DoorDialog {
     id: Uuid,
     editing: bool,
     project_id: Uuid,
@@ -18,7 +18,7 @@ pub(super) struct DoorDialog {
 }
 
 impl DoorDialog {
-    pub(super) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
+    pub(crate) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
         let p = app.editor.project();
         let old = id.and_then(|id| p.door_joints.iter().find(|j| j.id == id));
         Self {
@@ -54,13 +54,13 @@ impl DoorDialog {
     }
 }
 
-pub(super) enum DoorRemoval {
+pub(crate) enum DoorRemoval {
     Joint(Uuid),
     Object(Uuid),
     Hardware(Uuid),
 }
 
-pub(super) struct RemovalDialog {
+pub(crate) struct RemovalDialog {
     pub target: DoorRemoval,
     project_id: Uuid,
     revision: u64,
@@ -69,7 +69,7 @@ pub(super) struct RemovalDialog {
 }
 
 impl RemovalDialog {
-    pub(super) fn new(app: &DesktopApp, target: DoorRemoval) -> Self {
+    pub(crate) fn new(app: &DesktopApp, target: DoorRemoval) -> Self {
         Self {
             target,
             project_id: app.editor.project().id,
@@ -106,7 +106,7 @@ fn object_name(project: &Project, id: Uuid) -> &str {
 impl DesktopApp {
     /// Only the active (or inspected) relationship belongs on the canvas.
     /// All other relationships and creation/edit routes stay in the tree.
-    pub(super) fn show_hardware_motion_overlay(
+    pub(crate) fn show_hardware_motion_overlay(
         &mut self,
         ctx: &egui::Context,
         canvas: egui::Rect,
@@ -220,7 +220,7 @@ impl DesktopApp {
 
     /// Body of the motion HUD: door name, angle, slider, scale and one note.
     /// The angle is session display state; the saved pose never changes.
-    pub(super) fn show_door_motion_controls(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_door_motion_controls(&mut self, ui: &mut egui::Ui) {
         let Some((id, mut angle)) = self.door_motion else {
             return;
         };
@@ -292,7 +292,7 @@ impl DesktopApp {
         .on_hover_text(self.localizer.text("door-motion-disclosure"));
     }
 
-    pub(super) fn show_door_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_door_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_door() else {
             return;
         };
@@ -550,7 +550,7 @@ impl DesktopApp {
         self.modals.set_door(Some(draft));
     }
 
-    pub(super) fn show_removal_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_removal_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_removal() else {
             return;
         };

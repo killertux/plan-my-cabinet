@@ -1,5 +1,5 @@
 //! Keyboard-operable stock form and priority controls; drafts never enter the project.
-use super::*;
+use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
@@ -947,7 +947,7 @@ mod grouped_stock_tests {
     }
 }
 
-pub(super) struct StockDialog {
+pub(crate) struct StockDialog {
     project_id: Uuid,
     revision: u64,
     edit_id: Option<Uuid>,
@@ -1017,7 +1017,7 @@ fn known_free_fee_text() -> String {
 }
 
 impl StockDialog {
-    pub(super) fn new(project: &Project) -> Self {
+    pub(crate) fn new(project: &Project) -> Self {
         let mut draft = Self::blank(project);
         draft.fill_from_preset(project);
         draft
@@ -1088,7 +1088,7 @@ impl StockDialog {
         }
     }
 
-    pub(super) fn new_for_material(project: &Project, material_id: Uuid) -> Self {
+    pub(crate) fn new_for_material(project: &Project, material_id: Uuid) -> Self {
         let mut draft = Self::new(project);
         if let Some(material) = project.materials.iter().find(|m| m.id == material_id) {
             draft.material_id = Some(material.id);
@@ -1098,7 +1098,7 @@ impl StockDialog {
         draft
     }
 
-    pub(super) fn new_for_issue(project: &Project, board_id: Uuid) -> Self {
+    pub(crate) fn new_for_issue(project: &Project, board_id: Uuid) -> Self {
         let mut draft = Self::new(project);
         if let Some(board) = project.boards.iter().find(|board| board.id == board_id) {
             draft.material_id = Some(board.material_id);
@@ -1108,7 +1108,7 @@ impl StockDialog {
         draft
     }
 
-    pub(super) fn edit(project: &Project, piece: &Stock, locale: Locale) -> Self {
+    pub(crate) fn edit(project: &Project, piece: &Stock, locale: Locale) -> Self {
         Self {
             project_id: project.id,
             revision: project.revision,
@@ -1671,7 +1671,7 @@ impl DesktopApp {
     // Left pane: materials
     // -----------------------------------------------------------------------
 
-    pub(super) fn show_stock_materials(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_stock_materials(&mut self, ui: &mut egui::Ui) {
         let modal = self.modal_open();
         let Some(model) = self.stock_snapshot() else {
             ui.label(self.localizer.text("cost-invalid"));
@@ -2160,7 +2160,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_stock_list(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_stock_list(&mut self, ui: &mut egui::Ui) {
         let modal = self.modal_open();
         self.show_stock_title(ui, modal);
         ui.add_space(14.0);
@@ -3124,7 +3124,7 @@ impl DesktopApp {
             });
     }
 
-    pub(super) fn show_stock_inspector(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_stock_inspector(&mut self, ui: &mut egui::Ui) {
         let Some(model) = self.stock_snapshot() else {
             ui.label(self.localizer.text("cost-invalid"));
             return;
@@ -3554,7 +3554,7 @@ impl DesktopApp {
     // Dialog bodies (chrome belongs to `modal_chrome`)
     // -----------------------------------------------------------------------
 
-    pub(super) fn show_cut_fee_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_cut_fee_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut dialog) = self.modals.take_cut_fee() else {
             return;
         };
@@ -3624,7 +3624,7 @@ impl DesktopApp {
         self.modals.set_cut_fee(Some(dialog));
     }
 
-    pub(super) fn show_stock_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_stock_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_stock() else {
             return;
         };

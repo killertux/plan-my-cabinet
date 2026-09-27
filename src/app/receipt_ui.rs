@@ -528,7 +528,7 @@ mod tests {
 
     fn project() -> Project {
         let mut project =
-            prepare_bytes(include_bytes!("../tests/fixtures/schema-v1-cabinet.pmcab"))
+            prepare_bytes(include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab"))
                 .unwrap()
                 .project()
                 .clone();
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn legacy_missing_values_and_unavailable_evidence_are_not_inferred() {
         let mut project =
-            prepare_bytes(include_bytes!("../tests/fixtures/schema-v1-cabinet.pmcab"))
+            prepare_bytes(include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab"))
                 .unwrap()
                 .project()
                 .clone();
@@ -735,8 +735,8 @@ mod tests {
                 .collect()
         }
         assert_eq!(
-            keys(include_str!("../i18n/en.ftl")),
-            keys(include_str!("../i18n/pt-BR.ftl")),
+            keys(include_str!("../../i18n/en.ftl")),
+            keys(include_str!("../../i18n/pt-BR.ftl")),
         );
     }
 }

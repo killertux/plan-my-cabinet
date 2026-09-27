@@ -1,9 +1,9 @@
 //! Explicit, project-wide currency decisions. No exchange-rate conversion is implied.
-use super::*;
+use crate::*;
 use plan_my_cabinet::money::{Currency, Money};
 use plan_my_cabinet::stock_commands::ProjectCurrencyChange;
 
-pub(super) struct CurrencyDialog {
+pub(crate) struct CurrencyDialog {
     project_id: Uuid,
     revision: u64,
     target: Currency,
@@ -26,7 +26,7 @@ fn amount_text(value: Option<Money>) -> String {
 }
 
 impl CurrencyDialog {
-    pub(super) fn new(project: &Project) -> Self {
+    pub(crate) fn new(project: &Project) -> Self {
         Self {
             project_id: project.id,
             revision: project.revision,
@@ -84,7 +84,7 @@ impl CurrencyDialog {
 }
 
 impl DesktopApp {
-    pub(super) fn show_currency_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_currency_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_currency() else {
             return;
         };

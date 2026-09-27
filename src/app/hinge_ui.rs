@@ -1,4 +1,4 @@
-use super::*;
+use crate::*;
 use crate::actions::{ActionId as A, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
@@ -7,7 +7,7 @@ use plan_my_cabinet::domain::{
 };
 use plan_my_cabinet::hinge_installation::{self, InstallationIssue, InstallationStatus};
 
-pub(super) struct HingeDialog {
+pub(crate) struct HingeDialog {
     id: Option<Uuid>,
     new_id: Uuid,
     project_id: Uuid,
@@ -40,7 +40,7 @@ fn locale(localizer: &Localizer) -> Locale {
 }
 
 /// Display text for a length in mm (`100`, `11.3`), localized decimal mark.
-pub(super) fn short_mm(localizer: &Localizer, value: Length) -> String {
+pub(crate) fn short_mm(localizer: &Localizer, value: Length) -> String {
     assembly_ui::short_length(value, locale(localizer))
 }
 
@@ -96,7 +96,7 @@ fn board_name(project: &Project, id: Uuid) -> &str {
 }
 
 /// The tree, inspector and 3D labels share one ordinal, never a UUID prefix.
-pub(super) fn hinge_ordinal(project: &Project, id: Uuid) -> usize {
+pub(crate) fn hinge_ordinal(project: &Project, id: Uuid) -> usize {
     project
         .hinge_installations
         .iter()
@@ -142,7 +142,7 @@ fn mono_font(ui: &egui::Ui, size: f32, weight: crate::theme::Typeface) -> egui::
 }
 
 /// 12px muted label placed above a dialog field.
-pub(super) fn field_label(ui: &mut egui::Ui, text: &str) {
+pub(crate) fn field_label(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(egui::RichText::new(text).size(12.0).color(tw::MUTED))
             .selectable(false)
@@ -170,7 +170,7 @@ fn row_icon(
 
 /// Warning callout with a leading `warning` icon. `white` uses the card fill
 /// (tree summaries); otherwise the `warn_bg` fill (inspector notices).
-pub(super) fn warning_callout<R>(
+pub(crate) fn warning_callout<R>(
     ui: &mut egui::Ui,
     white: bool,
     body: impl FnOnce(&mut egui::Ui) -> R,
@@ -500,7 +500,7 @@ fn catalog_card(ui: &mut egui::Ui, localizer: &Localizer, entry: &CatalogReferen
 }
 
 impl HingeDialog {
-    pub(super) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
+    pub(crate) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
         let project = app.editor.project();
         let old = id.and_then(|id| project.hinge_installations.iter().find(|i| i.id == id));
         let boards = &project.boards;
@@ -590,7 +590,7 @@ impl HingeDialog {
     }
 }
 
-pub(super) fn issue_key(issue: &InstallationIssue) -> &'static str {
+pub(crate) fn issue_key(issue: &InstallationIssue) -> &'static str {
     match issue {
         InstallationIssue::MissingPart(_) => "hinge-missing-part",
         InstallationIssue::MissingCatalog(_) | InstallationIssue::MissingVerifiedCatalog => {
@@ -884,7 +884,7 @@ fn y_draft_id(id: Uuid, index: usize) -> egui::Id {
 }
 
 impl DesktopApp {
-    pub(super) fn show_pinned_catalog(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_pinned_catalog(&mut self, ui: &mut egui::Ui) {
         let project = self.editor.project();
         let browse_id = egui::Id::new(("hardware-browse-snapshots", project.id));
         let mut browse = ui.data(|d| d.get_temp::<bool>(browse_id)).unwrap_or(false);
@@ -1324,7 +1324,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_hinge_list(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_hinge_list(&mut self, ui: &mut egui::Ui) {
         let modal = self.modal_open();
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -1438,7 +1438,7 @@ impl DesktopApp {
     }
 
     /// Fixed footer of the Hardware controls pane: "+ Hinge" and "+ Door".
-    pub(super) fn show_hardware_footer(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_hardware_footer(&mut self, ui: &mut egui::Ui) {
         let mut run = None;
         let gap = 6.0;
         let width = ((ui.available_width() - gap) / 2.0).max(40.0);
@@ -1538,7 +1538,7 @@ impl DesktopApp {
     }
 
     /// Hardware inspector hook: call with the session's selected Installation ID.
-    pub(super) fn show_selected_installation_inspector(&mut self, ui: &mut egui::Ui, id: Uuid) {
+    pub(crate) fn show_selected_installation_inspector(&mut self, ui: &mut egui::Ui, id: Uuid) {
         let project = self.editor.project();
         let Some(installation) = project
             .hinge_installations
@@ -1967,7 +1967,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_hinge_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_hinge_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_hinge() else {
             return;
         };

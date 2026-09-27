@@ -54,7 +54,7 @@ impl OptimizeUi {
     pub(crate) fn comparison_open(&self) -> bool {
         self.comparison.is_some()
     }
-    pub(super) fn acceptance_availability(&self, project: &Project) -> Result<(), Unavailable> {
+    pub(crate) fn acceptance_availability(&self, project: &Project) -> Result<(), Unavailable> {
         let Some(result) = &self.result else {
             return Err(Unavailable::NoOptimization);
         };

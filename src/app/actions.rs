@@ -1602,11 +1602,11 @@ mod tests {
         );
         let mut seen = HashSet::new();
         let mut stable_ids = HashSet::new();
-        let en = include_str!("../i18n/en.ftl");
-        let pt = include_str!("../i18n/pt-BR.ftl");
+        let en = include_str!("../../i18n/en.ftl");
+        let pt = include_str!("../../i18n/pt-BR.ftl");
         // Catch registered commands that have no actual pre-relocation UI route.
         let sources = [
-            include_str!("main.rs"),
+            include_str!("../main.rs"),
             include_str!("project_ui.rs"),
             include_str!("assembly_ui.rs"),
             include_str!("stock_ui.rs"),

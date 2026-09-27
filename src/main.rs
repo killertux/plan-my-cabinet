@@ -51,36 +51,13 @@ use std::sync::{
 };
 use std::time::Duration;
 use uuid::Uuid;
-mod actions;
-mod assembly_ui;
-mod capture;
-mod command_palette;
-mod currency_ui;
-mod door_joint_ui;
-mod handoff_ui;
-mod hardware_ui;
-mod hinge_ui;
-mod icons;
-mod kerf_confirmation_ui;
-mod modal_chrome;
-mod modals;
-mod optimization_ui;
-mod pending_navigation;
-mod placement_ui;
-mod project_ui;
-mod receipt_ui;
-mod recovery_cleanup_ui;
-mod sheet_ui;
-mod stock_ui;
-mod template_setup_ui;
-mod theme;
-mod theme_widgets;
-mod toasts;
-mod viewport;
-mod welcome_host;
-mod widget_gallery;
-mod workspace_shell;
-mod workspace_state;
+// Shared with the library (the PDF preview uses them); compiled once there.
+use plan_my_cabinet::{icons, theme, theme_widgets};
+// Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
+mod app;
+use app::{
+    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell, workspace_state,
+};
 use actions::{ActionId as A, Argument, Request, Target};
 use modal_chrome::{ModalAction, ModalActions, ModalChrome, ModalThreeAction, ModalThreeActions};
 use pending_navigation::{

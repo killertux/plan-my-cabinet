@@ -1,12 +1,12 @@
 //! Dimensioned reference hardware editor. Draft fields never mutate the project.
-use super::*;
+use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
 use plan_my_cabinet::assembly_edit::world_pose;
 use plan_my_cabinet::domain::HardwareKind;
 
-pub(super) struct HardwareDialog {
+pub(crate) struct HardwareDialog {
     id: Option<Uuid>,
     project_id: Uuid,
     revision: u64,
@@ -132,7 +132,7 @@ fn axis_fields(
 }
 
 impl HardwareDialog {
-    pub(super) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
+    pub(crate) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
         let item = id.and_then(|id| app.editor.project().hardware.iter().find(|h| h.id == id));
         let world = item.and_then(|h| world_pose(app.editor.project(), h.id).ok());
         let dims = item.and_then(|h| match h.kind {
@@ -171,7 +171,7 @@ impl HardwareDialog {
 }
 
 impl DesktopApp {
-    pub(super) fn remove_reference_hardware(&mut self, id: Uuid) -> bool {
+    pub(crate) fn remove_reference_hardware(&mut self, id: Uuid) -> bool {
         let removed =
             self.editor
                 .transact(|project| -> Result<(), ()> {
@@ -192,7 +192,7 @@ impl DesktopApp {
 
     /// Secondary Hardware section for dimensioned reference items. Creation is
     /// also in the Doors "+" menu, so the section only appears once it has rows.
-    pub(super) fn show_hardware_list(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_hardware_list(&mut self, ui: &mut egui::Ui) {
         let items: Vec<_> = self
             .editor
             .project()
@@ -403,7 +403,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_hardware_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_hardware_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_hardware() else {
             return;
         };

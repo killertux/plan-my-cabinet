@@ -50,21 +50,21 @@ impl Default for WelcomeHost {
 }
 
 impl WelcomeHost {
-    pub(super) fn locating(&self) -> bool {
+    pub(crate) fn locating(&self) -> bool {
         self.picker.is_some()
     }
 
-    pub(super) fn enter(&mut self) {
+    pub(crate) fn enter(&mut self) {
         self.visible = true;
         self.invalidate();
     }
 
-    pub(super) fn leave(&mut self) {
+    pub(crate) fn leave(&mut self) {
         self.visible = false;
         self.picker = None;
     }
 
-    pub(super) fn invalidate(&mut self) {
+    pub(crate) fn invalidate(&mut self) {
         self.loaded = false;
     }
 
@@ -176,7 +176,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn handle_welcome_intent(&mut self, intent: WelcomeIntent) {
+    pub(crate) fn handle_welcome_intent(&mut self, intent: WelcomeIntent) {
         match intent {
             WelcomeIntent::NewProject => self.request_project_action(project_ui::NextAction::New),
             WelcomeIntent::Template(kind) => {

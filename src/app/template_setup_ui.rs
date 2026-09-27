@@ -1233,8 +1233,8 @@ mod tests {
                 .map(str::to_owned)
                 .collect()
         };
-        let en = keys(include_str!("../i18n/en.ftl"));
-        let pt = keys(include_str!("../i18n/pt-BR.ftl"));
+        let en = keys(include_str!("../../i18n/en.ftl"));
+        let pt = keys(include_str!("../../i18n/pt-BR.ftl"));
         assert_eq!(en, pt);
         assert!(en.len() >= 75);
     }

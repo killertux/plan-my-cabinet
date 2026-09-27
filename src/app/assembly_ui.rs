@@ -1,4 +1,4 @@
-use super::*;
+use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::modal_chrome::{ModalAction, ModalActions, ModalChrome};
 use plan_my_cabinet::assembly_edit::{AssemblyEditError, world_pose};
@@ -11,7 +11,7 @@ use plan_my_cabinet::stock_read_models::StockPieceReadModel;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
-pub(super) enum Operation {
+pub(crate) enum Operation {
     Group,
     Reparent,
     Ungroup,
@@ -19,7 +19,7 @@ pub(super) enum Operation {
     Duplicate,
 }
 
-pub(super) struct AssemblyDialog {
+pub(crate) struct AssemblyDialog {
     operation: Operation,
     ids: Vec<Uuid>,
     active: Option<Uuid>,
@@ -35,7 +35,7 @@ pub(super) struct AssemblyDialog {
     error: Option<String>,
 }
 
-pub(super) fn coordinate(field: &DimensionDraft) -> Option<f64> {
+pub(crate) fn coordinate(field: &DimensionDraft) -> Option<f64> {
     let parsed = parse_length(&field.text, Unit::Mm).ok()?.conversion;
     (parsed.exact().is_some() || field.consent)
         .then(|| parsed.suggested().micrometres() as f64 / 1000.0)
@@ -214,7 +214,7 @@ fn hierarchy(project: &Project) -> Vec<(Uuid, usize, bool, String)> {
 }
 
 impl AssemblyDialog {
-    pub(super) fn new(app: &DesktopApp, operation: Operation) -> Self {
+    pub(crate) fn new(app: &DesktopApp, operation: Operation) -> Self {
         let ids: Vec<_> = app.selection.ids.iter().copied().collect();
         let origin = app
             .selection
@@ -399,7 +399,7 @@ fn material_swatch(ui: &mut egui::Ui, color: plan_my_cabinet::domain::SrgbColor)
     );
 }
 
-pub(super) fn short_length(length: Length, locale: Locale) -> String {
+pub(crate) fn short_length(length: Length, locale: Locale) -> String {
     let mm = length.micrometres() as f64 / 1000.0;
     let text = if mm.fract() == 0.0 {
         format!("{mm:.0}")
@@ -416,7 +416,7 @@ pub(super) fn short_length(length: Length, locale: Locale) -> String {
     }
 }
 
-pub(super) fn unit_suffix(unit: Unit) -> &'static str {
+pub(crate) fn unit_suffix(unit: Unit) -> &'static str {
     match unit {
         Unit::Mm => "mm",
         Unit::Cm => "cm",
@@ -443,7 +443,7 @@ fn field_text(field: &plan_my_cabinet::edit_drafts::LengthField) -> String {
 }
 
 /// A short, human-scale identifier for headers ("b-7f3a").
-pub(super) fn short_id(prefix: char, id: Uuid) -> String {
+pub(crate) fn short_id(prefix: char, id: Uuid) -> String {
     let hex = id.simple().to_string();
     format!("{prefix}-{}", &hex[hex.len() - 4..])
 }
@@ -682,7 +682,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_design_hud(&mut self, ctx: &egui::Context, canvas: egui::Rect) {
+    pub(crate) fn show_design_hud(&mut self, ctx: &egui::Context, canvas: egui::Rect) {
         let Some(model) = self.design_model() else {
             return;
         };
@@ -1044,7 +1044,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_hierarchy(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_hierarchy(&mut self, ui: &mut egui::Ui) {
         let Some(model) = self.design_model() else {
             ui.label(self.localizer.text("measurement-invalid"));
             return;
@@ -1540,7 +1540,7 @@ impl DesktopApp {
         });
     }
 
-    pub(super) fn show_design_inspector(&mut self, ui: &mut egui::Ui, model: &DesignReadModel) {
+    pub(crate) fn show_design_inspector(&mut self, ui: &mut egui::Ui, model: &DesignReadModel) {
         let locale = if self.localizer.language() == Language::En {
             Locale::En
         } else {
@@ -2029,7 +2029,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_assembly_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_assembly_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_assembly() else {
             return;
         };
@@ -2450,7 +2450,7 @@ impl DesktopApp {
     }
 }
 
-pub(super) fn assembly_coordinate_field(
+pub(crate) fn assembly_coordinate_field(
     ui: &mut egui::Ui,
     localizer: &Localizer,
     axis: &str,

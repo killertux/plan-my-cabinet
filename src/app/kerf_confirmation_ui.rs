@@ -1,7 +1,7 @@
 //! Explicit, revision-bound shop confirmation; opening is never a project edit.
 use crate::*;
 
-pub(super) struct KerfConfirmation {
+pub(crate) struct KerfConfirmation {
     project_id: Uuid,
     revision: u64,
     kerf: Length,
@@ -26,7 +26,7 @@ impl KerfConfirmation {
 }
 
 impl DesktopApp {
-    pub(super) fn show_kerf_confirmation(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_kerf_confirmation(&mut self, ctx: &egui::Context) {
         let Some(mut draft) = self.modals.take_kerf_confirmation() else {
             return;
         };

@@ -1,11 +1,11 @@
-use super::*;
+use crate::*;
 use plan_my_cabinet::measurements::measure;
 use plan_my_cabinet::placement::{
     Align, BoardFace, CoordinateFrame, FacePlacement, NumericPose, PlacementError,
     PlacementSession, PosePreset, Side, preset_pose,
 };
 
-pub(super) struct PresetState {
+pub(crate) struct PresetState {
     /// Exact proposal in the selected frame, never reconstructed from a
     /// six-decimal Euler readout unless the user edits that readout.
     pose: Pose,
@@ -15,7 +15,7 @@ pub(super) struct PresetState {
     pending_change: bool,
 }
 
-pub(super) enum PlacementDraft {
+pub(crate) enum PlacementDraft {
     Numeric {
         frame: CoordinateFrame,
         position: [DimensionDraft; 3],
@@ -33,7 +33,7 @@ pub(super) enum PlacementDraft {
     },
 }
 
-pub(super) struct PlacementDialog {
+pub(crate) struct PlacementDialog {
     pub board_id: Uuid,
     pub selection_ids: std::collections::HashSet<Uuid>,
     pub selection_active: Option<Uuid>,
@@ -510,7 +510,7 @@ fn placement_error_key(error: PlacementError) -> &'static str {
 }
 
 impl DesktopApp {
-    pub(super) fn show_placement(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_placement(&mut self, ctx: &egui::Context) {
         if self.navigation.pending().is_some() {
             return;
         }

@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum NextAction {
+pub(crate) enum NextAction {
     New,
     Open,
     Close,
@@ -38,12 +38,12 @@ pub(super) enum NextAction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum PendingProjectCommand {
+pub(crate) enum PendingProjectCommand {
     Action(NextAction),
     Save(bool),
 }
 
-pub(super) enum Prompt {
+pub(crate) enum Prompt {
     Dirty(NextAction),
     Overwrite(PathBuf, Option<NextAction>),
     Upgrade(PathBuf, bool, Option<NextAction>),
@@ -64,32 +64,32 @@ struct Picker {
 }
 
 #[derive(Default)]
-pub(super) struct ProjectFiles {
-    pub(super) path: Option<PathBuf>,
-    pub(super) user_data_dir: Option<PathBuf>,
+pub(crate) struct ProjectFiles {
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) user_data_dir: Option<PathBuf>,
     store: Option<RecoveryStore>,
-    pub(super) prompt: Option<Prompt>,
+    pub(crate) prompt: Option<Prompt>,
     prompt_chrome: Option<ModalChrome>,
     picker: Option<Picker>,
-    pub(super) pending_open: Option<(PathBuf, ProjectEditor)>,
-    pub(super) pending_recovery: Option<(Option<PathBuf>, ProjectEditor)>,
-    pub(super) message: Option<String>,
+    pub(crate) pending_open: Option<(PathBuf, ProjectEditor)>,
+    pub(crate) pending_recovery: Option<(Option<PathBuf>, ProjectEditor)>,
+    pub(crate) message: Option<String>,
     observed: Option<(Uuid, u64)>,
     /// Untitled autosave: the revision waiting for the inactivity delay, and
     /// the last revision written.
     untitled_pending: Option<(u64, Instant)>,
     untitled_written: Option<u64>,
-    pub(super) allow_close: bool,
-    pub(super) welcome: WelcomeHost,
+    pub(crate) allow_close: bool,
+    pub(crate) welcome: WelcomeHost,
 }
 
 impl ProjectFiles {
-    pub(super) fn blocking(&self) -> bool {
+    pub(crate) fn blocking(&self) -> bool {
         self.prompt.is_some() || self.picker.is_some() || self.welcome.locating()
     }
 }
 
-pub(super) fn user_data_dir() -> Option<PathBuf> {
+pub(crate) fn user_data_dir() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         std::env::var_os("HOME")
@@ -128,14 +128,14 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn busy_for_project(&self) -> bool {
+    pub(crate) fn busy_for_project(&self) -> bool {
         self.modal_open()
             || self.export_activity.is_some()
             || self.optimizer.running()
             || self.editor.preview().is_some()
     }
 
-    pub(super) fn request_project_action(&mut self, action: NextAction) {
+    pub(crate) fn request_project_action(&mut self, action: NextAction) {
         if self.project_files.allow_close {
             return;
         }
@@ -162,7 +162,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn request_save(&mut self, save_as: bool) {
+    pub(crate) fn request_save(&mut self, save_as: bool) {
         if self.resolve_draft_before_project_command(PendingProjectCommand::Save(save_as)) {
             return;
         }
@@ -176,7 +176,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn proceed(&mut self, action: NextAction) {
+    pub(crate) fn proceed(&mut self, action: NextAction) {
         match action {
             NextAction::New => {
                 let mut project =
@@ -300,7 +300,7 @@ impl DesktopApp {
         });
     }
 
-    pub(super) fn save_to(&mut self, path: &Path, replacing: bool, after: Option<NextAction>) {
+    pub(crate) fn save_to(&mut self, path: &Path, replacing: bool, after: Option<NextAction>) {
         // The migrated editor is schema 2 even though its source bytes remain
         // schema 1. Require a conscious decision before the first write,
         // including Save As and Save while resolving an unsaved-work prompt.
@@ -362,13 +362,13 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn open_path(&mut self, path: PathBuf) {
+    pub(crate) fn open_path(&mut self, path: PathBuf) {
         self.open_path_checked(path, None);
     }
 
     /// Recent entries are untrusted cached navigation targets. Recheck their
     /// canonical path and UUID before preparing a replacement editor.
-    pub(super) fn open_path_checked(&mut self, path: PathBuf, expected: Option<Uuid>) {
+    pub(crate) fn open_path_checked(&mut self, path: PathBuf, expected: Option<Uuid>) {
         // The picker has already been removed by tick_project_files. An open
         // arriving during a different modal must not leave an unguarded
         // prepared editor waiting to be installed by a later action.
@@ -548,7 +548,7 @@ impl DesktopApp {
         message.push_str(&detail);
     }
 
-    pub(super) fn tick_project_files(&mut self, ctx: &egui::Context) {
+    pub(crate) fn tick_project_files(&mut self, ctx: &egui::Context) {
         if let Some(picker) = &self.project_files.picker {
             let result = picker.result.try_recv();
             if let Ok(path) = result {
@@ -693,7 +693,7 @@ impl DesktopApp {
 
     /// Last chance before an abnormal exit: write the committed project now
     /// instead of waiting for the inactivity delay.
-    pub(super) fn flush_recovery_after_panic(&mut self) {
+    pub(crate) fn flush_recovery_after_panic(&mut self) {
         let result = match &mut self.project_files.store {
             Some(store) => store.write_now(&self.editor),
             None if self.project_files.path.is_none() && self.editor.is_dirty() => {
@@ -706,7 +706,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_project_controls(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn show_project_controls(&mut self, ui: &mut egui::Ui) {
         ui.label(format!(
             "{}{}{}",
             self.editor.project().name,
@@ -774,7 +774,7 @@ impl DesktopApp {
         }
     }
 
-    pub(super) fn show_project_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_project_dialog(&mut self, ctx: &egui::Context) {
         let Some(prompt) = self.project_files.prompt.take() else {
             if let Some(chrome) = &mut self.project_files.prompt_chrome {
                 chrome.close(ctx);
@@ -955,7 +955,7 @@ impl DesktopApp {
         self.resolve_project_choice(prompt, choice);
     }
 
-    pub(super) fn resolve_project_choice(&mut self, prompt: Prompt, choice: Option<&str>) {
+    pub(crate) fn resolve_project_choice(&mut self, prompt: Prompt, choice: Option<&str>) {
         match (prompt, choice) {
             (prompt, None) => self.project_files.prompt = Some(prompt),
             (Prompt::Dirty(action), Some("project-save")) => {
@@ -1052,7 +1052,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pmcab-upgrade-{}", Uuid::new_v4()));
         fs::create_dir(&dir).unwrap();
         let source = dir.join("legacy.pmcab");
-        let bytes = include_bytes!("../tests/fixtures/schema-v1-cabinet.pmcab");
+        let bytes = include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab");
         fs::write(&source, bytes).unwrap();
         let prepared = persistence::prepare_bytes(bytes).unwrap();
         assert_eq!(prepared.source_version(), 1);

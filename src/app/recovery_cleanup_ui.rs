@@ -570,8 +570,8 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            keys(include_str!("../i18n/en.ftl")),
-            keys(include_str!("../i18n/pt-BR.ftl"))
+            keys(include_str!("../../i18n/en.ftl")),
+            keys(include_str!("../../i18n/pt-BR.ftl"))
         );
     }
 }
