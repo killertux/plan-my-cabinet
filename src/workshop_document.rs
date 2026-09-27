@@ -873,14 +873,17 @@ pub fn build_workshop_document(
         notices: Vec::new(),
     })?;
     builder.section(&format!("{} — {}", project.name, loc.text("pdf-packet")))?;
+    // The project ID appears once so a printed packet can be traced back to
+    // its file and export receipt; everything else uses short labels.
     builder.paragraph(&format!(
-        "{}: {} · {}: {} · {}: {}",
+        "{}: {} · {}: {} · {}: {} · ID: {}",
         loc.text("pdf-project"),
         project.name,
         loc.text("pdf-revision"),
         prepared.snapshot.revision(),
         loc.text("pdf-currency"),
         project.currency.code(),
+        project.id
     ))?;
     builder.paragraph(&format!(
         "{}: {} · {}: {} · {}: {}",
