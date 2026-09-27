@@ -1044,3 +1044,5 @@ material-preset = Start from a standard material
 material-preset-none = Custom material
 material-color = Display colour
 material-color-hint = Only tints the 3D view and sheet diagrams.
+shell-next-step = Next: { $step }
+shell-next-step-hint = Design → Stock → Cut plan → Hardware → Handoff

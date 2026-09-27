@@ -4312,6 +4312,34 @@ impl DesktopApp {
                                 let _ = self.invoke(request);
                             }
                         }
+                        let next = match self.session.active {
+                            Workspace::Design => Some(Workspace::Stock),
+                            Workspace::Stock => Some(Workspace::CutPlan),
+                            Workspace::CutPlan => Some(Workspace::Hardware),
+                            Workspace::Hardware => Some(Workspace::Handoff),
+                            Workspace::Handoff => None,
+                        };
+                        if let Some(next) = next
+                            && width >= 1180.0
+                        {
+                            ui.add_space(8.0);
+                            let step = self.localizer.text(
+                                workspace_shell::ENTRIES[(next.number() - 1) as usize].1,
+                            );
+                            let mut args = FluentArgs::new();
+                            args.set("step", step);
+                            if theme_widgets::text_button(
+                                ui,
+                                &format!("{} ›", self.localizer.format("shell-next-step", Some(&args))),
+                                theme_widgets::ACCENT_DARK,
+                                chrome_enabled,
+                            )
+                            .on_hover_text(self.localizer.text("shell-next-step-hint"))
+                            .clicked()
+                            {
+                                self.request_navigation(NavigationRoute::Workspace(next));
+                            }
+                        }
                         if compact
                             && theme_widgets::ghost_icon_sized(
                                 ui,
