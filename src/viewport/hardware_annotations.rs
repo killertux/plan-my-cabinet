@@ -158,19 +158,24 @@ fn warning_text(issues: &[InstallationIssue], pt: bool) -> &'static str {
     }
 }
 
-fn dashed(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: egui::Color32) {
+fn dashed(
+    painter: &egui::Painter,
+    from: egui::Pos2,
+    to: egui::Pos2,
+    stroke: egui::Stroke,
+    dash: f32,
+    gap: f32,
+) {
     let length = from.distance(to);
     if !length.is_finite() || length < 1.0 {
         return;
     }
     let vector = to - from;
-    for index in 0..((length / 10.0).ceil() as usize).min(1000) {
-        let start = index as f32 * 10.0 / length;
-        let end = ((index as f32 * 10.0 + 6.0) / length).min(1.0);
-        painter.line_segment(
-            [from + vector * start, from + vector * end],
-            egui::Stroke::new(1.5, color),
-        );
+    let period = dash + gap;
+    for index in 0..((length / period).ceil() as usize).min(1000) {
+        let start = index as f32 * period / length;
+        let end = ((index as f32 * period + dash) / length).min(1.0);
+        painter.line_segment([from + vector * start, from + vector * end], stroke);
     }
 }
 
@@ -193,6 +198,14 @@ fn selected_group(project: &Project, selected: Uuid) -> Option<(Vec<Uuid>, bool)
         joint.is_some_and(|joint| plan_my_cabinet::door_joint::needs_review(project, joint)),
     ))
 }
+
+/// Hinge axis: the handoff's `snap_target` pink.
+const AXIS: egui::Color32 = egui::Color32::from_rgb(224, 85, 159);
+const PASSIVE: egui::Color32 = egui::Color32::from_rgb(156, 144, 126);
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(201, 115, 31);
+const WARN: egui::Color32 = egui::Color32::from_rgb(183, 121, 31);
+const PILL: egui::Color32 = egui::Color32::from_rgb(42, 37, 32);
+const PANEL: egui::Color32 = egui::Color32::from_rgb(251, 250, 247);
 
 /// Canvas-local projection and clipping. All shapes are painted without allocating a
 /// response, so modal input isolation and scene picking retain their existing owner.
@@ -219,10 +232,14 @@ pub(super) fn paint(
         .iter()
         .any(|joint| joint.hinge_installation_ids.contains(&selected));
     let painter = ui.painter().with_clip_rect(rect);
-    let passive = egui::Color32::from_rgb(39, 128, 145);
-    let active = egui::Color32::from_rgb(178, 92, 23);
-    let warning = egui::Color32::from_rgb(155, 56, 46);
-    for (index, id) in ids.iter().enumerate() {
+    // Keep labels clear of the floating mode/camera controls and the motion HUD.
+    let safe = egui::Rect::from_min_max(
+        rect.min + egui::vec2(8.0, 56.0),
+        rect.max - egui::vec2(8.0, 30.0),
+    );
+    let mut axis_drawn = false;
+    // Paint the selected hinge last so its marker and pill sit on top.
+    for (index, id) in ids.iter().enumerate().rev() {
         let Some(hinge) = project.hinge_installations.iter().find(|h| h.id == *id) else {
             continue;
         };
@@ -230,125 +247,124 @@ pub(super) fn paint(
         let selected_guide = guide.id == selected;
         let invalid = !guide.issues.is_empty() || relationship_warning;
         let color = if invalid {
-            warning
+            WARN
         } else if selected_guide {
-            active
+            ACCENT
         } else {
-            passive
+            PASSIVE
         };
         let axis = guide
             .axis
             .and_then(|[a, b]| Some((camera.project(a, rect)?, camera.project(b, rect)?)));
-        if let Some((a, b)) = axis {
-            dashed(&painter, a, b, color);
+        if let Some((a, b)) = axis
+            && (!axis_drawn || selected_guide)
+        {
+            // Extend a little past the door so the axis reads as a line, not an edge.
+            let extra = (b - a) * 0.04;
+            dashed(
+                &painter,
+                a - extra,
+                b + extra,
+                egui::Stroke::new(1.5, AXIS),
+                6.0,
+                4.0,
+            );
+            axis_drawn = true;
         }
         let cup = guide.cup.and_then(|p| projected(camera, rect, p));
         let plate = guide
             .plate
             .and_then(|[a, b]| Some((projected(camera, rect, a)?, projected(camera, rect, b)?)));
-        if let Some(cup) = cup {
-            painter.circle_stroke(
-                cup,
-                if selected_guide { 7.0 } else { 5.0 },
-                egui::Stroke::new(2.0, color),
-            );
-            painter.circle_filled(cup, 2.0, color);
-        }
         if let Some((a, b)) = plate {
-            for point in [a, b] {
-                painter.line_segment(
-                    [point + egui::vec2(-4.0, -4.0), point + egui::vec2(4.0, 4.0)],
-                    egui::Stroke::new(1.5, color),
-                );
-                painter.line_segment(
-                    [point + egui::vec2(-4.0, 4.0), point + egui::vec2(4.0, -4.0)],
-                    egui::Stroke::new(1.5, color),
-                );
-            }
-            dashed(&painter, a, b, color);
+            let mid = a + (b - a) * 0.5;
             if let Some(cup) = cup {
-                dashed(&painter, cup, a + (b - a) * 0.5, color);
+                dashed(&painter, cup, mid, egui::Stroke::new(1.0, color), 4.0, 3.0);
             }
+            let along = if a.distance(b) > 1.0 {
+                (b - a).normalized()
+            } else {
+                egui::vec2(0.0, 1.0)
+            };
+            let half = along * (a.distance(b) * 0.5 + 5.0).max(9.0);
+            painter.line_segment(
+                [mid - half, mid + half],
+                egui::Stroke::new(6.0, color.gamma_multiply(0.8)),
+            );
+            for point in [a, b] {
+                painter.circle_filled(point, 1.5, PANEL);
+            }
+        }
+        if let Some(cup) = cup {
+            painter.circle(
+                cup,
+                if selected_guide { 5.5 } else { 4.5 },
+                color,
+                egui::Stroke::new(2.0, PANEL),
+            );
         }
         // Match the tree's ordinal, rather than a UUID prefix (different UUIDs
-        // can share that prefix). Keep callouts near their projected reference
-        // and below the reserved camera/motion mode controls.
+        // can share that prefix).
         let ordinal = project
             .hinge_installations
             .iter()
             .position(|hinge| hinge.id == guide.id)
             .unwrap_or(0)
             + 1;
-        let title = if invalid {
-            warning_text(&guide.issues, pt)
-        } else if guide.unavailable {
-            if pt {
-                "Referência indisponível"
+        let text = if invalid {
+            let title = if rect.width() < 300.0 {
+                "!"
             } else {
-                "Reference unavailable"
-            }
-        } else if pt {
-            "Eixo · copo / placa"
-        } else {
-            "Axis · cup / plate"
-        };
-        let title = if rect.width() < 300.0 { "!" } else { title };
-        let text = if invalid || guide.unavailable {
+                warning_text(&guide.issues, pt)
+            };
             format!("H{ordinal} · {title}")
+        } else if guide.unavailable {
+            format!(
+                "H{ordinal} · {}",
+                if pt {
+                    "Referência indisponível"
+                } else {
+                    "Reference unavailable"
+                }
+            )
         } else {
             format!("H{ordinal}")
         };
-        let galley = painter.layout_no_wrap(text, egui::FontId::proportional(11.0), color);
-        let size = galley.size() + egui::vec2(12.0, 8.0);
+        let (fill, ink, stroke) = if invalid {
+            (
+                egui::Color32::from_rgb(252, 244, 231),
+                egui::Color32::from_rgb(138, 90, 18),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 210, 176)),
+            )
+        } else if selected_guide {
+            (PILL, PANEL, egui::Stroke::NONE)
+        } else {
+            (
+                PANEL,
+                egui::Color32::from_rgb(90, 82, 72),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(221, 215, 205)),
+            )
+        };
+        let galley = painter.layout_no_wrap(text, egui::FontId::monospace(11.0), ink);
+        let size = galley.size() + egui::vec2(16.0, 10.0);
         let anchor = cup.or_else(|| axis.map(|(a, b)| a + (b - a) * 0.5));
         let desired = anchor
-            .map(|point| point - egui::vec2(size.x + 16.0, size.y * 0.5))
-            .unwrap_or(rect.left_top() + egui::vec2(8.0, 110.0 + index as f32 * 27.0));
+            .map(|point| point - egui::vec2(size.x + 14.0, size.y + 8.0))
+            .unwrap_or(safe.left_top() + egui::vec2(0.0, 54.0 + index as f32 * 30.0));
         let location = egui::pos2(
-            desired.x.clamp(
-                rect.left() + 8.0,
-                (rect.right() - size.x - 8.0).max(rect.left() + 8.0),
-            ),
-            desired.y.clamp(
-                rect.top() + 104.0,
-                (rect.bottom() - size.y - 30.0).max(rect.top() + 104.0),
-            ),
+            desired
+                .x
+                .clamp(safe.left(), (safe.right() - size.x).max(safe.left())),
+            desired
+                .y
+                .clamp(safe.top(), (safe.bottom() - size.y).max(safe.top())),
         );
-        if location.y + size.y > rect.bottom() - 30.0 {
-            break;
+        if location.y + size.y > safe.bottom() + 0.5 {
+            continue;
         }
-        let badge = egui::Rect::from_min_size(location, size).intersect(rect.shrink(2.0));
-        painter.rect_filled(badge, 4.0, egui::Color32::from_rgb(255, 251, 244));
-        painter.rect_stroke(
-            badge,
-            4.0,
-            egui::Stroke::new(1.0, color),
-            egui::StrokeKind::Inside,
-        );
-        painter.galley(location + egui::vec2(6.0, 4.0), galley, color);
-        if selected_guide && let Some(anchor) = anchor {
-            dashed(&painter, badge.right_center(), anchor, color);
-        }
+        let pill = egui::Rect::from_min_size(location, size);
+        painter.rect(pill, 6.0, fill, stroke, egui::StrokeKind::Inside);
+        painter.galley(location + egui::vec2(8.0, 5.0), galley, ink);
     }
-    let note = if rect.width() < 300.0 {
-        if pt {
-            "Não é usinagem"
-        } else {
-            "Not machining"
-        }
-    } else if pt {
-        "Referência visual · não é usinagem"
-    } else {
-        "Visual reference · not machining"
-    };
-    let note_at = rect.right_bottom() - egui::vec2(8.0, 8.0);
-    painter.text(
-        note_at,
-        egui::Align2::RIGHT_BOTTOM,
-        note,
-        egui::FontId::proportional(11.0),
-        warning,
-    );
 }
 
 #[cfg(test)]

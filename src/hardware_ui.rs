@@ -1,6 +1,8 @@
 //! Dimensioned reference hardware editor. Draft fields never mutate the project.
 use super::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
+use crate::icons::Icon;
+use crate::theme_widgets as tw;
 use plan_my_cabinet::assembly_edit::world_pose;
 use plan_my_cabinet::domain::HardwareKind;
 
@@ -19,6 +21,116 @@ pub(super) struct HardwareDialog {
     chrome: Option<ModalChrome>,
 }
 
+/// Three-decimal draft text without needless zeros ("30", "12.5").
+fn trim3(value: f64) -> String {
+    let text = format!("{:.3}", value + 0.0);
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".into()
+    } else {
+        text.to_owned()
+    }
+}
+
+const AXIS_COLORS: [egui::Color32; 3] = [
+    egui::Color32::from_rgb(196, 69, 58),
+    egui::Color32::from_rgb(78, 154, 87),
+    egui::Color32::from_rgb(62, 111, 196),
+];
+
+/// X/Y/Z mm fields in one row (axis-coloured strokes). Parse errors and the
+/// rounding consent appear below the row. Returns whether all three are valid.
+fn axis_fields(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    id: &'static str,
+    fields: &mut [DimensionDraft; 3],
+    positive: bool,
+) -> bool {
+    let parse = |field: &DimensionDraft| {
+        parse_length(&field.text, Unit::Mm).and_then(|v| {
+            if positive {
+                dimension(v.conversion).map_err(InputError::Unit)
+            } else {
+                Ok(v.conversion)
+            }
+        })
+    };
+    let gap = 8.0;
+    let width = ((ui.available_width() - 2.0 * gap) / 3.0).max(60.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for (index, field) in fields.iter_mut().enumerate() {
+            let invalid = !field.text.is_empty() && parse(field).is_err();
+            let axis = ["X", "Y", "Z"][index];
+            if tw::value_field(
+                ui,
+                egui::Id::new((id, index)),
+                axis,
+                &mut field.text,
+                width,
+                Some("mm"),
+                Some(AXIS_COLORS[index]),
+                true,
+                invalid,
+            )
+            .changed()
+            {
+                field.consent = false;
+            }
+        }
+    });
+    let mut valid = true;
+    for (index, field) in fields.iter_mut().enumerate() {
+        let axis = ["X", "Y", "Z"][index];
+        match parse(field) {
+            Ok(Conversion::NeedsConfirmation(value)) => {
+                let mut args = FluentArgs::new();
+                args.set("entered", field.text.as_str());
+                args.set(
+                    "rounded",
+                    format_length(
+                        value,
+                        Unit::Mm,
+                        if localizer.language() == Language::En {
+                            Locale::En
+                        } else {
+                            Locale::PtBr
+                        },
+                        3,
+                    ),
+                );
+                ui.checkbox(
+                    &mut field.consent,
+                    format!(
+                        "{axis}: {}",
+                        localizer.format("rounding-confirmation", Some(&args))
+                    ),
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                if !field.text.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{axis}: {}",
+                            localizer.text(error_key(error))
+                        ))
+                        .size(11.5)
+                        .color(tw::DANGER),
+                    );
+                }
+            }
+        }
+        valid &= if positive {
+            parse(field).is_ok() && field.value(Unit::Mm).is_ok()
+        } else {
+            super::assembly_ui::coordinate(field).is_some()
+        };
+    }
+    valid
+}
+
 impl HardwareDialog {
     pub(super) fn new(app: &DesktopApp, id: Option<Uuid>) -> Self {
         let item = id.and_then(|id| app.editor.project().hardware.iter().find(|h| h.id == id));
@@ -31,9 +143,8 @@ impl HardwareDialog {
             text: value,
             consent: false,
         };
-        let position = std::array::from_fn(|i| {
-            field(format!("{:.3}", world.map_or(0.0, |p| p.translation_mm[i])))
-        });
+        let position =
+            std::array::from_fn(|i| field(trim3(world.map_or(0.0, |p| p.translation_mm[i]))));
         let original_position = position.each_ref().map(|field| field.text.clone());
         Self {
             id,
@@ -46,9 +157,7 @@ impl HardwareDialog {
                     .filter(|id| app.editor.project().assemblies.iter().any(|a| a.id == *id))
             }),
             dimensions: std::array::from_fn(|i| {
-                field(dims.map_or(String::new(), |d| {
-                    format!("{:.3}", d[i].micrometres() as f64 / 1000.0)
-                }))
+                field(dims.map_or(String::new(), |d| trim3(d[i].micrometres() as f64 / 1000.0)))
             }),
             position,
             original_position,
@@ -83,39 +192,9 @@ impl DesktopApp {
         removed
     }
 
+    /// Secondary Hardware section for dimensioned reference items. Creation is
+    /// also in the Doors "+" menu, so the section only appears once it has rows.
     pub(super) fn show_hardware_list(&mut self, ui: &mut egui::Ui) {
-        ui.separator();
-        ui.label(self.localizer.text("hardware-list"));
-        let modal = self.modal_open();
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(
-                    !modal && !self.selection.ids.is_empty(),
-                    egui::Button::new(self.localizer.text("assembly-group")),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::Group));
-            }
-            if ui
-                .add_enabled(
-                    !modal && !self.selection.ids.is_empty(),
-                    egui::Button::new(self.localizer.text("assembly-parent")),
-                )
-                .clicked()
-            {
-                let _ = self.invoke(Request::new(A::Reparent));
-            }
-        });
-        if ui
-            .add_enabled(
-                !modal,
-                egui::Button::new(self.localizer.text("hardware-new")),
-            )
-            .clicked()
-        {
-            let _ = self.invoke(Request::new(A::NewHardware));
-        }
         let items: Vec<_> = self
             .editor
             .project()
@@ -130,92 +209,199 @@ impl DesktopApp {
                 }
             })
             .collect();
-        for (id, name, dims, catalog_id) in items {
-            ui.push_id(id, |ui| {
-                let text = dims.map_or_else(
-                    || name.clone(),
-                    |dims| {
-                        format!(
-                            "{name} — {} × {} × {} mm",
-                            dims[0].micrometres() as f64 / 1000.0,
-                            dims[1].micrometres() as f64 / 1000.0,
-                            dims[2].micrometres() as f64 / 1000.0,
-                        )
-                    },
-                );
-                if ui
-                    .add_enabled(
-                        !modal,
-                        egui::Button::new(text.clone())
-                            .wrap_mode(egui::TextWrapMode::Wrap)
-                            .selected(self.selection.ids.contains(&id)),
+        if items.is_empty() {
+            return;
+        }
+        let modal = self.modal_open();
+        let mut run = None;
+        tw::divider(ui);
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 14,
+                right: 10,
+                top: 0,
+                bottom: 0,
+            })
+            .show(ui, |ui| {
+                tw::section_bar(ui, &self.localizer.text("hardware-list"), |ui| {
+                    let request = Request::new(A::NewHardware);
+                    if tw::ghost_icon_sized(
+                        ui,
+                        Icon::Plus,
+                        &A::NewHardware.label(&self.localizer),
+                        tw::MUTED,
+                        15.0,
+                        24.0,
+                        self.action_availability(request).is_ok(),
+                        false,
                     )
-                    .on_hover_text(&text)
                     .clicked()
-                {
-                    let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-                    let _ = self.invoke(
-                        Request::with(A::SelectObject, Target::Object(id))
-                            .argument(Argument::Additive(additive)),
-                    );
-                }
-                ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .add_enabled(
-                            !modal && dims.is_some(),
-                            egui::Button::new(self.localizer.text("hardware-edit")),
-                        )
-                        .clicked()
                     {
-                        let _ = self.invoke(Request::with(A::EditHardware, Target::Object(id)));
-                    }
-                    if ui
-                        .add_enabled(
-                            !modal && dims.is_some(),
-                            egui::Button::new(self.localizer.text("hardware-duplicate")),
-                        )
-                        .clicked()
-                    {
-                        let _ =
-                            self.invoke(Request::with(A::DuplicateHardware, Target::Object(id)));
-                    }
-                    if dims.is_some() {
-                        let request = Request::with(A::DeleteHardware, Target::Object(id));
-                        if crate::actions::button(
-                            ui,
-                            &self.localizer,
-                            request,
-                            self.action_availability(request),
-                        )
-                        .clicked()
-                        {
-                            let _ = self.invoke(request);
-                        }
+                        run = Some(request);
                     }
                 });
-                if let Some(catalog_id) = catalog_id {
-                    if let Some(entry) = self
-                        .editor
-                        .project()
-                        .catalog
-                        .iter()
-                        .find(|entry| entry.id == catalog_id)
-                    {
-                        ui.small(format!(
-                            "{} · {} / {} · {}",
-                            self.localizer.text("hinge-kit-identifiers"),
-                            entry.product_id,
-                            entry.plate_id.as_deref().unwrap_or("—"),
-                            entry.revision
-                        ));
+            });
+        let locale = if self.localizer.language() == Language::En {
+            Locale::En
+        } else {
+            Locale::PtBr
+        };
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 6,
+                right: 6,
+                top: 0,
+                bottom: 12,
+            })
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for (id, name, dims, catalog_id) in items {
+                    let selected = self.selection.ids.contains(&id);
+                    let active = self.selection.active == Some(id);
+                    let catalog = catalog_id.map(|catalog_id| {
+                        self.editor
+                            .project()
+                            .catalog
+                            .iter()
+                            .find(|entry| entry.id == catalog_id)
+                            .map(|entry| entry.product_id.clone())
+                    });
+                    let detail = match (dims, &catalog) {
+                        (Some(dims), _) => dims
+                            .map(|d| assembly_ui::short_length(d, locale))
+                            .join(" × "),
+                        (None, Some(Some(product))) => product.clone(),
+                        _ => String::new(),
+                    };
+                    let edit = Request::with(A::EditHardware, Target::Object(id));
+                    let duplicate = Request::with(A::DuplicateHardware, Target::Object(id));
+                    let delete = Request::with(A::DeleteHardware, Target::Object(id));
+                    let (response, ()) = tw::list_row(
+                        ui,
+                        egui::Id::new(("hardware-reference-row", id)),
+                        28.0,
+                        if active {
+                            tw::RowState::Active
+                        } else if selected {
+                            tw::RowState::Selected
+                        } else {
+                            tw::RowState::Normal
+                        },
+                        !modal,
+                        &name,
+                        |ui| {
+                            let hovered = ui.rect_contains_pointer(ui.max_rect());
+                            ui.spacing_mut().item_spacing.x = 7.0;
+                            ui.add_space(2.0);
+                            ui.add(crate::icons::icon(
+                                if dims.is_some() {
+                                    Icon::Cube
+                                } else {
+                                    Icon::Hinge
+                                },
+                                if active { tw::ACCENT } else { tw::MUTED },
+                                14.0,
+                            ));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.x = 2.0;
+                                    if matches!(catalog, Some(None)) {
+                                        ui.add(crate::icons::icon(Icon::Warning, tw::WARN, 13.0))
+                                            .on_hover_text(
+                                                self.localizer.text("hinge-missing-catalog"),
+                                            );
+                                    }
+                                    if hovered && !modal && dims.is_some() {
+                                        for (request, icon, color) in [
+                                            (delete, Icon::Trash, tw::DANGER),
+                                            (duplicate, Icon::Duplicate, tw::SECONDARY),
+                                            (edit, Icon::Sliders, tw::SECONDARY),
+                                        ] {
+                                            if tw::ghost_icon_sized(
+                                                ui,
+                                                icon,
+                                                &request.id.label(&self.localizer),
+                                                color,
+                                                13.0,
+                                                22.0,
+                                                self.action_availability(request).is_ok(),
+                                                false,
+                                            )
+                                            .clicked()
+                                            {
+                                                run = Some(request);
+                                            }
+                                        }
+                                    } else if !detail.is_empty() {
+                                        ui.label(tw::mono(&detail, 11.0).color(tw::FAINT));
+                                    }
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(&name).size(13.0).color(
+                                                        if active {
+                                                            tw::ACCENT_INK
+                                                        } else {
+                                                            tw::TEXT_2
+                                                        },
+                                                    ),
+                                                )
+                                                .truncate()
+                                                .selectable(false),
+                                            );
+                                        },
+                                    );
+                                },
+                            );
+                        },
+                    );
+                    let response = response.on_hover_text(if detail.is_empty() {
+                        name.clone()
                     } else {
-                        ui.colored_label(
-                            crate::theme_widgets::WARN_INK,
-                            self.localizer.text("hinge-missing-catalog"),
+                        format!("{name} · {detail}")
+                    });
+                    response.context_menu(|ui| {
+                        let has_selection = !self.selection.ids.is_empty();
+                        for (request, enabled) in [
+                            (edit, dims.is_some()),
+                            (duplicate, dims.is_some()),
+                            (Request::new(A::Group), has_selection),
+                            (Request::new(A::Reparent), has_selection),
+                            (delete, dims.is_some()),
+                        ] {
+                            let label = match request.id {
+                                A::Group => self.localizer.text("assembly-group"),
+                                A::Reparent => self.localizer.text("assembly-parent"),
+                                _ => request.id.label(&self.localizer),
+                            };
+                            if ui
+                                .add_enabled(
+                                    enabled && self.action_availability(request).is_ok(),
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
+                            {
+                                run = Some(request);
+                                ui.close();
+                            }
+                        }
+                    });
+                    if run.is_none() && response.clicked() {
+                        let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+                        run = Some(
+                            Request::with(A::SelectObject, Target::Object(id))
+                                .argument(Argument::Additive(additive)),
                         );
+                    } else if run.is_none() && response.double_clicked() && dims.is_some() {
+                        run = Some(edit);
                     }
                 }
             });
+        if let Some(request) = run {
+            let _ = self.invoke(request);
         }
     }
 
@@ -239,57 +425,82 @@ impl DesktopApp {
                 confirm: &title,
             },
             |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(self.localizer.text("hardware-name"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.name)
-                            .id(egui::Id::new("hardware-dialog-name")),
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let gap = 12.0;
+                let half = ((ui.available_width() - gap) / 2.0).max(80.0);
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(half, 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            hinge_ui::field_label(ui, &self.localizer.text("hardware-name"));
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.name)
+                                    .id(egui::Id::new("hardware-dialog-name"))
+                                    .desired_width(half),
+                            );
+                        },
+                    );
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(half, 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            hinge_ui::field_label(ui, &self.localizer.text("assembly-parent"));
+                            egui::ComboBox::from_id_salt("hardware-dialog-parent")
+                                .width(half)
+                                .selected_text(
+                                    draft
+                                        .parent
+                                        .and_then(|id| {
+                                            self.editor
+                                                .project()
+                                                .assemblies
+                                                .iter()
+                                                .find(|a| a.id == id)
+                                                .map(|a| a.name.as_str())
+                                        })
+                                        .unwrap_or(&self.localizer.text("assembly-root")),
+                                )
+                                .show_ui(ui, |ui| {
+                                    combo_option(
+                                        ui,
+                                        &mut draft.parent,
+                                        None,
+                                        self.localizer.text("assembly-root"),
+                                    );
+                                    for a in &self.editor.project().assemblies {
+                                        combo_option(ui, &mut draft.parent, Some(a.id), &a.name);
+                                    }
+                                });
+                        },
                     );
                 });
                 valid &= !draft.name.trim().is_empty();
-                egui::ComboBox::from_label(self.localizer.text("assembly-parent"))
-                    .selected_text(
-                        draft
-                            .parent
-                            .and_then(|id| {
-                                self.editor
-                                    .project()
-                                    .assemblies
-                                    .iter()
-                                    .find(|a| a.id == id)
-                                    .map(|a| a.name.as_str())
-                            })
-                            .unwrap_or(&self.localizer.text("assembly-root")),
-                    )
-                    .show_ui(ui, |ui| {
-                        combo_option(
-                            ui,
-                            &mut draft.parent,
-                            None,
-                            self.localizer.text("assembly-root"),
-                        );
-                        for a in &self.editor.project().assemblies {
-                            combo_option(ui, &mut draft.parent, Some(a.id), &a.name);
-                        }
-                    });
-                ui.label(self.localizer.text("hardware-dimensions"));
-                for (axis, field) in ["X", "Y", "Z"].into_iter().zip(&mut draft.dimensions) {
-                    valid &= dimension_field(ui, &self.localizer, axis, field, Unit::Mm);
-                }
-                ui.label(self.localizer.text("hardware-position"));
-                for (axis, field) in ["X", "Y", "Z"].into_iter().zip(&mut draft.position) {
-                    valid &= super::assembly_ui::assembly_coordinate_field(
-                        ui,
-                        &self.localizer,
-                        axis,
-                        field,
-                        false,
-                    );
-                }
+                ui.add_space(10.0);
+                hinge_ui::field_label(ui, &self.localizer.text("hardware-dimensions"));
+                valid &= axis_fields(
+                    ui,
+                    &self.localizer,
+                    "hardware-dialog-dimension",
+                    &mut draft.dimensions,
+                    true,
+                );
+                ui.add_space(10.0);
+                hinge_ui::field_label(ui, &self.localizer.text("hardware-position"));
+                valid &= axis_fields(
+                    ui,
+                    &self.localizer,
+                    "hardware-dialog-position",
+                    &mut draft.position,
+                    false,
+                );
                 if !valid || draft.error {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        self.localizer.text("hardware-invalid"),
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(self.localizer.text("hardware-invalid"))
+                            .size(11.5)
+                            .color(tw::DANGER),
                     );
                 }
                 ((), valid)

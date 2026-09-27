@@ -4945,16 +4945,21 @@ impl DesktopApp {
                 if let Some(InspectorTarget::Installation(id)) = target {
                     self.show_selected_installation_inspector(ui, id);
                 } else {
-                    ui.label(self.localizer.text(
-                        if self.editor.project().hinge_installations.is_empty() {
-                            "hardware-no-installations"
-                        } else {
-                            "hardware-select-installation"
-                        },
-                    ));
-                }
-                if self.door_motion.is_some() {
-                    ui.label(self.localizer.text("door-motion-disclosure"));
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(14, 16))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(self.localizer.text(
+                                    if self.editor.project().hinge_installations.is_empty() {
+                                        "hardware-no-installations"
+                                    } else {
+                                        "hardware-select-installation"
+                                    },
+                                ))
+                                .size(12.5)
+                                .color(theme_widgets::MUTED),
+                            );
+                        });
                 }
             }
             Workspace::Stock => self.show_stock_inspector(ui),
@@ -4992,6 +4997,16 @@ impl DesktopApp {
             // Options scroll above a pinned export footer.
             self.show_export_preparation(ui);
             return;
+        }
+        if active == Workspace::Hardware {
+            egui::Panel::bottom(egui::Id::new("hardware-controls-footer"))
+                .resizable(false)
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme_widgets::PANEL)
+                        .inner_margin(egui::Margin::symmetric(12, 10)),
+                )
+                .show(ui, |ui| self.show_hardware_footer(ui));
         }
         let scroll = egui::ScrollArea::vertical()
             .id_salt((
@@ -5034,14 +5049,9 @@ impl DesktopApp {
                             });
                     }
                     Workspace::Hardware => {
-                        egui::Frame::new()
-                            .inner_margin(egui::Margin::symmetric(10, 4))
-                            .show(ui, |ui| {
-                                self.show_pinned_catalog(ui);
-                                self.show_hinge_list(ui);
-                                self.show_door_motion_controls(ui);
-                                self.show_hardware_list(ui);
-                            });
+                        self.show_pinned_catalog(ui);
+                        self.show_hinge_list(ui);
+                        self.show_hardware_list(ui);
                     }
                     // Laid out by `show_export_preparation` above.
                     Workspace::Handoff => {}
@@ -7714,10 +7724,6 @@ mod tests {
         };
         let hardware = render(&mut app);
         assert!(
-            hardware.contains("Visual reference · not machining"),
-            "{hardware}"
-        );
-        assert!(
             hardware.contains("H1") && hardware.contains("H2"),
             "{hardware}"
         );
@@ -7725,7 +7731,9 @@ mod tests {
         let _ = render(&mut app); // warm the newly mounted HUD area
         let open = render(&mut app);
         assert!(
-            open.contains("45° / 105°") && open.contains("Display only; saved pose stays closed."),
+            open.contains("45°")
+                && open.contains("105°")
+                && open.contains("Display only — the saved pose stays closed."),
             "{open}"
         );
         assert!(matches!(
@@ -7734,8 +7742,8 @@ mod tests {
         ));
         assert!(app.door_motion.is_none());
         let design = render(&mut app);
-        assert!(!design.contains("Visual reference · not machining"));
-        assert!(!design.contains("45° / 105°"));
+        assert!(!design.contains("H1") && !design.contains("H2"), "{design}");
+        assert!(!design.contains("Display only — the saved pose stays closed."));
         assert_eq!(app.editor.project(), &before);
     }
 
