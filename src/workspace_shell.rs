@@ -167,101 +167,161 @@ pub(crate) fn shortcut(ctx: &egui::Context, blocked: bool) -> Option<Workspace> 
     })
 }
 
+/// What the user asked for from the rail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RailAction {
+    Workspace(Workspace),
+    Language(Language),
+    Settings,
+}
+
 pub(crate) fn rail(
     ui: &mut egui::Ui,
     active: Workspace,
     localizer: &Localizer,
     enabled: bool,
     issues: IssueCounts,
-) -> Option<Workspace> {
+) -> Option<RailAction> {
     let mut next = None;
     egui::Panel::left("workspace-rail")
-        .default_size(60.0)
-        .min_size(60.0)
-        .max_size(60.0)
+        .exact_size(RAIL_WIDTH)
         .resizable(false)
         .frame(
             egui::Frame::new()
                 .fill(colors::APP)
-                .inner_margin(egui::Margin::same(5)),
+                .stroke(egui::Stroke::new(1.0, colors::BORDER))
+                .inner_margin(egui::Margin::symmetric(6, 10)),
         )
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(5.0);
-                egui::Frame::new()
-                    .fill(colors::TEXT)
-                    .corner_radius(8)
-                    .show(ui, |ui| {
-                        ui.add(icons::icon(
-                            Icon::Board,
-                            Color32::from_rgb(244, 194, 122),
-                            20.0,
-                        ));
-                    });
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let (logo, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                ui.painter().rect_filled(logo, 8.0, colors::TEXT);
+                icons::icon(Icon::Board, Color32::from_rgb(244, 194, 122), 18.0).paint_at(
+                    ui,
+                    egui::Rect::from_center_size(logo.center(), egui::Vec2::splat(18.0)),
+                );
                 ui.add_space(12.0);
                 for (workspace, key, icon) in ENTRIES {
                     let label = localizer.text(key);
                     let selected = active == workspace;
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(48.0, 50.0),
+                        if enabled {
+                            egui::Sense::click()
+                        } else {
+                            egui::Sense::hover()
+                        },
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Button,
+                            enabled,
+                            selected,
+                            &label,
+                        )
+                    });
                     let fill = if selected {
                         colors::ACCENT_BG
+                    } else if enabled && response.hovered() {
+                        colors::VIEWPORT
                     } else {
                         Color32::TRANSPARENT
                     };
-                    egui::Frame::new()
-                        .fill(fill)
-                        .corner_radius(8)
-                        .show(ui, |ui| {
-                            ui.set_min_width(48.0);
-                            ui.vertical_centered(|ui| {
-                                let button = egui::Button::image(
-                                    icons::icon(
-                                        icon,
-                                        if selected {
-                                            colors::ACCENT
-                                        } else {
-                                            colors::MUTED
-                                        },
-                                        19.0,
-                                    )
-                                    .alt_text(&label),
-                                )
-                                .frame(false);
-                                let response =
-                                    ui.add_enabled(enabled, button).on_hover_text(format!(
-                                        "{} · {}{}",
-                                        label,
-                                        if cfg!(target_os = "macos") {
-                                            "⌘"
-                                        } else {
-                                            "Ctrl+"
-                                        },
-                                        workspace.number()
-                                    ));
-                                if response.clicked() {
-                                    next = Some(workspace);
-                                }
-                                if workspace == Workspace::CutPlan && issues.total() > 0 {
-                                    let badge = egui::Rect::from_center_size(
-                                        response.rect.right_top() + egui::vec2(2.0, 2.0),
-                                        egui::vec2(7.0, 7.0),
-                                    );
-                                    ui.painter()
-                                        .circle_filled(badge.center(), 3.5, colors::ACCENT);
-                                    response.on_hover_text(format!(
-                                        "{}: {}",
-                                        localizer.text("global-issues"),
-                                        issues.total()
-                                    ));
-                                }
-                                ui.label(egui::RichText::new(label).size(9.5).color(if selected {
-                                    colors::ACCENT_INK
-                                } else {
-                                    colors::MUTED
-                                }));
-                            });
-                        });
-                    ui.add_space(7.0);
+                    ui.painter().rect_filled(rect, 8.0, fill);
+                    let ink = if selected {
+                        colors::ACCENT_DARK
+                    } else {
+                        colors::MUTED
+                    };
+                    let icon_center = rect.center_top() + egui::vec2(0.0, 17.0);
+                    icons::icon(icon, ink, 19.0).paint_at(
+                        ui,
+                        egui::Rect::from_center_size(icon_center, egui::Vec2::splat(19.0)),
+                    );
+                    ui.painter().text(
+                        rect.center_bottom() - egui::vec2(0.0, 9.0),
+                        egui::Align2::CENTER_CENTER,
+                        &label,
+                        if selected {
+                            colors::weighted_font(ui, 9.5, crate::theme::Typeface::SansMedium)
+                        } else {
+                            egui::FontId::proportional(9.5)
+                        },
+                        ink,
+                    );
+                    if workspace == Workspace::CutPlan && issues.total() > 0 {
+                        ui.painter().circle_filled(
+                            icon_center + egui::vec2(11.0, -8.0),
+                            3.5,
+                            colors::ACCENT,
+                        );
+                    }
+                    let shortcut = format!(
+                        "{} · {}{}",
+                        label,
+                        if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" },
+                        workspace.number()
+                    );
+                    let response = if workspace == Workspace::CutPlan && issues.total() > 0 {
+                        response.on_hover_text(format!(
+                            "{shortcut}\n{}: {}",
+                            localizer.text("global-issues"),
+                            issues.total()
+                        ))
+                    } else {
+                        response.on_hover_text(shortcut)
+                    };
+                    if response.clicked() {
+                        next = Some(RailAction::Workspace(workspace));
+                    }
                 }
+            });
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                if colors::ghost_icon_sized(
+                    ui,
+                    Icon::Sliders,
+                    &localizer.text("settings-open"),
+                    colors::MUTED,
+                    18.0,
+                    40.0,
+                    enabled,
+                    false,
+                )
+                .clicked()
+                {
+                    next = Some(RailAction::Settings);
+                }
+                let globe = colors::ghost_icon_sized(
+                    ui,
+                    Icon::Globe,
+                    &localizer.text("ui-language"),
+                    colors::MUTED,
+                    18.0,
+                    40.0,
+                    enabled,
+                    false,
+                );
+                egui::Popup::menu(&globe)
+                    .align(egui::RectAlign::RIGHT_END)
+                    .show(|ui| {
+                        for (language, key) in [
+                            (Language::En, "language-en"),
+                            (Language::PtBr, "language-pt-br"),
+                        ] {
+                            if ui
+                                .selectable_label(
+                                    localizer.language() == language,
+                                    localizer.text(key),
+                                )
+                                .clicked()
+                            {
+                                next = Some(RailAction::Language(language));
+                                ui.close();
+                            }
+                        }
+                    });
             });
         });
     next

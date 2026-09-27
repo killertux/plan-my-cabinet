@@ -22,68 +22,76 @@ pub(super) fn hardware_overlay(
     let localizer = Localizer::new(if pt { Language::PtBr } else { Language::En });
     let canvas = ui.available_rect_before_wrap().intersect(ui.clip_rect());
     let overlay = egui::Area::new(ui.id().with("hardware-camera-controls"))
-        .order(egui::Order::Foreground)
+        .order(egui::Order::Middle)
         .pivot(egui::Align2::RIGHT_TOP)
-        .fixed_pos(canvas.right_top() + egui::vec2(-10.0, 10.0))
+        .fixed_pos(canvas.right_top() + egui::vec2(-12.0, 12.0))
         .show(ui.ctx(), |ui| {
-            egui::Frame::new()
-                .fill(crate::theme_widgets::PANEL)
-                .corner_radius(6)
-                .inner_margin(4)
+            crate::theme_widgets::floating_frame()
+                .inner_margin(3)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if canvas.width() >= 400.0 {
-                            for preset in [Preset::Isometric, Preset::Front, Preset::Top] {
-                                let request =
-                                    Request::new(A::ViewPreset).argument(Argument::Preset(preset));
-                                let allowed = actions::viewport_availability(
-                                    request,
-                                    modal,
-                                    preview_active,
-                                    tool.dragging(),
-                                    project,
-                                    selection,
+                        let mut pending = None;
+                        let mut preset = camera.preset;
+                        let labels = [
+                            (Preset::Isometric, localizer.text("viewport-iso")),
+                            (Preset::Front, localizer.text("viewport-front")),
+                            (Preset::Top, localizer.text("viewport-top")),
+                        ];
+                        let options: Vec<_> =
+                            labels.iter().map(|(p, l)| (*p, l.as_str())).collect();
+                        ui.add_enabled_ui(!modal && !tool.dragging(), |ui| {
+                            if crate::theme_widgets::segmented(ui, &mut preset, &options).clicked()
+                                && preset != Preset::Free
+                            {
+                                pending = Some(
+                                    Request::new(A::ViewPreset).argument(Argument::Preset(preset)),
                                 );
-                                if ui
-                                    .add_enabled(
-                                        allowed.is_ok(),
-                                        egui::Button::selectable(
-                                            camera.preset == preset,
-                                            localizer.text(preset_key(preset)),
-                                        ),
-                                    )
-                                    .clicked()
-                                {
-                                    let _ = actions::viewport_control(
-                                        request,
-                                        camera,
-                                        tool,
-                                        project,
-                                        selection,
-                                        modal,
-                                        preview_active,
-                                    );
-                                }
                             }
+                        });
+                        let frame = Request::new(A::ViewFrame);
+                        let allowed = actions::viewport_availability(
+                            frame,
+                            modal,
+                            preview_active,
+                            tool.dragging(),
+                            project,
+                            selection,
+                        );
+                        if crate::theme_widgets::ghost_icon_sized(
+                            ui,
+                            crate::icons::Icon::Frame,
+                            &frame.id.label(&localizer),
+                            crate::theme_widgets::SECONDARY,
+                            16.0,
+                            28.0,
+                            allowed.is_ok(),
+                            false,
+                        )
+                        .clicked()
+                        {
+                            pending = Some(frame);
                         }
-                        ui.menu_button(localizer.text("viewport-more"), |ui| {
-                            show(
-                                ui,
+                        if let Some(request) = pending {
+                            let _ = actions::viewport_control(
+                                request,
                                 camera,
+                                tool,
                                 project,
                                 selection,
-                                tool,
                                 modal,
-                                pt,
                                 preview_active,
                             );
-                        });
+                        }
                     });
                 });
         });
     overlay.response.contains_pointer() || egui::Popup::is_any_open(ui.ctx())
 }
 
+/// Floating viewport chrome for the Design workspace: a vertical tool strip at
+/// the left edge, camera presets/projection at top centre, and the snap chip at
+/// top right. Returns whether the pointer is over any overlay, so the scene does
+/// not pick or orbit through it.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn show(
     ui: &mut egui::Ui,
@@ -94,192 +102,252 @@ pub(super) fn show(
     modal: bool,
     pt: bool,
     preview_active: bool,
-) {
+) -> bool {
+    use crate::icons::Icon;
+    use crate::theme_widgets as tw;
     let localizer = Localizer::new(if pt { Language::PtBr } else { Language::En });
+    let canvas = ui.available_rect_before_wrap().intersect(ui.clip_rect());
     let mut pending = None;
-    let mut invoke = |request| pending = Some(request);
-    let navigate = Request::new(A::ViewNavigate);
-    let move_board = Request::new(A::ViewMove);
-    let measure = Request::new(A::ViewMeasure);
-    let frame = Request::new(A::ViewFrame);
-    // Include the longer pt-BR projection/preset labels and egui button
-    // padding before attempting the non-wrapping full toolbar. The 808 pt
-    // reference canvas retains the complete controls; narrow canvases use
-    // the same actions in More rather than clipping the final menu.
-    let compact = ui.available_width() < 880.0;
-    let tiny = ui.available_width() < 290.0;
-    ui.add_enabled_ui(!modal, |ui| {
-        ui.horizontal(|ui| {
-            if !tiny {
-                for (request, selected) in [
-                    (navigate, tool.mode == ToolMode::Navigate),
-                    (move_board, tool.mode == ToolMode::Move),
-                    (measure, tool.mode == ToolMode::Measure),
-                ] {
-                    let enabled = actions::viewport_availability(
-                        request,
-                        modal,
-                        preview_active,
-                        tool.dragging(),
-                        project,
-                        selection,
-                    );
-                    let response = ui.add_enabled(
-                        enabled.is_ok(),
-                        egui::Button::selectable(selected, request.id.label(&localizer)),
-                    );
-                    let response = if let Err(reason) = enabled {
-                        response.on_disabled_hover_text(reason.reason(localizer.language()))
-                    } else {
-                        response
-                    };
-                    if response.clicked() {
-                        invoke(request);
-                    }
-                }
-            }
-            if compact {
-                ui.menu_button(localizer.text("viewport-more"), |ui| {
-                    if tiny {
-                        for (request, selected) in [
-                            (navigate, tool.mode == ToolMode::Navigate),
-                            (move_board, tool.mode == ToolMode::Move),
-                            (measure, tool.mode == ToolMode::Measure),
-                        ] {
-                            let availability = actions::viewport_availability(
-                                request,
-                                modal,
-                                preview_active,
-                                tool.dragging(),
-                                project,
-                                selection,
-                            );
-                            if ui
-                                .add_enabled(
-                                    availability.is_ok(),
-                                    egui::Button::selectable(
-                                        selected,
-                                        request.id.label(&localizer),
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                invoke(request);
-                                ui.close();
-                            }
+    let mut blocked = false;
+    let availability = |request: Request, tool: &MoveTool| {
+        actions::viewport_availability(
+            request,
+            modal,
+            preview_active,
+            tool.dragging(),
+            project,
+            selection,
+        )
+    };
+
+    // Tool strip.
+    let strip = egui::Area::new(ui.id().with("viewport-tool-strip"))
+        .order(egui::Order::Middle)
+        .pivot(egui::Align2::LEFT_CENTER)
+        .fixed_pos(canvas.left_center() + egui::vec2(14.0, 0.0))
+        .show(ui.ctx(), |ui| {
+            tw::floating_frame().show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.vertical(|ui| {
+                    for (request, selected, icon) in [
+                        (Request::new(A::ViewNavigate), tool.mode == ToolMode::Navigate, Icon::Orbit),
+                        (Request::new(A::ViewMove), tool.mode == ToolMode::Move, Icon::Move),
+                        (Request::new(A::ViewMeasure), tool.mode == ToolMode::Measure, Icon::Measure),
+                    ] {
+                        let allowed = availability(request, tool);
+                        let label = request.id.label(&localizer);
+                        let response = tw::ghost_icon_sized(
+                            ui,
+                            icon,
+                            &label,
+                            tw::SECONDARY,
+                            17.0,
+                            34.0,
+                            allowed.is_ok(),
+                            selected,
+                        );
+                        if let Err(reason) = allowed {
+                            response.on_hover_text(reason.reason(localizer.language()));
+                        } else if response.clicked() {
+                            pending = Some(request);
                         }
                     }
-                    menu_contents(
-                        ui,
-                        &localizer,
-                        camera,
-                        tool,
-                        project,
-                        selection,
-                        modal,
-                        preview_active,
-                        &mut invoke,
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(34.0, 9.0), egui::Sense::hover());
+                    ui.painter().hline(
+                        rect.x_range().shrink(6.0),
+                        rect.center().y,
+                        egui::Stroke::new(1.0, tw::BORDER_SOFT),
                     );
+                    let frame = Request::new(A::ViewFrame);
+                    let allowed = availability(frame, tool);
+                    let response = tw::ghost_icon_sized(
+                        ui,
+                        Icon::Frame,
+                        &frame.id.label(&localizer),
+                        tw::SECONDARY,
+                        17.0,
+                        34.0,
+                        allowed.is_ok(),
+                        false,
+                    );
+                    if response.clicked() {
+                        pending = Some(frame);
+                    }
                 });
-            } else {
-                let availability = actions::viewport_availability(
-                    frame,
-                    modal,
-                    preview_active,
-                    tool.dragging(),
-                    project,
-                    selection,
-                );
-                let response = ui.add_enabled(
-                    availability.is_ok(),
-                    egui::Button::new(frame.id.label(&localizer)),
-                );
-                if response.clicked() {
-                    invoke(frame);
-                }
-                if let Err(reason) = availability {
-                    response.on_disabled_hover_text(reason.reason(localizer.language()));
-                }
-                ui.add_enabled_ui(!tool.dragging(), |ui| {
-                    ui.menu_button(
-                        format!("{} ▾", localizer.text(preset_key(camera.preset))),
-                        |ui| {
-                            presets(ui, &localizer, camera.preset, &mut invoke);
-                        },
-                    )
-                    .response
-                    .on_hover_text(localizer.text("viewport-preset"));
-                    ui.menu_button(
-                        format!("{} ▾", localizer.text(projection_key(camera.projection))),
-                        |ui| {
-                            projections(ui, &localizer, camera.projection, &mut invoke);
-                        },
-                    )
-                    .response
-                    .on_hover_text(localizer.text("viewport-projection"));
-                });
-            }
-        })
-    });
-    let locale = if pt { Locale::PtBr } else { Locale::En };
-    let spacing = format_length(project.grid_spacing, Unit::Mm, locale, 3);
-    let status = match (tool.face_snap, tool.grid_snap) {
-        (true, true) => "viewport-snap-both",
-        (true, false) => "viewport-snap-face-only",
-        (false, true) => "viewport-snap-grid-only",
-        (false, false) => "viewport-snap-off",
-    };
-    let summary = if ui.available_width() < 290.0 {
-        let short = match (tool.face_snap, tool.grid_snap) {
-            (true, true) => "viewport-snap-short-both",
-            (true, false) => "viewport-snap-short-face",
-            (false, true) => "viewport-snap-short-grid",
-            (false, false) => "viewport-snap-short-off",
-        };
-        format!("{} · {spacing}", localizer.text(short))
-    } else {
-        format!("{} · {spacing}", localizer.text(status))
-    };
-    ui.add_enabled_ui(!modal, |ui| {
-        ui.menu_button(format!("{summary} ▾"), |ui| {
-            ui.set_min_width(210.0);
-            ui.add_enabled_ui(!tool.dragging() && !preview_active, |ui| {
-                ui.checkbox(&mut tool.face_snap, localizer.text("viewport-snap-face"));
-                ui.checkbox(&mut tool.grid_snap, localizer.text("viewport-snap-grid"));
             });
-            ui.label(format!(
-                "{}: {spacing}",
-                localizer.text("viewport-snap-spacing")
-            ));
-            let display_mm = scene_render::grid_display_interval(project, camera);
-            let configured_mm = project.grid_spacing.micrometres() as f64 / 1000.0;
-            if display_mm > configured_mm * (1.0 + 1e-9) {
-                let display = format_length(
-                    Length::from_micrometres((display_mm * 1000.0).round() as i64),
-                    Unit::Mm,
-                    locale,
-                    3,
-                );
-                ui.small(format!(
-                    "{}: {display}",
-                    localizer.text("viewport-snap-display")
-                ));
-            }
-            if ui
-                .add_enabled(
-                    !tool.dragging() && !preview_active,
-                    egui::Button::new(localizer.text("grid-edit")),
-                )
-                .clicked()
-            {
-                tool.grid_edit_requested = true;
-                ui.close();
-            }
-            ui.small(localizer.text("viewport-snap-alt"));
-        })
-        .response
-        .on_hover_text(format!("{} · {spacing}", localizer.text(status)));
-    });
+        });
+    blocked |= strip.response.contains_pointer();
+
+    // Camera presets and projection.
+    if canvas.width() >= 520.0 {
+        let camera_bar = egui::Area::new(ui.id().with("viewport-camera-bar"))
+            .order(egui::Order::Middle)
+            .pivot(egui::Align2::CENTER_TOP)
+            .fixed_pos(canvas.center_top() + egui::vec2(0.0, 12.0))
+            .show(ui.ctx(), |ui| {
+                ui.add_enabled_ui(!modal && !tool.dragging(), |ui| {
+                    tw::floating_frame().inner_margin(3).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let mut preset = camera.preset;
+                            let labels = [
+                                (Preset::Isometric, localizer.text("viewport-iso")),
+                                (Preset::Front, localizer.text("viewport-front")),
+                                (Preset::Right, localizer.text("viewport-right")),
+                                (Preset::Top, localizer.text("viewport-top")),
+                            ];
+                            let options: Vec<_> =
+                                labels.iter().map(|(p, l)| (*p, l.as_str())).collect();
+                            if tw::segmented(ui, &mut preset, &options).clicked()
+                                && preset != Preset::Free
+                            {
+                                pending = Some(
+                                    Request::new(A::ViewPreset).argument(Argument::Preset(preset)),
+                                );
+                            }
+                            let mut projection = camera.projection;
+                            let labels = [
+                                (Projection::Perspective, localizer.text("viewport-persp-short")),
+                                (Projection::Orthographic, localizer.text("viewport-ortho-short")),
+                            ];
+                            let options: Vec<_> =
+                                labels.iter().map(|(p, l)| (*p, l.as_str())).collect();
+                            if tw::segmented(ui, &mut projection, &options).clicked()
+                                && projection != camera.projection
+                            {
+                                pending = Some(
+                                    Request::new(A::ViewProjection)
+                                        .argument(Argument::Projection(projection)),
+                                );
+                            }
+                        });
+                    });
+                });
+            });
+        blocked |= camera_bar.response.contains_pointer();
+    } else {
+        let camera_menu = egui::Area::new(ui.id().with("viewport-camera-menu"))
+            .order(egui::Order::Middle)
+            .pivot(egui::Align2::LEFT_TOP)
+            .fixed_pos(canvas.left_top() + egui::vec2(12.0, 12.0))
+            .show(ui.ctx(), |ui| {
+                ui.add_enabled_ui(!modal && !tool.dragging(), |ui| {
+                    let response = tw::floating_frame()
+                        .inner_margin(2)
+                        .show(ui, |ui| {
+                            tw::ghost_icon_sized(
+                                ui,
+                                Icon::Cube,
+                                &localizer.text("viewport-more"),
+                                tw::SECONDARY,
+                                16.0,
+                                30.0,
+                                true,
+                                false,
+                            )
+                        })
+                        .inner;
+                    egui::Popup::menu(&response).show(|ui| {
+                        presets(ui, &localizer, camera.preset, &mut |r| pending = Some(r));
+                        ui.separator();
+                        projections(ui, &localizer, camera.projection, &mut |r| pending = Some(r));
+                    });
+                });
+            });
+        blocked |= camera_menu.response.contains_pointer();
+    }
+
+    // Snap chip.
+    let locale = if pt { Locale::PtBr } else { Locale::En };
+    let spacing = format_length(project.grid_spacing, Unit::Mm, locale, 0);
+    let short = match (tool.face_snap, tool.grid_snap) {
+        (true, true) => "viewport-snap-short-both",
+        (true, false) => "viewport-snap-short-face",
+        (false, true) => "viewport-snap-short-grid",
+        (false, false) => "viewport-snap-short-off",
+    };
+    let snap = egui::Area::new(ui.id().with("viewport-snap-chip"))
+        .order(egui::Order::Middle)
+        .pivot(egui::Align2::RIGHT_TOP)
+        .fixed_pos(canvas.right_top() + egui::vec2(-12.0, 12.0))
+        .show(ui.ctx(), |ui| {
+            ui.add_enabled_ui(!modal, |ui| {
+                let label = if tool.grid_snap {
+                    format!("{} {spacing}", localizer.text(short))
+                } else {
+                    localizer.text(short)
+                };
+                let response = ui
+                    .add(
+                        egui::Button::image_and_text(
+                            crate::icons::icon(Icon::Magnet, tw::ACCENT, 15.0),
+                            egui::RichText::new(label).size(12.5).color(tw::TEXT),
+                        )
+                        .fill(tw::PANEL)
+                        .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                        .corner_radius(9)
+                        .min_size(egui::vec2(0.0, 32.0)),
+                    )
+                    .on_hover_text(localizer.text(match (tool.face_snap, tool.grid_snap) {
+                        (true, true) => "viewport-snap-both",
+                        (true, false) => "viewport-snap-face-only",
+                        (false, true) => "viewport-snap-grid-only",
+                        (false, false) => "viewport-snap-off",
+                    }));
+                egui::Popup::menu(&response)
+                    .align(egui::RectAlign::BOTTOM_END)
+                    .show(|ui| {
+                        ui.set_min_width(230.0);
+                        ui.add_enabled_ui(!tool.dragging() && !preview_active, |ui| {
+                            ui.checkbox(&mut tool.face_snap, localizer.text("viewport-snap-face"));
+                            ui.checkbox(&mut tool.grid_snap, localizer.text("viewport-snap-grid"));
+                        });
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(localizer.text("viewport-snap-spacing"))
+                                    .color(tw::MUTED),
+                            );
+                            ui.label(tw::mono(spacing.clone(), 12.5));
+                        });
+                        let display_mm = scene_render::grid_display_interval(project, camera);
+                        let configured_mm = project.grid_spacing.micrometres() as f64 / 1000.0;
+                        if display_mm > configured_mm * (1.0 + 1e-9) {
+                            let display = format_length(
+                                Length::from_micrometres((display_mm * 1000.0).round() as i64),
+                                Unit::Mm,
+                                locale,
+                                0,
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{}: {display}",
+                                    localizer.text("viewport-snap-display")
+                                ))
+                                .size(11.5)
+                                .color(tw::FAINT),
+                            );
+                        }
+                        if ui
+                            .add_enabled(
+                                !tool.dragging() && !preview_active,
+                                egui::Button::new(localizer.text("grid-edit")),
+                            )
+                            .clicked()
+                        {
+                            tool.grid_edit_requested = true;
+                            ui.close();
+                        }
+                        ui.label(
+                            egui::RichText::new(localizer.text("viewport-snap-alt"))
+                                .size(11.5)
+                                .color(tw::FAINT),
+                        );
+                    });
+            });
+        });
+    blocked |= snap.response.contains_pointer() || egui::Popup::is_any_open(ui.ctx());
+
     if let Some(request) = pending {
         let _ = actions::viewport_control(
             request,
@@ -291,16 +359,7 @@ pub(super) fn show(
             preview_active,
         );
     }
-    let hint = localizer.text(match tool.mode {
-        ToolMode::Move if !preview_active => "viewport-move-hint",
-        ToolMode::Measure => "viewport-measure-hint",
-        _ => "viewport-navigate-hint",
-    });
-    // This is guidance, not a control: keep it within the canvas at compact
-    // widths and expose the complete wording on hover instead of painting it
-    // across the inspector or beyond the window edge.
-    ui.add(egui::Label::new(egui::RichText::new(&hint).small()).truncate())
-        .on_hover_text(hint);
+    blocked
 }
 
 fn preset_key(preset: Preset) -> &'static str {
@@ -318,56 +377,6 @@ fn projection_key(projection: Projection) -> &'static str {
         Projection::Perspective => "viewport-perspective",
         Projection::Orthographic => "viewport-orthographic",
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn menu_contents(
-    ui: &mut egui::Ui,
-    localizer: &Localizer,
-    camera: &Camera,
-    tool: &MoveTool,
-    project: &Project,
-    selection: &Selection,
-    modal: bool,
-    preview_active: bool,
-    invoke: &mut impl FnMut(Request),
-) {
-    let frame = Request::new(A::ViewFrame);
-    let availability = actions::viewport_availability(
-        frame,
-        modal,
-        preview_active,
-        tool.dragging(),
-        project,
-        selection,
-    );
-    let response = ui.add_enabled(
-        availability.is_ok(),
-        egui::Button::new(frame.id.label(localizer)),
-    );
-    if response.clicked() {
-        invoke(frame);
-        ui.close();
-    }
-    if let Err(reason) = availability {
-        response.on_disabled_hover_text(reason.reason(localizer.language()));
-    }
-    ui.separator();
-    ui.add_enabled_ui(!tool.dragging(), |ui| {
-        ui.label(format!(
-            "{}: {}",
-            localizer.text("viewport-preset"),
-            localizer.text(preset_key(camera.preset))
-        ));
-        presets(ui, localizer, camera.preset, invoke);
-        ui.separator();
-        ui.label(format!(
-            "{}: {}",
-            localizer.text("viewport-projection"),
-            localizer.text(projection_key(camera.projection))
-        ));
-        projections(ui, localizer, camera.projection, invoke);
-    });
 }
 
 fn presets(

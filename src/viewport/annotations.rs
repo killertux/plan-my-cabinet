@@ -21,6 +21,7 @@ fn selected_dimensions(
     Some([(origin, length, board.length), (origin, width, board.width)])
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn dimension_badge_origin(
     rect: egui::Rect,
     mid: egui::Pos2,
@@ -44,6 +45,21 @@ fn dimension_badge_origin(
     origin
 }
 
+fn trim_mm(value: plan_my_cabinet::units::Length, unit: plan_my_cabinet::units::Unit, locale: Locale) -> String {
+    let text = format_length(value, unit, locale, 2);
+    let number = text.split_whitespace().next().unwrap_or("").to_owned();
+    if number.contains(['.', ',']) {
+        number
+            .trim_end_matches('0')
+            .trim_end_matches(['.', ','])
+            .to_owned()
+    } else {
+        number
+    }
+}
+
+/// One dark pill ("764 × 537 × 18") beside the selected board with a short
+/// leader to its right-most projected corner.
 fn paint_selected_dimensions(
     ui: &egui::Ui,
     camera: &Camera,
@@ -52,35 +68,71 @@ fn paint_selected_dimensions(
     rect: egui::Rect,
     pt: bool,
 ) {
-    let Some(edges) = selected_dimensions(camera, project, selection, rect) else {
+    if selected_dimensions(camera, project, selection, rect).is_none() {
+        return;
+    }
+    let Some(board) = selection
+        .active
+        .and_then(|id| project.boards.iter().find(|b| b.id == id))
+    else {
         return;
     };
-    let painter = ui.painter().with_clip_rect(rect);
-    let locale = if pt { Locale::PtBr } else { Locale::En };
-    for (index, (start, end, value)) in edges.into_iter().enumerate() {
-        if !rect.contains(start) && !rect.contains(end) {
-            continue;
-        }
-        let mid = start + (end - start) * 0.5;
-        let text = format_length(value, project.display_unit, locale, 2);
-        let galley =
-            painter.layout_no_wrap(text, egui::FontId::proportional(12.0), egui::Color32::WHITE);
-        let size = galley.size() + egui::vec2(14.0, 8.0);
-        // Keep the annotation clear of the toolbar and the bottom-left HUD.
-        // The edge line still conveys its geometric association if displaced.
-        let origin = dimension_badge_origin(rect, mid, size, index);
-        let badge = egui::Rect::from_min_size(origin, size);
-        painter.line_segment(
-            [start, end],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(153, 96, 37)),
-        );
-        painter.line_segment(
-            [mid, badge.center()],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(153, 96, 37)),
-        );
-        painter.rect_filled(badge, 5.0, egui::Color32::from_rgb(58, 48, 39));
-        painter.galley(origin + egui::vec2(7.0, 4.0), galley, egui::Color32::WHITE);
+    let Some(corners) = board_corners(project, board) else {
+        return;
+    };
+    let projected: Vec<_> = corners
+        .iter()
+        .filter_map(|c| camera.project(*c, rect))
+        .filter(|p| rect.contains(*p))
+        .collect();
+    if projected.is_empty() {
+        return;
     }
+    // Anchor between the board's projected centre and its lowest corner, so
+    // the leader lands on the board itself rather than a panel behind it.
+    let centre = projected
+        .iter()
+        .fold(egui::Vec2::ZERO, |sum, p| sum + p.to_vec2())
+        / projected.len() as f32;
+    let lowest = projected
+        .iter()
+        .copied()
+        .max_by(|a, b| a.y.total_cmp(&b.y))
+        .unwrap_or(projected[0]);
+    let anchor = centre.to_pos2() + (lowest - centre.to_pos2()) * 0.6;
+    let locale = if pt { Locale::PtBr } else { Locale::En };
+    let unit = project.display_unit;
+    let text = format!(
+        "{} × {} × {}",
+        trim_mm(board.length, unit, locale),
+        trim_mm(board.width, unit, locale),
+        trim_mm(board.thickness, unit, locale)
+    );
+    let painter = ui.painter().with_clip_rect(rect);
+    let galley = painter.layout_no_wrap(
+        text,
+        egui::FontId::monospace(11.5),
+        crate::theme_widgets::PANEL,
+    );
+    let size = galley.size() + egui::vec2(16.0, 9.0);
+    let mut origin = anchor + egui::vec2(46.0, 18.0);
+    origin.x = origin
+        .x
+        .clamp(rect.left() + 60.0, (rect.right() - size.x - 8.0).max(rect.left() + 60.0));
+    origin.y = origin
+        .y
+        .clamp(rect.top() + 56.0, (rect.bottom() - size.y - 80.0).max(rect.top() + 56.0));
+    let pill = egui::Rect::from_min_size(origin, size);
+    painter.line_segment(
+        [anchor, pill.left_center()],
+        egui::Stroke::new(1.0, crate::theme_widgets::MUTED),
+    );
+    painter.rect_filled(pill, 5.0, crate::theme_widgets::TEXT);
+    painter.galley(
+        pill.min + egui::vec2(8.0, 4.5),
+        galley,
+        crate::theme_widgets::PANEL,
+    );
 }
 
 #[allow(clippy::too_many_arguments)] // Camera, canvas, transient tool, and measurement choices are independent view state.

@@ -4071,163 +4071,244 @@ impl DesktopApp {
 
     fn show_shell_header(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("workspace-header")
-            .default_size(workspace_shell::HEADER_HEIGHT)
-            .min_size(workspace_shell::HEADER_HEIGHT)
-            .max_size(workspace_shell::HEADER_HEIGHT)
+            .exact_size(workspace_shell::HEADER_HEIGHT)
+            .resizable(false)
             .frame(
                 egui::Frame::new()
                     .fill(theme_widgets::PANEL)
-                    .inner_margin(egui::Margin::symmetric(12, 6)),
+                    .inner_margin(egui::Margin {
+                        left: 16,
+                        right: 12,
+                        top: 0,
+                        bottom: 0,
+                    }),
             )
             .show(ui, |ui| {
-                let compact = ui.available_width() < 1100.0
-                    || self.editor.project().name.chars().count() > 32;
+                let width = ui.available_width();
+                let compact = width < 1000.0;
+                let chrome_enabled = !self.palette.open
+                    && !self.other_modal_open()
+                    && !self.project_files.blocking()
+                    && self.navigation.pending().is_none();
                 let panes = workspace_shell::PaneLayout::for_width(
                     self.session.active,
                     ui.ctx().content_rect().width() - workspace_shell::RAIL_WIDTH,
                 );
-                ui.horizontal(|ui| {
-                    if actions::button(
+                let full = ui.max_rect();
+                // Centered command search, painted first so the left and right
+                // clusters can never overlap it at the reference width.
+                let search_width = if compact { 0.0 } else { (width - 640.0).clamp(220.0, 440.0) };
+                if search_width > 0.0 {
+                    let rect = egui::Rect::from_center_size(
+                        full.center(),
+                        egui::vec2(search_width, 30.0),
+                    );
+                    let response = ui
+                        .interact(
+                            rect,
+                            egui::Id::new("header-command-search"),
+                            if chrome_enabled {
+                                egui::Sense::click()
+                            } else {
+                                egui::Sense::hover()
+                            },
+                        )
+                        .on_hover_text(self.localizer.text("palette-title"));
+                    let label = self.localizer.text("palette-title");
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::Button, chrome_enabled, &label)
+                    });
+                    let painter = ui.painter();
+                    painter.rect(
+                        rect,
+                        7.0,
+                        if response.hovered() {
+                            theme_widgets::CARD
+                        } else {
+                            theme_widgets::APP
+                        },
+                        egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT),
+                        egui::StrokeKind::Inside,
+                    );
+                    icons::icon(icons::Icon::Search, theme_widgets::FAINT, 14.0).paint_at(
                         ui,
-                        &self.localizer,
-                        Request::new(A::OpenWelcome),
-                        self.action_availability(Request::new(A::OpenWelcome)),
-                    )
-                    .clicked()
+                        egui::Rect::from_center_size(
+                            rect.left_center() + egui::vec2(18.0, 0.0),
+                            egui::Vec2::splat(14.0),
+                        ),
+                    );
+                    painter.text(
+                        rect.left_center() + egui::vec2(34.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        self.localizer.text("shell-search-placeholder"),
+                        egui::FontId::proportional(13.0),
+                        theme_widgets::FAINT,
+                    );
+                    let key = if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl K" };
+                    let key_rect = egui::Rect::from_center_size(
+                        rect.right_center() - egui::vec2(24.0, 0.0),
+                        egui::vec2(if cfg!(target_os = "macos") { 28.0 } else { 40.0 }, 18.0),
+                    );
+                    painter.rect_stroke(
+                        key_rect,
+                        4.0,
+                        egui::Stroke::new(1.0, theme_widgets::BORDER_STRONG),
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.text(
+                        key_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        key,
+                        egui::FontId::monospace(11.0),
+                        theme_widgets::FAINT,
+                    );
+                    if response.clicked() {
+                        self.palette.open(ui.ctx());
+                    }
+                }
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if ui
+                        .add_enabled(
+                            self.action_availability(Request::new(A::OpenWelcome)).is_ok(),
+                            egui::Button::new(
+                                egui::RichText::new(self.localizer.text("shell-projects"))
+                                    .color(theme_widgets::MUTED),
+                            )
+                            .frame(false),
+                        )
+                        .clicked()
                     {
                         let _ = self.invoke(Request::new(A::OpenWelcome));
                     }
-                    ui.menu_button("⋯", |ui| self.show_project_controls(ui))
-                        .response
-                        .on_hover_text(self.localizer.text("shell-projects"));
-                    ui.label("/");
-                    if !compact {
-                        ui.label(egui::RichText::new(&self.editor.project().name).strong());
-                    }
+                    ui.label(egui::RichText::new("/").color(theme_widgets::DISABLED));
+                    let name = self.editor.project().name.clone();
+                    let shown: String = if name.chars().count() > 28 {
+                        name.chars().take(26).chain("…".chars()).collect()
+                    } else {
+                        name.clone()
+                    };
+                    ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+                    ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                    ui.menu_button(
+                        theme_widgets::semibold(ui, shown, 13.0).color(theme_widgets::TEXT),
+                        |ui| {
+                            ui.set_min_width(220.0);
+                            self.show_project_controls(ui);
+                        },
+                    )
+                    .response
+                    .on_hover_text(format!("{name} · {}", self.localizer.text("shell-project-menu")));
                     if self.editor.is_dirty() {
-                        ui.colored_label(theme_widgets::ACCENT, "●");
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(7.0, 7.0), egui::Sense::hover());
+                        ui.painter().circle_filled(rect.center(), 3.5, theme_widgets::ACCENT);
                         if !compact {
-                            ui.small(self.localizer.text("shell-unsaved"));
+                            ui.label(
+                                egui::RichText::new(self.localizer.text("shell-unsaved"))
+                                    .size(11.5)
+                                    .color(theme_widgets::MUTED),
+                            );
                         }
                     }
-                    for (drawer, key) in [
-                        (
-                            workspace_shell::Drawer::Controls,
-                            workspace_shell::ENTRIES[(self.session.active.number() - 1) as usize].1,
-                        ),
-                        (workspace_shell::Drawer::Inspector, "shell-targets"),
+                    for drawer in [
+                        workspace_shell::Drawer::Controls,
+                        workspace_shell::Drawer::Inspector,
                     ] {
-                        if panes.collapsed(drawer)
-                            && ui
-                                .add_enabled(
-                                    !self.palette.open
-                                        && !self.other_modal_open()
-                                        && !self.project_files.blocking()
-                                        && self.navigation.pending().is_none(),
-                                    egui::Button::new(
-                                        if drawer == workspace_shell::Drawer::Inspector {
-                                            workspace_shell::inspector_label(
-                                                self.localizer.language(),
-                                            )
-                                            .to_owned()
-                                        } else {
-                                            self.localizer.text(key)
-                                        },
+                        if panes.collapsed(drawer) {
+                            let (icon, label) = if drawer == workspace_shell::Drawer::Inspector {
+                                (
+                                    icons::Icon::Sliders,
+                                    workspace_shell::inspector_label(self.localizer.language())
+                                        .to_owned(),
+                                )
+                            } else {
+                                (
+                                    icons::Icon::List,
+                                    self.localizer.text(
+                                        workspace_shell::ENTRIES
+                                            [(self.session.active.number() - 1) as usize]
+                                            .1,
                                     ),
                                 )
-                                .clicked()
-                        {
-                            self.open_drawer = if self.open_drawer == Some(drawer) {
-                                None
-                            } else {
-                                Some(drawer)
                             };
+                            if theme_widgets::ghost_icon_sized(
+                                ui,
+                                icon,
+                                &label,
+                                theme_widgets::SECONDARY,
+                                16.0,
+                                30.0,
+                                chrome_enabled,
+                                self.open_drawer == Some(drawer),
+                            )
+                            .clicked()
+                            {
+                                self.open_drawer = if self.open_drawer == Some(drawer) {
+                                    None
+                                } else {
+                                    Some(drawer)
+                                };
+                            }
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if compact {
-                            ui.menu_button(
-                                workspace_shell::more_label(self.localizer.language()),
-                                |ui| {
-                                    ui.label(&self.editor.project().name);
-                                    if self.editor.is_dirty() {
-                                        ui.label(self.localizer.text("shell-unsaved"));
-                                    }
-                                    for action in workspace_shell::OVERFLOW_ACTIONS {
-                                        if actions::button(
-                                            ui,
-                                            &self.localizer,
-                                            Request::new(action),
-                                            self.action_availability(Request::new(action)),
-                                        )
-                                        .clicked()
-                                        {
-                                            let _ = self.invoke(Request::new(action));
-                                            ui.close();
-                                        }
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !self.palette.open
-                                                && !self.other_modal_open()
-                                                && !self.project_files.blocking()
-                                                && self.navigation.pending().is_none(),
-                                            egui::Button::new(self.localizer.text("palette-title")),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.palette.open(ui.ctx());
-                                        ui.close();
-                                    }
-                                },
-                            )
-                            .response
-                            .on_hover_text(workspace_shell::more_label(self.localizer.language()));
-                            return;
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        let export = Request::new(A::OpenHandoff);
+                        if theme_widgets::icon_text_button(
+                            ui,
+                            icons::Icon::Export,
+                            &self.localizer.text("shell-export"),
+                            true,
+                            self.action_availability(export).is_ok(),
+                        )
+                        .clicked()
+                        {
+                            let _ = self.invoke(export);
                         }
-                        if ui
-                            .add_enabled(
-                                !self.palette.open
-                                    && !self.other_modal_open()
-                                    && !self.project_files.blocking()
-                                    && self.navigation.pending().is_none(),
-                                egui::Button::new(self.localizer.text("palette-title")),
+                        let save = Request::new(A::SaveProject);
+                        if theme_widgets::secondary_button_enabled(
+                            ui,
+                            &A::SaveProject.label(&self.localizer),
+                            self.action_availability(save).is_ok(),
+                        )
+                        .on_hover_text(A::SaveProject.label(&self.localizer))
+                        .clicked()
+                        {
+                            let _ = self.invoke(save);
+                        }
+                        ui.add_space(4.0);
+                        for (action, icon) in [(A::Redo, icons::Icon::Redo), (A::Undo, icons::Icon::Undo)] {
+                            let request = Request::new(action);
+                            if theme_widgets::ghost_icon_sized(
+                                ui,
+                                icon,
+                                &action.label(&self.localizer),
+                                theme_widgets::SECONDARY,
+                                17.0,
+                                32.0,
+                                self.action_availability(request).is_ok(),
+                                false,
+                            )
+                            .clicked()
+                            {
+                                let _ = self.invoke(request);
+                            }
+                        }
+                        if compact
+                            && theme_widgets::ghost_icon_sized(
+                                ui,
+                                icons::Icon::Search,
+                                &self.localizer.text("palette-title"),
+                                theme_widgets::SECONDARY,
+                                16.0,
+                                32.0,
+                                chrome_enabled,
+                                false,
                             )
                             .clicked()
                         {
                             self.palette.open(ui.ctx());
-                        }
-                        if actions::button(
-                            ui,
-                            &self.localizer,
-                            Request::new(A::OpenHandoff),
-                            self.action_availability(Request::new(A::OpenHandoff)),
-                        )
-                        .clicked()
-                        {
-                            let _ = self.invoke(Request::new(A::OpenHandoff));
-                        }
-                        if actions::button(
-                            ui,
-                            &self.localizer,
-                            Request::new(A::SaveProject),
-                            self.action_availability(Request::new(A::SaveProject)),
-                        )
-                        .clicked()
-                        {
-                            let _ = self.invoke(Request::new(A::SaveProject));
-                        }
-                        for action in [A::Redo, A::Undo] {
-                            if actions::button(
-                                ui,
-                                &self.localizer,
-                                Request::new(action),
-                                self.action_availability(Request::new(action)),
-                            )
-                            .clicked()
-                            {
-                                let _ = self.invoke(Request::new(action));
-                            }
                         }
                     });
                 });
@@ -4295,141 +4376,193 @@ impl DesktopApp {
         total: Option<plan_my_cabinet::money::Money>,
         invalid_estimate: bool,
     ) {
-        ui.horizontal_wrapped(|ui| {
+        let locale = if self.localizer.language() == Language::En {
+            Locale::En
+        } else {
+            Locale::PtBr
+        };
+        let small = |text: String| egui::RichText::new(text).size(11.5).color(theme_widgets::MUTED);
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 5.0;
             if let Some(error) = &self.preferences_error {
-                ui.colored_label(
-                    theme_widgets::WARN_INK,
-                    self.localizer.text("preferences-save-warning"),
+                ui.label(
+                    egui::RichText::new(self.localizer.text("preferences-save-warning"))
+                        .size(11.5)
+                        .color(theme_widgets::WARN_INK),
                 )
                 .on_hover_text(error);
-                ui.separator();
+                ui.add_space(12.0);
             }
             let project = self.editor.project();
-            let kerf = format_length(
-                project.cutting_kerf,
-                Unit::Mm,
-                if self.localizer.language() == Language::En {
-                    Locale::En
+            let confirmed = project.confirmed_shop_kerf == Some(project.cutting_kerf);
+            let kerf = assembly_ui::short_length(project.cutting_kerf, locale);
+            ui.add(icons::icon(
+                if confirmed {
+                    icons::Icon::Check
                 } else {
-                    Locale::PtBr
+                    icons::Icon::Warning
                 },
-                3,
-            );
-            let kerf_state = ui.colored_label(
-                if project.confirmed_shop_kerf == Some(project.cutting_kerf) {
+                if confirmed {
+                    theme_widgets::OK
+                } else {
+                    theme_widgets::WARN
+                },
+                13.0,
+            ));
+            let kerf_label = ui.label(
+                egui::RichText::new(if confirmed {
+                    format!("{} {kerf} mm", self.localizer.text("shell-kerf"))
+                } else {
+                    format!(
+                        "{} {kerf} mm · {}",
+                        self.localizer.text("shell-kerf"),
+                        self.localizer.text("shell-unconfirmed")
+                    )
+                })
+                .size(11.5)
+                .color(if confirmed {
                     theme_widgets::OK_INK
                 } else {
                     theme_widgets::WARN_INK
-                },
-                format!(
-                    "{} {kerf} · {}",
-                    self.localizer.text("cutting-kerf"),
-                    self.localizer.text(
-                        if project.confirmed_shop_kerf == Some(project.cutting_kerf) {
-                            "shell-confirmed"
-                        } else {
-                            "shell-unconfirmed"
-                        }
-                    )
-                ),
+                }),
             );
             if let Some(date) = kerf_confirmation_label(project, &self.localizer) {
-                kerf_state.on_hover_text(date);
+                kerf_label.on_hover_text(date);
             }
-            ui.separator();
+            ui.add_space(12.0);
             match self.session.active {
-                Workspace::Design => {
-                    ui.small(format!(
+                Workspace::Design | Workspace::Hardware => {
+                    ui.label(small(format!(
+                        "{} {} mm",
+                        self.localizer.text("shell-grid"),
+                        assembly_ui::short_length(project.grid_spacing, locale)
+                    )));
+                    ui.add_space(12.0);
+                    ui.label(small(format!(
                         "{} {}",
                         project.boards.len(),
-                        self.localizer.text("board-list")
-                    ));
+                        self.localizer.text("shell-parts")
+                    )));
                 }
                 Workspace::Stock => {
-                    ui.small(format!(
+                    ui.label(small(format!(
                         "{} {}",
                         project.stock.len(),
                         self.localizer.text("shell-stock-pieces")
-                    ));
+                    )));
                 }
                 Workspace::CutPlan => {
-                    ui.small(format!(
+                    ui.label(small(format!(
                         "{} {}",
                         project.allocations.len(),
                         self.localizer.text("shell-placements")
-                    ));
-                }
-                Workspace::Hardware => {
-                    ui.small(format!(
-                        "{} {}",
-                        project.hinge_installations.len(),
-                        self.localizer.text("shell-installations")
-                    ));
+                    )));
                 }
                 Workspace::Handoff => {
-                    ui.small(format!(
+                    ui.label(small(format!(
                         "{} {}",
                         project.export_records.len(),
                         self.localizer.text("shell-receipts")
-                    ));
+                    )));
                 }
             }
-            if self.preferences.navigation_hints {
-                let key = match self.session.active {
-                    Workspace::Design => "shell-hint-design",
-                    Workspace::Stock => "shell-hint-stock",
-                    Workspace::CutPlan => "shell-hint-cut-plan",
-                    Workspace::Hardware => "shell-hint-hardware",
-                    Workspace::Handoff => "shell-hint-handoff",
-                };
-                ui.small(self.localizer.text(key));
-            }
             if issues.total() > 0 {
-                ui.colored_label(
-                    theme_widgets::WARN_INK,
-                    format!(
-                        "{} {} · {} {} · {} {}{}",
+                ui.add_space(12.0);
+                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 13.0));
+                let mut parts = Vec::new();
+                if issues.unallocated > 0 {
+                    parts.push(format!(
+                        "{} {}",
                         issues.unallocated,
-                        self.localizer.text("shell-unallocated"),
+                        self.localizer.text("shell-unallocated")
+                    ));
+                }
+                if issues.conflicted > 0 {
+                    parts.push(format!(
+                        "{} {}",
                         issues.conflicted,
-                        self.localizer.text("global-conflicted"),
+                        self.localizer.text("global-conflicted")
+                    ));
+                }
+                if issues.unknown_proof > 0 {
+                    parts.push(format!(
+                        "{} {}",
                         issues.unknown_proof,
-                        self.localizer.text("shell-proof-unknown"),
-                        if issues.hidden > 0 {
-                            format!(
-                                " · {} {}",
-                                issues.hidden,
-                                self.localizer.text("global-hidden")
-                            )
-                        } else {
-                            String::new()
-                        }
-                    ),
+                        self.localizer.text("shell-proof-unknown")
+                    ));
+                }
+                let response = ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(parts.join(" · "))
+                            .size(11.5)
+                            .color(theme_widgets::WARN_INK),
+                    )
+                    .sense(egui::Sense::click()),
                 );
+                let response = if issues.hidden > 0 {
+                    response.on_hover_text(format!(
+                        "{} {}",
+                        issues.hidden,
+                        self.localizer.text("global-hidden")
+                    ))
+                } else {
+                    response
+                };
+                if response.clicked() && self.session.active != Workspace::CutPlan {
+                    self.request_navigation(NavigationRoute::Workspace(Workspace::CutPlan));
+                }
             }
             if self.optimizer.running() {
-                ui.separator();
-                ui.small(self.localizer.text("shell-search-active"));
+                ui.add_space(12.0);
+                ui.label(small(self.localizer.text("shell-search-active")));
             }
             if self.export_activity.is_some() {
-                ui.separator();
-                ui.small(self.localizer.text("shell-export-active"));
+                ui.add_space(12.0);
+                ui.label(small(self.localizer.text("shell-export-active")));
             }
-            ui.scope(|ui| {
-                let locale = if self.localizer.language() == Language::En {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                let money_locale = if self.localizer.language() == Language::En {
                     plan_my_cabinet::money::MoneyLocale::English
                 } else {
                     plan_my_cabinet::money::MoneyLocale::PortugueseBrazil
                 };
-                let amount = if invalid_estimate {
-                    self.localizer.text("cost-invalid")
+                let (amount, known) = if invalid_estimate {
+                    (self.localizer.text("cost-invalid"), false)
                 } else {
                     total.map_or_else(
-                        || self.localizer.text("cost-incomplete"),
-                        |amount| amount.display(locale),
+                        || (self.localizer.text("cost-incomplete"), false),
+                        |amount| (amount.display(money_locale), true),
                     )
                 };
-                ui.small(format!("{}: {amount}", self.localizer.text("cost-total")));
+                ui.label(if known {
+                    theme_widgets::mono(amount, 11.5).color(theme_widgets::TEXT)
+                } else {
+                    egui::RichText::new(amount)
+                        .size(11.5)
+                        .color(theme_widgets::WARN_INK)
+                });
+                ui.label(small(self.localizer.text("shell-est-spending")));
+                let hint = match (self.session.active, self.move_tool.mode) {
+                    (Workspace::Design, viewport::ToolMode::Move) => Some("viewport-move-hint"),
+                    (Workspace::Design, viewport::ToolMode::Measure) => {
+                        Some("viewport-measure-hint")
+                    }
+                    _ => None,
+                };
+                if self.preferences.navigation_hints
+                    && let Some(key) = hint
+                {
+                    ui.add_space(14.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(self.localizer.text(key))
+                                .size(11.5)
+                                .color(theme_widgets::FAINT),
+                        )
+                        .truncate(),
+                    );
+                }
             });
         });
     }
@@ -4478,27 +4611,20 @@ impl DesktopApp {
         };
         let mut texts = vec![
             format!(
-                "{} {} · {}",
-                self.localizer.text("cutting-kerf"),
-                format_length(
-                    p.cutting_kerf,
-                    Unit::Mm,
-                    if en { Locale::En } else { Locale::PtBr },
-                    3
-                ),
+                "{} {} mm · {}",
+                self.localizer.text("shell-kerf"),
+                assembly_ui::short_length(p.cutting_kerf, if en { Locale::En } else { Locale::PtBr }),
                 self.localizer
                     .text(if p.confirmed_shop_kerf == Some(p.cutting_kerf) {
-                        "shell-confirmed"
+                        ""
                     } else {
                         "shell-unconfirmed"
                     })
             ),
             format!("{count} {}", self.localizer.text(count_key)),
-            format!("{}: {amount}", self.localizer.text("cost-total")),
+            format!("{} {amount}", self.localizer.text("shell-est-spending")),
         ];
-        if self.preferences.navigation_hints {
-            texts.push(self.localizer.text(hint_key));
-        }
+        let _ = hint_key;
         if self.preferences_error.is_some() {
             texts.push(self.localizer.text("preferences-save-warning"));
         }
@@ -4600,24 +4726,331 @@ impl DesktopApp {
     fn show_scrolled_workspace_inspector(&mut self, ui: &mut egui::Ui, width: f32, height: f32) {
         let index = (self.session.active.number() - 1) as usize;
         let width = width.min(ui.available_width());
-        let scroll_area = if self.session.active == Workspace::Hardware {
-            egui::ScrollArea::vertical()
-        } else {
-            egui::ScrollArea::both()
-        };
-        let scroll = scroll_area
+        let scroll = egui::ScrollArea::vertical()
             .id_salt(("workspace-inspector", self.session.active.number()))
             .max_height(height)
-            .horizontal_scroll_offset(self.inspector_scroll[index].x)
+            .auto_shrink([false, false])
             .vertical_scroll_offset(self.inspector_scroll[index].y)
             .show(ui, |ui| {
-                ui.set_width((width - ui.spacing().scroll.bar_width).max(1.0));
-                // Horizontal scrolling remains available for wide tables, but
-                // must not opt prose/headings out of wrapping to the pane.
+                ui.set_width(width.max(1.0));
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                 self.show_workspace_inspector(ui);
             });
         self.inspector_scroll[index] = scroll.state.offset;
+    }
+
+    /// Left pane: one scroll area per workspace; content lives with its workspace.
+    fn show_controls_pane(&mut self, ui: &mut egui::Ui) {
+        let active = self.session.active;
+        let scroll = egui::ScrollArea::vertical()
+            .id_salt((
+                "workspace-controls-scroll",
+                self.editor.project().id,
+                active.number(),
+            ))
+            .auto_shrink([false, false])
+            .vertical_scroll_offset(self.session.view(active).scroll)
+            .show(ui, |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                match active {
+                    Workspace::Design => self.show_design_controls(ui),
+                    Workspace::Stock => {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .show(ui, |ui| self.show_stock_materials(ui));
+                    }
+                    Workspace::CutPlan => {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .show(ui, |ui| {
+                                let blocked = self.palette.open || self.other_modal_open();
+                                if let Some(request) = sheet_ui::show_sheet_list(
+                                    ui,
+                                    &self.editor,
+                                    &self.selection,
+                                    &self.localizer,
+                                    &mut self.sheet_repair,
+                                    blocked,
+                                    sheet_ui::SheetFocus {
+                                        sheet: self.session.focused_sheet,
+                                        issue: self.session.allocation_issue,
+                                        scroll_to_target: self.session.pending_cut_focus,
+                                    },
+                                ) {
+                                    let _ = self.invoke(request);
+                                }
+                                self.show_allocation_issues(ui);
+                            });
+                    }
+                    Workspace::Hardware => {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .show(ui, |ui| {
+                                self.show_pinned_catalog(ui);
+                                self.show_hinge_list(ui);
+                                self.show_door_motion_controls(ui);
+                                self.show_hardware_list(ui);
+                            });
+                    }
+                    Workspace::Handoff => {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(14, 8))
+                            .show(ui, |ui| self.show_export_preparation(ui));
+                    }
+                }
+            });
+        self.session.view_mut(active).scroll = scroll.state.offset.y;
+    }
+
+    fn show_design_controls(&mut self, ui: &mut egui::Ui) {
+        self.selection.retain_objects(self.editor.project());
+        self.show_hierarchy(ui);
+        let mut notices = Vec::new();
+        if let Some(notice) = self.first_fit_notice {
+            notices.push(self.localizer.text(match notice {
+                FirstFit::Allocated(_) => "first-fit-allocated",
+                FirstFit::NoFit => "first-fit-no-fit",
+                FirstFit::SearchExhausted => "first-fit-exhausted",
+            }));
+        }
+        for conflict in &self.material_conflicts {
+            let name = self
+                .editor
+                .project()
+                .boards
+                .iter()
+                .find(|b| b.id == conflict.board_id)
+                .map(|b| b.name.as_str())
+                .unwrap_or("—");
+            notices.push(format!(
+                "{}: {}",
+                name,
+                conflict_labels(&self.localizer, conflict)
+            ));
+        }
+        let template = self.template_message.clone();
+        if notices.is_empty() && template.is_none() && !self.board_action_error {
+            return;
+        }
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                theme_widgets::warn_callout().show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    for notice in notices {
+                        ui.label(
+                            egui::RichText::new(notice)
+                                .size(12.0)
+                                .color(theme_widgets::WARN_INK),
+                        );
+                    }
+                    if self.board_action_error {
+                        ui.label(
+                            egui::RichText::new(self.localizer.text("error-board-duplicate"))
+                                .size(12.0)
+                                .color(theme_widgets::DANGER),
+                        );
+                    }
+                    if let Some(message) = template {
+                        ui.label(
+                            egui::RichText::new(message)
+                                .size(12.0)
+                                .color(theme_widgets::WARN_INK),
+                        );
+                        if theme_widgets::text_button(
+                            ui,
+                            &self.localizer.text("template-setup-open-stock"),
+                            theme_widgets::ACCENT_DARK,
+                            true,
+                        )
+                        .clicked()
+                        {
+                            self.request_navigation(NavigationRoute::Workspace(Workspace::Stock));
+                        }
+                    }
+                });
+            });
+    }
+
+    /// Central pane: 3D viewport, sheet canvas, stock table or PDF preview.
+    fn show_canvas_pane(&mut self, ui: &mut egui::Ui, drawer_modal: bool, inspector_visible: bool) {
+        match self.session.active {
+            Workspace::Stock => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("stock-content", self.editor.project().id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(24, 20))
+                            .show(ui, |ui| self.show_stock_list(ui));
+                    });
+            }
+            Workspace::Handoff => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("handoff-content", self.editor.project().id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(16, 12))
+                            .show(ui, |ui| {
+                                let packet = self.export_candidate.as_ref().and_then(|(key, result)| {
+                                    (key == &self.export_key())
+                                        .then(|| result.as_ref().ok())
+                                        .flatten()
+                                        .cloned()
+                                });
+                                if let Some(packet) = packet {
+                                    let labels = DocumentPreviewLabels {
+                                        previous: &self.localizer.text("export-preview-previous"),
+                                        next: &self.localizer.text("export-preview-next"),
+                                        page: &self.localizer.text("export-preview-page"),
+                                        zoom: &self.localizer.text("export-preview-zoom"),
+                                        fit: &self.localizer.text("export-preview-fit"),
+                                    };
+                                    if show_document_preview(
+                                        ui,
+                                        packet.document(),
+                                        &mut self.export_preview,
+                                        &labels,
+                                    )
+                                    .is_err()
+                                    {
+                                        ui.label(self.localizer.text("export-render-failed"));
+                                    }
+                                } else {
+                                    ui.label(self.localizer.text("export-review-stale"));
+                                }
+                            });
+                    });
+            }
+            Workspace::CutPlan => {
+                let other_modal = drawer_modal
+                    || self.blocking_surface_open()
+                    || self.door_motion.is_some();
+                if let Some(request) = sheet_ui::show_with_layout(
+                    ui,
+                    &mut self.editor,
+                    &mut self.selection,
+                    &self.localizer,
+                    other_modal,
+                    &mut self.sheet_repair,
+                    sheet_ui::SheetFocus {
+                        sheet: self.session.focused_sheet,
+                        issue: self.session.allocation_issue,
+                        scroll_to_target: self.session.pending_cut_focus,
+                    },
+                    inspector_visible,
+                ) {
+                    let _ = self.invoke(request);
+                }
+                self.session.pending_cut_focus = false;
+            }
+            Workspace::Design | Workspace::Hardware => self.show_scene_pane(ui, drawer_modal),
+        }
+    }
+
+    fn show_scene_pane(&mut self, ui: &mut egui::Ui, drawer_modal: bool) {
+        let modal = drawer_modal || self.blocking_surface_open() || self.sheet_repair.active();
+        if self.door_motion.is_some_and(|(id, angle)| {
+            self.editor
+                .project()
+                .door_joints
+                .iter()
+                .find(|j| j.id == id)
+                .is_none_or(|j| {
+                    plan_my_cabinet::door_joint::derived_poses(self.editor.project(), j, angle)
+                        .is_err()
+                })
+        }) {
+            self.door_motion = None;
+        }
+        let motion_poses = self.door_motion.and_then(|(id, angle)| {
+            self.editor
+                .project()
+                .door_joints
+                .iter()
+                .find(|j| j.id == id)
+                .and_then(|j| {
+                    plan_my_cabinet::door_joint::derived_poses(self.editor.project(), j, angle).ok()
+                })
+                .map(|poses| poses.into_iter().collect::<std::collections::HashMap<_, _>>())
+        });
+        let surface = ui.allocate_ui_with_layout(
+            ui.available_size(),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                let overlay_blocked = self.session.active == Workspace::Hardware
+                    && self.show_hardware_motion_overlay(
+                        ui.ctx(),
+                        ui.available_rect_before_wrap().intersect(ui.clip_rect()),
+                    );
+                viewport::show_move_with_hardware(
+                    ui,
+                    &mut self.camera,
+                    self.editor.preview().unwrap_or(self.editor.project()),
+                    &mut self.selection,
+                    &mut self.move_tool,
+                    modal || overlay_blocked,
+                    self.localizer.language(),
+                    self.preferences.inverse_scroll_zoom,
+                    self.preferences.material_tint,
+                    self.placement.as_ref().and_then(PlacementDialog::highlighted),
+                    motion_poses.as_ref(),
+                    self.measurement_scope,
+                    self.measurement_frame,
+                    match (self.session.active, self.session.inspector) {
+                        (Workspace::Hardware, Some(InspectorTarget::Installation(id))) => Some(id),
+                        _ => None,
+                    },
+                    self.session.active == Workspace::Hardware,
+                )
+            },
+        );
+        let action = surface.inner;
+        if let Some(capture) = &mut self.capture {
+            capture.set_snap_evidence(self.move_tool.capture_evidence());
+        }
+        if self.move_tool.take_grid_edit_request() {
+            let _ = self.invoke(Request::new(A::EditGrid));
+        }
+        if let Some(proposal) = action.selection {
+            self.request_scene_selection(proposal.picked, proposal.additive);
+        }
+        match action.drag {
+            Some(viewport::DragAction::Preview(id, pose)) => {
+                if let Ok(mut session) =
+                    plan_my_cabinet::placement::PlacementSession::resume(&mut self.editor, id)
+                {
+                    if session.preview_free(pose).is_ok() {
+                        ui.ctx().request_repaint();
+                    }
+                    session.pause();
+                }
+            }
+            Some(viewport::DragAction::Accept(id, pose)) => {
+                if let Some(pose) = pose {
+                    if let Ok(mut session) =
+                        plan_my_cabinet::placement::PlacementSession::resume(&mut self.editor, id)
+                        && session.preview_free(pose).is_ok()
+                    {
+                        let _ = session.accept();
+                    }
+                } else {
+                    self.editor.cancel_preview();
+                }
+            }
+            Some(viewport::DragAction::Cancel(ids, active)) => {
+                self.editor.cancel_preview();
+                self.selection.ids = ids;
+                self.selection.active = active;
+            }
+            None => {}
+        }
+        // A collapsed pane is a foreground drawer. Keep the app-owned draft
+        // alive, but do not let the HUD cover its close/actions or a modal.
+        if self.session.active == Workspace::Design && self.design_hud_available() {
+            self.show_design_hud(ui.ctx(), surface.response.rect);
+        }
     }
 
     fn show_workspace(&mut self, ui: &mut egui::Ui) {
@@ -4653,8 +5086,6 @@ impl DesktopApp {
         ) {
             self.request_navigation(NavigationRoute::Workspace(workspace));
         }
-        self.show_shell_header(ui);
-        self.show_shell_status(ui, issues, total, invalid_estimate);
         if let Some(workspace) = workspace_shell::rail(
             ui,
             self.session.active,
@@ -4667,481 +5098,68 @@ impl DesktopApp {
                     || self.placement.is_some()),
             issues,
         ) {
-            self.request_navigation(NavigationRoute::Workspace(workspace));
+            match workspace {
+                workspace_shell::RailAction::Workspace(workspace) => {
+                    self.request_navigation(NavigationRoute::Workspace(workspace));
+                }
+                workspace_shell::RailAction::Language(language) => {
+                    let _ = self.invoke(
+                        Request::new(A::SetUiLanguage).argument(Argument::Language(language)),
+                    );
+                }
+                workspace_shell::RailAction::Settings => {
+                    let _ = self.invoke(Request::new(A::OpenSettings));
+                }
+            }
         }
+        self.show_shell_header(ui);
+        self.show_shell_status(ui, issues, total, invalid_estimate);
         let camera_workspace = self.session.active;
         std::mem::swap(
             &mut self.camera,
             &mut self.session.view_mut(camera_workspace).camera,
         );
-        egui::CentralPanel::default().show(ui, |ui| {
-            let available = ui.available_size();
-            let layout = workspace_shell::PaneLayout::for_width(self.session.active, available.x);
-            if self.open_drawer.is_some_and(|drawer| !layout.collapsed(drawer)) {
-                self.open_drawer = None;
-            }
-            let drawer_pos = ui.min_rect().min;
-             ui.horizontal(|ui| {
-                 let controls_drawer_open = self.open_drawer == Some(workspace_shell::Drawer::Controls);
-                 let controls_title = self.localizer.text(workspace_shell::ENTRIES[(self.session.active.number() - 1) as usize].1);
-                 let drawer_controls_width = workspace_shell::PaneLayout::preferred(self.session.active).controls.min(available.x - 20.0);
-                let close_controls = {
-                let mut controls = |ui: &mut egui::Ui, width: f32, height: f32| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(width, height),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        let active = self.session.active;
-                         let scroll_area = if active == Workspace::Hardware {
-                             egui::ScrollArea::vertical()
-                         } else {
-                             egui::ScrollArea::both()
-                         };
-                         let scroll = scroll_area
-                            .id_salt(("workspace-controls-scroll", self.editor.project().id, active.number()))
-                            .vertical_scroll_offset(self.session.view(active).scroll)
-                            .horizontal_scroll_offset(self.controls_horizontal_scroll[(active.number() - 1) as usize])
-                             .show(ui, |ui| {
-                                 ui.set_width((width - ui.spacing().scroll.bar_width).max(1.0));
-                                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                                  if !matches!(active, Workspace::Design | Workspace::Hardware) {
-                                     ui.heading(self.localizer.text(workspace_shell::ENTRIES[(active.number() - 1) as usize].1));
-                                 }
-                                if active == Workspace::Design {
-                                self.selection.retain_objects(self.editor.project());
-                                self.show_hierarchy(ui);
-                                ui.separator();
-                                ui.push_id("design-view-language", |ui| ui.collapsing(self.localizer.text("shell-advanced"), |ui| {
-                                ui.label(self.localizer.text("viewport-heading"));
-                                let current = self.localizer.language();
-                                let mut selected = current;
-                                egui::ComboBox::from_label(self.localizer.text("ui-language"))
-                                    .selected_text(self.localizer.text(match current {
-                                        Language::En => "language-en",
-                                        Language::PtBr => "language-pt-br",
-                                    }))
-                                    .show_ui(ui, |ui| {
-                                        combo_option(
-                                            ui,
-                                            &mut selected,
-                                            Language::En,
-                                            self.localizer.text("language-en"),
-                                        );
-                                        combo_option(
-                                            ui,
-                                            &mut selected,
-                                            Language::PtBr,
-                                            self.localizer.text("language-pt-br"),
-                                        );
-                                    });
-                                if selected != current {
-                                    let _ = self.invoke(
-                                        Request::new(A::SetUiLanguage)
-                                            .argument(Argument::Language(selected)),
-                                    );
-                                }
-                                }));
-                                }
-                                if !matches!(active, Workspace::CutPlan | Workspace::Hardware) {
-                                    ui.label(
-                                        self.localizer
-                                            .text(self.editor.last_export_status().label_key()),
-                                    );
-                                }
-                                  if active == Workspace::Design {
-                                 if active != Workspace::CutPlan { ui.separator(); }
-                                ui.label(format!(
-                                    "{}: {}",
-                                    self.localizer.text("grid-spacing"),
-                                    format_length(
-                                        self.editor.project().grid_spacing,
-                                        Unit::Mm,
-                                        if self.localizer.language() == Language::En {
-                                            Locale::En
-                                        } else {
-                                            Locale::PtBr
-                                        },
-                                        3
-                                    )
-                                ));
-                                if ui
-                                    .add_enabled(
-                                        !self.modal_open(),
-                                        egui::Button::new(self.localizer.text("grid-edit")),
-                                    )
-                                    .clicked()
-                                {
-                                    let _ = self.invoke(Request::new(A::EditGrid));
-                                }
-                                ui.label(format!(
-                                    "{}: {}",
-                                    self.localizer.text("cutting-kerf"),
-                                    format_length(
-                                        self.editor.project().cutting_kerf,
-                                        Unit::Mm,
-                                        if self.localizer.language() == Language::En {
-                                            Locale::En
-                                        } else {
-                                            Locale::PtBr
-                                        },
-                                        3
-                                    )
-                                ));
-                                if let Some(label) =
-                                    kerf_confirmation_label(self.editor.project(), &self.localizer)
-                                {
-                                    ui.small(label);
-                                }
-                                ui.small(self.localizer.text("cutting-kerf-hint"));
-                                if ui
-                                    .add_enabled(
-                                        !self.modal_open(),
-                                        egui::Button::new(self.localizer.text("cutting-kerf-edit")),
-                                    )
-                                    .clicked()
-                                {
-                                    let _ = self.invoke(Request::new(A::EditKerf));
-                                }
-                                }
-                                if active == Workspace::Design && let Some(notice) = self.first_fit_notice {
-                                    ui.label(self.localizer.text(match notice {
-                                        FirstFit::Allocated(_) => "first-fit-allocated",
-                                        FirstFit::NoFit => "first-fit-no-fit",
-                                        FirstFit::SearchExhausted => "first-fit-exhausted",
-                                    }));
-                                }
-                                if active == Workspace::Design && let Some(message) = &self.template_message {
-                                    ui.colored_label(theme_widgets::WARN_INK, message);
-                                    if ui.button(self.localizer.text("template-setup-open-stock")).clicked() {
-                                        self.request_navigation(NavigationRoute::Workspace(Workspace::Stock));
-                                    }
-                                }
-                                ui.separator();
-                                if active == Workspace::Design && ui
-                                    .add_enabled(
-                                        !self.modal_open(),
-                                        egui::Button::new(self.localizer.text("board-new")),
-                                    )
-                                    .clicked()
-                                {
-                                    let _ = self.invoke(Request::new(A::NewBoard));
-                                }
-                                if matches!(active, Workspace::Design | Workspace::Stock) && ui
-                                    .add_enabled(
-                                        !self.modal_open(),
-                                        egui::Button::new(self.localizer.text("material-new")),
-                                    )
-                                    .clicked()
-                                {
-                                    let _ = self.invoke(Request::new(A::NewMaterial));
-                                }
-                                let mut modal_open = self.modal_open();
-                                if active == Workspace::Stock {
-                                    self.show_stock_materials(ui);
-                                }
-                                 if matches!(active, Workspace::Design | Workspace::Stock) {
-                                    ui.collapsing(self.localizer.text("shell-targets"), |ui| self.show_session_routes(ui));
-                                }
-                                 if active == Workspace::CutPlan {
-                                 let blocked = self.palette.open || self.other_modal_open();
-                                 if let Some(request) = sheet_ui::show_sheet_list(
-                                     ui,
-                                     &self.editor,
-                                     &self.selection,
-                                     &self.localizer,
-                                     &mut self.sheet_repair,
-                                     blocked,
-                                     sheet_ui::SheetFocus {
-                                         sheet: self.session.focused_sheet,
-                                         issue: self.session.allocation_issue,
-                                         scroll_to_target: self.session.pending_cut_focus,
-                                     },
-                                 ) {
-                                     let _ = self.invoke(request);
-                                 }
-                                  ui.push_id("cut-issues", |ui| {
-                                      ui.collapsing(self.localizer.text("shell-advanced"), |ui| {
-                                          self.show_allocation_issues(ui);
-                                      });
-                                  });
-                                 }
-                                if active == Workspace::Handoff {
-                                self.show_export_preparation(ui);
-                                }
-                                if active == Workspace::Design && !self.material_conflicts.is_empty() {
-                                    ui.heading(self.localizer.text("material-post-conflicts"));
-                                    for conflict in &self.material_conflicts {
-                                        let name = self
-                                            .editor
-                                            .project()
-                                            .boards
-                                            .iter()
-                                            .find(|b| b.id == conflict.board_id)
-                                            .map(|b| b.name.as_str())
-                                            .unwrap_or("—");
-                                        ui.colored_label(
-                                            egui::Color32::YELLOW,
-                                            format!(
-                                                "{}: {}",
-                                                name,
-                                                conflict_labels(&self.localizer, conflict)
-                                            ),
-                                        );
-                                    }
-                                }
-                                if active == Workspace::Hardware {
-                                self.show_pinned_catalog(ui);
-                                self.show_hinge_list(ui);
-                                ui.collapsing(self.localizer.text("shell-advanced"), |ui| {
-                                    self.show_hardware_list(ui);
-                                    self.show_session_routes(ui);
-                                    self.show_door_motion_controls(ui);
-                                });
-                                }
-                                if active == Workspace::Design {
-                                ui.collapsing(self.localizer.text("shell-advanced"), |ui| {
-                                self.show_measurement(ui);
-                                if actions::button(
-                                    ui,
-                                    &self.localizer,
-                                    Request::new(A::BatchDimensions),
-                                    self.action_availability(Request::new(A::BatchDimensions)),
-                                )
-                                .clicked()
-                                {
-                                    let _ = self.invoke(Request::new(A::BatchDimensions));
-                                }
-                                if self.board_action_error {
-                                    ui.colored_label(
-                                        egui::Color32::LIGHT_RED,
-                                        self.localizer.text("error-board-duplicate"),
-                                    );
-                                }
-                                let locale = if self.localizer.language() == Language::En {
-                                    Locale::En
-                                } else {
-                                    Locale::PtBr
-                                };
-                                let mut grain_edit = None;
-                                let boards = self.editor.project().boards.clone();
-                                for board in &boards {
-                                    ui.horizontal(|ui| {
-                                        let mut selected = self.selection.ids.contains(&board.id);
-                                        if ui
-                                            .add_enabled(
-                                                !modal_open,
-                                                egui::Checkbox::new(&mut selected, ""),
-                                            )
-                                            .changed()
-                                        {
-                                            self.request_scene_selection(Some(board.id), true);
-                                        }
-                                        let label = if self.selection.active == Some(board.id) {
-                                            format!("* {}", board.name)
-                                        } else {
-                                            board.name.clone()
-                                        };
-                                        if ui
-                                            .add_enabled(
-                                                !modal_open,
-                                                egui::Button::new(label).selected(
-                                                    self.selection.active == Some(board.id),
-                                                ),
-                                            )
-                                            .clicked()
-                                        {
-                                            let additive = ui.input(|i| {
-                                                i.modifiers.command || i.modifiers.shift
-                                            });
-                                            let _ = self.invoke(
-                                                Request::with(
-                                                    A::SelectBoard,
-                                                    Target::Board(board.id),
-                                                )
-                                                .argument(Argument::Additive(additive)),
-                                            );
-                                        }
-                                        if ui
-                                            .add_enabled(
-                                                !modal_open
-                                                    && !self.editor.project().materials.is_empty(),
-                                                egui::Button::new(
-                                                    self.localizer.text("board-assign-material"),
-                                                ),
-                                            )
-                                            .clicked()
-                                        {
-                                            let _ = self.invoke(Request::with(
-                                                A::AssignMaterial,
-                                                Target::Board(board.id),
-                                            ));
-                                            modal_open = true;
-                                        }
-                                    });
-                                    ui.small(board.id.to_string());
-                                    ui.horizontal(|ui| {
-                                        if ui
-                                            .add_enabled(
-                                                !modal_open,
-                                                egui::Button::new(
-                                                    self.localizer.text("placement-numeric"),
-                                                ),
-                                            )
-                                            .clicked()
-                                        {
-                                            let _ = self.invoke(Request::with(
-                                                A::PositionBoard,
-                                                Target::Board(board.id),
-                                            ));
-                                            modal_open = true;
-                                        }
-                                        if ui
-                                            .add_enabled(
-                                                !modal_open
-                                                    && self.editor.project().boards.len() > 1,
-                                                egui::Button::new(
-                                                    self.localizer.text("placement-face"),
-                                                ),
-                                            )
-                                            .clicked()
-                                        {
-                                            let _ = self.invoke(Request::with(
-                                                A::PlaceFace,
-                                                Target::Board(board.id),
-                                            ));
-                                            modal_open = true;
-                                        }
-                                    });
-                                    if ui
-                                        .add_enabled(
-                                            !modal_open,
-                                            egui::Button::new(
-                                                self.localizer.text("board-duplicate"),
-                                            ),
-                                        )
-                                        .clicked()
-                                    {
-                                        let _ = self.invoke(Request::with(
-                                            A::DuplicateBoard,
-                                            Target::Board(board.id),
-                                        ));
-                                        modal_open = true;
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !modal_open,
-                                            egui::Button::new(
-                                                self.localizer.text("board-edit-dimension"),
-                                            ),
-                                        )
-                                        .clicked()
-                                    {
-                                        let _ = self.invoke(Request::with(
-                                            A::EditDimensions,
-                                            Target::Board(board.id),
-                                        ));
-                                        modal_open = true;
-                                    }
-                                    ui.label(format!(
-                                        "{} × {} × {} · {}",
-                                        format_length(board.length, Unit::Mm, locale, 3),
-                                        format_length(board.width, Unit::Mm, locale, 3),
-                                        format_length(board.thickness, Unit::Mm, locale, 3),
-                                        self.localizer.text(
-                                            if self
-                                                .editor
-                                                .project()
-                                                .allocations
-                                                .iter()
-                                                .any(|a| a.board_id == board.id)
-                                            {
-                                                "board-allocated"
-                                            } else {
-                                                "board-unallocated"
-                                            }
-                                        )
-                                    ));
-                                    if let Some(material) = self
-                                        .editor
-                                        .project()
-                                        .materials
-                                        .iter()
-                                        .find(|material| material.id == board.material_id)
-                                    {
-                                        let mut selected = board.grain_override;
-                                        ui.add_enabled_ui(!self.modal_open(), |ui| {
-                                            ui.label(self.localizer.text("board-grain"));
-                                            egui::ComboBox::from_id_salt(("board-grain", board.id))
-                                                .selected_text(
-                                                    self.localizer.text(board_grain_key(selected)),
-                                                )
-                                                .show_ui(ui, |ui| {
-                                                    for (value, key) in [
-                                                        (None, "grain-follow-default"),
-                                                        (Some(BoardGrain::Length), "grain-length"),
-                                                        (Some(BoardGrain::Width), "grain-width"),
-                                                        (
-                                                            Some(BoardGrain::Unrestricted),
-                                                            "grain-unrestricted",
-                                                        ),
-                                                    ] {
-                                                        combo_option(
-                                                            ui,
-                                                            &mut selected,
-                                                            value,
-                                                            self.localizer.text(key),
-                                                        );
-                                                    }
-                                                });
-                                        });
-                                        if selected != board.grain_override {
-                                            grain_edit = Some((board.id, selected));
-                                        }
-                                        ui.small(format!(
-                                            "{}: {}",
-                                            self.localizer.text("board-effective-grain"),
-                                            self.localizer
-                                                .text(grain_key(board.effective_grain(material)))
-                                        ));
-                                    }
-                                }
-                                if let Some((id, selected)) = grain_edit {
-                                    let _ = self.invoke(
-                                        Request::with(A::SetGrain, Target::Board(id))
-                                            .argument(Argument::Grain(selected)),
-                                    );
-                                }
-                                ui.separator();
-                                ui.label(self.localizer.text("viewport-axes"));
-                                });
-                                }
-                            });
-                        self.session.view_mut(active).scroll = scroll.state.offset.y;
-                        self.controls_horizontal_scroll[(active.number() - 1) as usize] = scroll.state.offset.x;
-                    },
-                );
-                };
-                let mut close_controls = false;
-                if layout.controls > 0.0 {
-                    controls(ui, layout.controls, available.y);
-                    ui.separator();
-                } else if controls_drawer_open {
-                    let mut open = true;
-                    egui::Window::new(controls_title)
-                        .id(egui::Id::new("workspace-controls-drawer"))
-                        .fixed_pos(drawer_pos)
-                        .resizable(false)
-                        .collapsible(false)
-                        .open(&mut open)
-                         .show(ui.ctx(), |ui| controls(ui, drawer_controls_width, (available.y - 50.0).max(1.0)));
-                    close_controls = !open;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let available = ui.available_size();
+                let active = self.session.active;
+                let layout = workspace_shell::PaneLayout::for_width(active, available.x);
+                if self.open_drawer.is_some_and(|drawer| !layout.collapsed(drawer)) {
+                    self.open_drawer = None;
                 }
-                close_controls
-                };
-                if close_controls { self.open_drawer = None; }
-                if self.session.active == Workspace::CutPlan
+                let drawer_pos = ui.min_rect().min;
+                let pane_frame = egui::Frame::new()
+                    .fill(theme_widgets::PANEL)
+                    .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER));
+                if layout.controls > 0.0 {
+                    egui::Panel::left(egui::Id::new(("workspace-controls", active.number())))
+                        .exact_size(layout.controls)
+                        .resizable(false)
+                        .frame(pane_frame)
+                        .show(ui, |ui| self.show_controls_pane(ui));
+                } else if self.open_drawer == Some(workspace_shell::Drawer::Controls) {
+                    let mut open = true;
+                    let width = workspace_shell::PaneLayout::preferred(active)
+                        .controls
+                        .min(available.x - 20.0);
+                    egui::Window::new(self.localizer.text(
+                        workspace_shell::ENTRIES[(active.number() - 1) as usize].1,
+                    ))
+                    .id(egui::Id::new("workspace-controls-drawer"))
+                    .fixed_pos(drawer_pos)
+                    .fixed_size(egui::vec2(width, (available.y - 50.0).max(1.0)))
+                    .resizable(false)
+                    .collapsible(false)
+                    .open(&mut open)
+                    .show(ui.ctx(), |ui| self.show_controls_pane(ui));
+                    if !open {
+                        self.open_drawer = None;
+                    }
+                }
+                if active == Workspace::CutPlan
                     && layout.controls == 0.0
-                    && !controls_drawer_open
+                    && self.open_drawer != Some(workspace_shell::Drawer::Controls)
                     && self.optimizer.comparison_open()
                 {
                     let blocked = self.external_modal_open();
@@ -5152,209 +5170,53 @@ impl DesktopApp {
                         blocked,
                     );
                 }
-                let inspector_width = layout.inspector;
-                ui.allocate_ui_with_layout(
-                    egui::vec2(layout.canvas, available.y),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        if self.session.active == Workspace::Stock {
-                            egui::ScrollArea::vertical().id_salt(("stock-content", self.editor.project().id)).show(ui, |ui| self.show_stock_list(ui));
-                        } else if self.session.active == Workspace::Handoff {
-                            egui::ScrollArea::vertical().id_salt(("handoff-content", self.editor.project().id)).show(ui, |ui| {
-                            let packet = self.export_candidate.as_ref().and_then(|(key, result)| {
-                                (key == &self.export_key()).then(|| result.as_ref().ok()).flatten().cloned()
-                            });
-                            if let Some(packet) = packet {
-                                let labels = DocumentPreviewLabels {
-                                    previous: &self.localizer.text("export-preview-previous"),
-                                    next: &self.localizer.text("export-preview-next"),
-                                    page: &self.localizer.text("export-preview-page"),
-                                    zoom: &self.localizer.text("export-preview-zoom"),
-                                    fit: &self.localizer.text("export-preview-fit"),
-                                };
-                                if show_document_preview(ui, packet.document(), &mut self.export_preview, &labels).is_err() {
-                                    ui.label(self.localizer.text("export-render-failed"));
-                                }
-                            } else {
-                                ui.label(self.localizer.text("export-review-stale"));
-                            }
-                             });
-                        } else {
-                        let modal = self.open_drawer.is_some_and(|drawer| layout.collapsed(drawer))
-                            || self.blocking_surface_open()
-                            || self.sheet_repair.active();
-                        if self.door_motion.is_some_and(|(id, angle)| {
-                            self.editor
-                                .project()
-                                .door_joints
-                                .iter()
-                                .find(|j| j.id == id)
-                                .is_none_or(|j| {
-                                    plan_my_cabinet::door_joint::derived_poses(
-                                        self.editor.project(),
-                                        j,
-                                        angle,
-                                    )
-                                    .is_err()
-                                })
-                        }) {
-                            self.door_motion = None;
-                        }
-                        let motion_poses = self.door_motion.and_then(|(id, angle)| {
-                            self.editor
-                                .project()
-                                .door_joints
-                                .iter()
-                                .find(|j| j.id == id)
-                                .and_then(|j| {
-                                    plan_my_cabinet::door_joint::derived_poses(
-                                        self.editor.project(),
-                                        j,
-                                        angle,
-                                    )
-                                    .ok()
-                                })
-                                .map(|poses| {
-                                    poses
-                                        .into_iter()
-                                        .collect::<std::collections::HashMap<_, _>>()
-                                })
+                if layout.inspector > 0.0 {
+                    egui::Panel::right(egui::Id::new(("workspace-inspector", active.number())))
+                        .exact_size(layout.inspector)
+                        .resizable(false)
+                        .frame(pane_frame)
+                        .show(ui, |ui| {
+                            let height = ui.available_height();
+                            self.show_scrolled_workspace_inspector(ui, layout.inspector, height);
                         });
-                        if matches!(self.session.active, Workspace::Design | Workspace::Hardware) {
-                        let surface = ui
-                            .allocate_ui_with_layout(
-                                egui::vec2(
-                                    ui.available_width(),
-                                    ui.available_height(),
-                                ),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    let overlay_blocked = self.session.active == Workspace::Hardware
-                                        && self.show_hardware_motion_overlay(ui.ctx(), ui.available_rect_before_wrap().intersect(ui.clip_rect()));
-                                    viewport::show_move_with_hardware(
-                                        ui,
-                                        &mut self.camera,
-                                        self.editor.preview().unwrap_or(self.editor.project()),
-                                        &mut self.selection,
-                                        &mut self.move_tool,
-                                         modal || overlay_blocked,
-                                         self.localizer.language(),
-                                          self.preferences.inverse_scroll_zoom,
-                                          self.preferences.material_tint,
-                                          self.placement
-                                            .as_ref()
-                                            .and_then(PlacementDialog::highlighted),
-                                         motion_poses.as_ref(),
-                                          self.measurement_scope,
-                                          self.measurement_frame,
-                                          match (self.session.active, self.session.inspector) {
-                                              (Workspace::Hardware, Some(InspectorTarget::Installation(id))) => Some(id),
-                                               _ => None,
-                                           },
-                                          self.session.active == Workspace::Hardware,
-                                     )
-                                },
-                            );
-                        let action = surface.inner;
-                        if let Some(capture) = &mut self.capture {
-                            capture.set_snap_evidence(self.move_tool.capture_evidence());
-                        }
-                        if self.move_tool.take_grid_edit_request() {
-                            let _ = self.invoke(Request::new(A::EditGrid));
-                        }
-                        if let Some(proposal) = action.selection {
-                            self.request_scene_selection(proposal.picked, proposal.additive);
-                        }
-                        match action.drag {
-                            Some(viewport::DragAction::Preview(id, pose)) => {
-                                if let Ok(mut session) =
-                                    plan_my_cabinet::placement::PlacementSession::resume(
-                                        &mut self.editor,
-                                        id,
-                                    )
-                                {
-                                    if session.preview_free(pose).is_ok() {
-                                        ui.ctx().request_repaint();
-                                    }
-                                    session.pause();
-                                }
-                            }
-                            Some(viewport::DragAction::Accept(id, pose)) => {
-                                if let Some(pose) = pose {
-                                    if let Ok(mut session) =
-                                        plan_my_cabinet::placement::PlacementSession::resume(
-                                            &mut self.editor,
-                                            id,
-                                        )
-                                        && session.preview_free(pose).is_ok()
-                                    {
-                                        let _ = session.accept();
-                                    }
-                                } else {
-                                    self.editor.cancel_preview();
-                                }
-                            }
-                            Some(viewport::DragAction::Cancel(ids, active)) => {
-                                self.editor.cancel_preview();
-                                self.selection.ids = ids;
-                                self.selection.active = active;
-                            }
-                            None => {}
-                        }
-                        // A collapsed pane is a foreground drawer. Keep the
-                        // app-owned draft alive, but do not let the HUD's own
-                        // foreground area cover its close/actions or a modal.
-                        if self.design_hud_available() {
-                            self.show_design_hud(ui.ctx(), surface.response.rect);
-                        }
-                        }
-                        if self.session.active == Workspace::CutPlan {
-                        let other_modal = self.open_drawer.is_some_and(|drawer| layout.collapsed(drawer))
-                            || self.blocking_surface_open()
-                            || self.door_motion.is_some();
-                        if let Some(request) = sheet_ui::show_with_layout(
-                            ui,
-                            &mut self.editor,
-                            &mut self.selection,
-                            &self.localizer,
-                            other_modal,
-                            &mut self.sheet_repair,
-                            sheet_ui::SheetFocus {
-                                sheet: self.session.focused_sheet,
-                                issue: self.session.allocation_issue,
-                                scroll_to_target: self.session.pending_cut_focus,
-                            },
-                            inspector_width > 0.0,
-                        ) {
-                            let _ = self.invoke(request);
-                        }
-                        self.session.pending_cut_focus = false;
-                        }
-                        }
-                    },
-                );
-                if inspector_width > 0.0 {
-                    ui.separator();
-                    ui.allocate_ui_with_layout(egui::vec2(inspector_width, available.y), egui::Layout::top_down(egui::Align::Min), |ui| {
-                        self.show_scrolled_workspace_inspector(ui, inspector_width, available.y);
-                    });
-                 } else if self.open_drawer == Some(workspace_shell::Drawer::Inspector) {
-                     let mut open = true;
-                     let drawer_width = workspace_shell::PaneLayout::preferred(self.session.active).inspector.min(available.x - 20.0);
-                     egui::Window::new(workspace_shell::inspector_label(self.localizer.language()))
-                         .id(egui::Id::new("workspace-inspector-drawer"))
-                         .fixed_pos(egui::pos2(drawer_pos.x + available.x - drawer_width - 20.0, drawer_pos.y))
+                } else if self.open_drawer == Some(workspace_shell::Drawer::Inspector) {
+                    let mut open = true;
+                    let width = workspace_shell::PaneLayout::preferred(active)
+                        .inspector
+                        .min(available.x - 20.0);
+                    egui::Window::new(workspace_shell::inspector_label(self.localizer.language()))
+                        .id(egui::Id::new("workspace-inspector-drawer"))
+                        .fixed_pos(egui::pos2(
+                            drawer_pos.x + available.x - width - 20.0,
+                            drawer_pos.y,
+                        ))
                         .resizable(false)
                         .collapsible(false)
                         .open(&mut open)
                         .show(ui.ctx(), |ui| {
-                             ui.set_width(drawer_width);
-                             self.show_scrolled_workspace_inspector(ui, drawer_width, available.y - 44.0);
+                            ui.set_width(width);
+                            self.show_scrolled_workspace_inspector(ui, width, available.y - 44.0);
                         });
-                    if !open { self.open_drawer = None; }
+                    if !open {
+                        self.open_drawer = None;
+                    }
                 }
+                let canvas_fill = match active {
+                    Workspace::Design | Workspace::Hardware | Workspace::CutPlan => {
+                        theme_widgets::VIEWPORT
+                    }
+                    Workspace::Stock => theme_widgets::APP,
+                    Workspace::Handoff => egui::Color32::from_rgb(226, 221, 212),
+                };
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::new().fill(canvas_fill))
+                    .show(ui, |ui| {
+                        let drawer_modal = self
+                            .open_drawer
+                            .is_some_and(|drawer| layout.collapsed(drawer));
+                        self.show_canvas_pane(ui, drawer_modal, layout.inspector > 0.0);
+                    });
             });
-        });
         std::mem::swap(
             &mut self.camera,
             &mut self.session.view_mut(camera_workspace).camera,
@@ -5948,12 +5810,12 @@ mod tests {
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1150.0, 700.0),
+                    egui::vec2(560.0, 700.0),
                 )),
                 ..Default::default()
             },
             |ui| {
-                assert!(app.shell_status_required_width(ui, issues, None, false) > 1150.0);
+                assert!(app.shell_status_required_width(ui, issues, None, false) > 560.0);
                 app.show_shell_status(ui, issues, None, false);
             },
         );
@@ -6165,9 +6027,12 @@ mod tests {
             output.drop_without_applying_deltas();
             text
         };
-        assert!(render(&mut app).contains("Tip: select a part"));
+        // Hints only appear for tools whose gestures need explaining.
+        assert!(!render(&mut app).contains("Drag selected board"));
+        app.move_tool.mode = viewport::ToolMode::Move;
+        assert!(render(&mut app).contains("Drag selected board"));
         app.set_navigation_hints(false);
-        assert!(!render(&mut app).contains("Tip: select a part"));
+        assert!(!render(&mut app).contains("Drag selected board"));
         assert_eq!(app.editor.project(), &original);
         assert!(!app.editor.can_undo());
     }
@@ -7341,47 +7206,24 @@ mod tests {
                     let original = app.editor.project().clone();
                     let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
                     let header_more = workspace_shell::more_label(language);
-                    let compact = size.x - 24.0 < 1100.0;
                     let palette_label = app.localizer.text("palette-title");
-                    let header_label = if compact {
-                        header_more
-                    } else {
-                        palette_label.as_str()
-                    };
-                    let header = buttons.iter().find(|(label, rect)| label == header_label && rect.center().y < workspace_shell::HEADER_HEIGHT)
-                .unwrap_or_else(|| panic!("header action missing at {window:?}/{scale} {language:?}: {buttons:?}"));
-                    assert!(header.1.right() <= size.x && header.1.left() >= 0.0);
-                    if compact {
-                        responsive_click(&mut app, &ctx, size, header.1.center());
-                        assert!(egui::Popup::is_any_open(&ctx), "header popup did not open");
-                        let menu = responsive_frame(&mut app, &ctx, size, vec![]);
-                        assert!(
-                            menu.iter()
-                                .any(|(label, _)| label == &A::SaveProject.label(&app.localizer)),
-                            "header menu did not open at {window:?}/{scale} {language:?}: {menu:?}"
-                        );
-                        // Escape dismisses overflow and leaves the edit and project alone.
-                        responsive_frame(
-                            &mut app,
-                            &ctx,
-                            size,
-                            vec![Event::Key {
-                                key: Key::Escape,
-                                physical_key: None,
-                                pressed: true,
-                                repeat: false,
-                                modifiers: Modifiers::NONE,
-                            }],
-                        );
+                    // Search and Save stay directly reachable in the header at every size.
+                    for label in [palette_label.clone(), A::SaveProject.label(&app.localizer)] {
+                        let header = buttons
+                            .iter()
+                            .find(|(name, rect)| {
+                                name == &label && rect.center().y < workspace_shell::HEADER_HEIGHT
+                            })
+                            .unwrap_or_else(|| {
+                                panic!("header {label} missing at {window:?}/{scale} {language:?}: {buttons:?}")
+                            });
+                        assert!(header.1.right() <= size.x && header.1.left() >= 0.0);
                     }
-                    let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
-                    if compact {
-                        let status = buttons.iter().find(|(label, rect)| label == header_more && rect.center().y > size.y - workspace_shell::STATUS_HEIGHT)
-                    .unwrap_or_else(|| panic!("status overflow missing at {window:?}/{scale} {language:?}: {buttons:?}"));
+                    if let Some(status) = buttons.iter().find(|(label, rect)| {
+                        label == header_more && rect.center().y > size.y - workspace_shell::STATUS_HEIGHT
+                    }) {
                         responsive_click(&mut app, &ctx, size, status.1.center());
                         assert!(egui::Popup::is_any_open(&ctx), "status popup did not open");
-                        let open = responsive_frame(&mut app, &ctx, size, vec![]);
-                        assert!(open.iter().any(|(label, _)| label == header_more));
                         responsive_frame(
                             &mut app,
                             &ctx,
@@ -7433,7 +7275,7 @@ mod tests {
                         let open = responsive_frame(&mut app, &ctx, size, vec![]);
                         assert!(
                             open.iter()
-                                .any(|(name, _)| name == &app.localizer.text("board-new")),
+                                .any(|(name, _)| name == &app.localizer.text("design-add")),
                             "controls drawer has no creation route: {open:?}"
                         );
                         responsive_click(&mut app, &ctx, size, controls.1.center());
@@ -7441,33 +7283,35 @@ mod tests {
                     }
                     let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
                     let viewport_more = app.localizer.text("viewport-more");
-                    let viewport = buttons
-                        .iter()
-                        .find(|(label, rect)| {
-                            label == &viewport_more
-                                && rect.center().y > workspace_shell::HEADER_HEIGHT
-                                && rect.center().y < size.y - workspace_shell::STATUS_HEIGHT
-                        })
-                        .unwrap_or_else(|| panic!("viewport camera overflow missing: {buttons:?}"));
-                    responsive_click(&mut app, &ctx, size, viewport.1.center());
-                    let open = responsive_frame(&mut app, &ctx, size, vec![]);
-                    assert!(
-                        open.iter()
-                            .any(|(label, _)| label == &app.localizer.text("viewport-iso")),
-                        "camera presets unreachable: {open:?}"
-                    );
-                    responsive_frame(
-                        &mut app,
-                        &ctx,
-                        size,
-                        vec![Event::Key {
-                            key: Key::Escape,
-                            physical_key: None,
-                            pressed: true,
-                            repeat: false,
-                            modifiers: Modifiers::NONE,
-                        }],
-                    );
+                    let iso = app.localizer.text("viewport-iso");
+                    let in_canvas = |rect: &egui::Rect| {
+                        rect.center().y > workspace_shell::HEADER_HEIGHT
+                            && rect.center().y < size.y - workspace_shell::STATUS_HEIGHT
+                    };
+                    if !buttons.iter().any(|(label, rect)| label == &iso && in_canvas(rect)) {
+                        let viewport = buttons
+                            .iter()
+                            .find(|(label, rect)| label == &viewport_more && in_canvas(rect))
+                            .unwrap_or_else(|| panic!("viewport camera controls missing: {buttons:?}"));
+                        responsive_click(&mut app, &ctx, size, viewport.1.center());
+                        let open = responsive_frame(&mut app, &ctx, size, vec![]);
+                        assert!(
+                            open.iter().any(|(label, _)| label == &iso),
+                            "camera presets unreachable: {open:?}"
+                        );
+                        responsive_frame(
+                            &mut app,
+                            &ctx,
+                            size,
+                            vec![Event::Key {
+                                key: Key::Escape,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: Modifiers::NONE,
+                            }],
+                        );
+                    }
                     let buttons = responsive_frame(&mut app, &ctx, size, vec![]);
                     // The compact HUD now keeps four distinct named icon targets
                     // directly in its strip rather than nesting them in More.

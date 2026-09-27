@@ -1204,8 +1204,7 @@ pub fn show_move_with_hardware(
             modal,
             pt,
             poses.is_some(),
-        );
-        false
+        )
     };
     let (rect, interaction) = canvas::interact_with_selection(
         ui,

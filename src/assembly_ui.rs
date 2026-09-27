@@ -59,66 +59,94 @@ fn sheet_miniature(
 ) -> egui::Response {
     let long = piece.length.micrometres() as f32;
     let wide = piece.width.micrometres() as f32;
-    let width = ui.available_width().clamp(120.0, 250.0);
-    let height = (width * wide / long).clamp(64.0, 150.0);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
-    let painter = ui.painter().with_clip_rect(rect);
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(233, 221, 195));
-    painter.rect_stroke(
-        rect,
-        4.0,
-        egui::Stroke::new(1.0, theme_widgets::MUTED),
-        egui::StrokeKind::Inside,
-    );
-    let scale_x = rect.width() / long;
-    let scale_y = rect.height() / wide;
-    let [left, right, bottom, top] = piece.trim.map(|v| v.micrometres() as f32);
-    let usable = egui::Rect::from_min_max(
-        rect.min + egui::vec2(left * scale_x, bottom * scale_y),
-        rect.max - egui::vec2(right * scale_x, top * scale_y),
-    );
-    painter.rect_stroke(
-        usable,
-        0.0,
-        egui::Stroke::new(1.0, theme_widgets::MUTED),
-        egui::StrokeKind::Inside,
-    );
-    for part in &piece.parts {
-        let (length, width) = if part.quarter_turn {
-            (part.width, part.length)
-        } else {
-            (part.length, part.width)
-        };
-        let pos = rect.min
-            + egui::vec2(
-                part.origin[0].micrometres() as f32 * scale_x,
-                part.origin[1].micrometres() as f32 * scale_y,
+    let used: f64 = piece
+        .parts
+        .iter()
+        .map(|p| p.length.micrometres() as f64 * p.width.micrometres() as f64)
+        .sum();
+    let utilization = if piece.measured_area() > 0 {
+        (used / piece.measured_area() as f64 * 100.0).round()
+    } else {
+        0.0
+    };
+    let frame = egui::Frame::new()
+        .fill(theme_widgets::CARD)
+        .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
+        .corner_radius(9)
+        .inner_margin(10);
+    let inner = frame.show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                theme_widgets::medium(ui, format!("{} · {}", piece.alias, piece.material_name), 12.5)
+                    .color(theme_widgets::TEXT),
             );
-        let footprint = egui::Rect::from_min_size(
-            pos,
-            egui::vec2(
-                length.micrometres() as f32 * scale_x,
-                width.micrometres() as f32 * scale_y,
-            ),
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    theme_widgets::mono(format!("{utilization:.0}%"), 11.5)
+                        .color(theme_widgets::MUTED),
+                );
+            });
+        });
+        ui.add_space(4.0);
+        let width = ui.available_width();
+        let height = (width * wide / long).clamp(48.0, 170.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let painter = ui.painter().with_clip_rect(rect.expand(1.0));
+        painter.rect(
+            rect,
+            2.0,
+            egui::Color32::from_rgb(247, 245, 240),
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(191, 181, 165)),
+            egui::StrokeKind::Inside,
         );
-        if footprint.intersects(rect) {
-            painter.rect_filled(
-                footprint,
-                1.0,
-                if part.board_id == board {
-                    theme_widgets::ACCENT
-                } else {
-                    egui::Color32::from_rgb(189, 169, 130)
-                },
+        let scale_x = rect.width() / long;
+        let scale_y = rect.height() / wide;
+        for part in &piece.parts {
+            let (length, width) = if part.quarter_turn {
+                (part.width, part.length)
+            } else {
+                (part.length, part.width)
+            };
+            let pos = rect.min
+                + egui::vec2(
+                    part.origin[0].micrometres() as f32 * scale_x,
+                    part.origin[1].micrometres() as f32 * scale_y,
+                );
+            let footprint = egui::Rect::from_min_size(
+                pos,
+                egui::vec2(
+                    length.micrometres() as f32 * scale_x,
+                    width.micrometres() as f32 * scale_y,
+                ),
             );
-            painter.rect_stroke(
-                footprint,
-                1.0,
-                egui::Stroke::new(1.0, theme_widgets::PANEL),
-                egui::StrokeKind::Inside,
-            );
+            if footprint.intersects(rect) {
+                let selected = part.board_id == board;
+                painter.rect(
+                    footprint.shrink(0.5),
+                    1.0,
+                    if selected {
+                        egui::Color32::from_rgb(244, 194, 122)
+                    } else {
+                        egui::Color32::from_rgb(226, 219, 207)
+                    },
+                    egui::Stroke::new(
+                        if selected { 1.5 } else { 1.0 },
+                        if selected {
+                            egui::Color32::from_rgb(154, 91, 18)
+                        } else {
+                            egui::Color32::from_rgb(191, 181, 165)
+                        },
+                    ),
+                    egui::StrokeKind::Inside,
+                );
+            }
         }
-    }
+    });
+    let response = ui.interact(
+        inner.response.rect,
+        ui.id().with(("sheet-miniature", piece.id)),
+        egui::Sense::click(),
+    );
     let label = format!(
         "{} · {} · {}",
         localizer.text("sheet-heading"),
@@ -128,14 +156,16 @@ fn sheet_miniature(
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label)
     });
-    response.on_hover_text(label)
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!("{label} · {}", localizer.text("design-open-cut-plan")))
 }
 
 fn hud_rect(canvas: egui::Rect) -> Option<egui::Rect> {
     if canvas.width() < 260.0 || canvas.height() < 150.0 {
         return None;
     }
-    let width = (canvas.width() - 24.0).min(460.0);
+    let width = (canvas.width() - 24.0).min(560.0);
     Some(egui::Rect::from_min_size(
         egui::pos2(canvas.center().x - width / 2.0, canvas.bottom() - 60.0),
         egui::vec2(width, 44.0),
@@ -418,7 +448,7 @@ fn material_swatch(ui: &mut egui::Ui, color: plan_my_cabinet::domain::SrgbColor)
     );
 }
 
-fn short_length(length: Length, locale: Locale) -> String {
+pub(super) fn short_length(length: Length, locale: Locale) -> String {
     let mm = length.micrometres() as f64 / 1000.0;
     let text = if mm.fract() == 0.0 {
         format!("{mm:.0}")
@@ -434,6 +464,44 @@ fn short_length(length: Length, locale: Locale) -> String {
         text
     }
 }
+
+pub(super) fn unit_suffix(unit: Unit) -> &'static str {
+    match unit {
+        Unit::Mm => "mm",
+        Unit::Cm => "cm",
+        Unit::M => "m",
+        Unit::Inch => "in",
+        Unit::Foot => "ft",
+    }
+}
+
+/// Field text without a unit suffix or needless trailing zeros.
+fn field_text(field: &plan_my_cabinet::edit_drafts::LengthField) -> String {
+    field.text.clone().unwrap_or_else(|| {
+        let formatted = format_length(field.committed, field.unit, field.locale, 3);
+        let number = formatted.split_whitespace().next().unwrap_or("").to_owned();
+        if number.contains(['.', ',']) {
+            number
+                .trim_end_matches('0')
+                .trim_end_matches(['.', ','])
+                .to_owned()
+        } else {
+            number
+        }
+    })
+}
+
+/// A short, human-scale identifier for headers ("b-7f3a").
+pub(super) fn short_id(prefix: char, id: Uuid) -> String {
+    let hex = id.simple().to_string();
+    format!("{prefix}-{}", &hex[hex.len() - 4..])
+}
+
+const AXIS_COLORS: [egui::Color32; 3] = [
+    egui::Color32::from_rgb(196, 69, 58),
+    egui::Color32::from_rgb(78, 154, 87),
+    egui::Color32::from_rgb(62, 111, 196),
+];
 
 fn inspector_section(ui: &mut egui::Ui, label: &str) {
     design_section(ui, label);
@@ -568,88 +636,115 @@ impl DesktopApp {
                 .edit_drafts
                 .existing_pose(self.editor.project().id, id)
                 .is_some_and(|draft| draft.dirty());
+        let thickness = self
+            .editor
+            .project()
+            .boards
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| b.thickness);
         let mut apply = false;
         let mut discard = false;
         let mut error = None;
         ui.push_id((surface, id), |ui| {
             match self.edit_drafts.board(&self.editor, id, unit, locale) {
                 Ok(draft) => {
-                    let mut fields = |ui: &mut egui::Ui| {
-                        for (axis, key) in ["board-length", "board-width"].into_iter().enumerate() {
-                            ui.horizontal(|ui| {
-                                ui.label(if compact {
-                                    if axis == 0 { "L" } else { "W" }.to_owned()
-                                } else {
-                                    self.localizer.text(key)
-                                });
-                                let field = if axis == 0 {
-                                    &mut draft.length
-                                } else {
-                                    &mut draft.width
-                                };
-                                let mut text =
-                                    if compact && field.text.is_none() && field.unit == Unit::Mm {
-                                        format_length(field.committed, Unit::Mm, field.locale, 2)
-                                            .trim_end_matches(" mm")
-                                            .to_owned()
-                                    } else {
-                                        field.display()
-                                    };
-                                let response = ui
-                                    .add_enabled(
-                                        editable,
-                                        egui::TextEdit::singleline(&mut text)
-                                            .desired_width(if compact { 72.0 } else { 104.0 }),
-                                    )
-                                    .on_hover_text(field.display());
-                                if response.changed() {
-                                    field.edit(text);
-                                }
-                                if response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                {
-                                    apply = true;
-                                }
-                                if response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Escape))
-                                {
-                                    discard = true;
-                                }
-                            });
+                    let invalid = |axis: usize, error: &Option<DraftError>| {
+                        matches!(error, Some(DraftError::InvalidField { axis: a, .. }) if *a == axis)
+                    };
+                    let pending_error = if draft.dirty() {
+                        draft.preview(&self.editor).err()
+                    } else {
+                        None
+                    };
+                    let mut field_ui = |ui: &mut egui::Ui, axis: usize, width: f32| {
+                        let field = if axis == 0 {
+                            &mut draft.length
+                        } else {
+                            &mut draft.width
+                        };
+                        let mut text = field_text(field);
+                        let label = self.localizer.text(if axis == 0 {
+                            "board-length"
+                        } else {
+                            "board-width"
+                        });
+                        let response = theme_widgets::value_field(
+                            ui,
+                            ui.id().with(("dimension", axis)),
+                            &label,
+                            &mut text,
+                            width,
+                            if compact { None } else { Some(unit_suffix(unit)) },
+                            None,
+                            editable,
+                            invalid(axis, &pending_error),
+                        )
+                        .on_hover_text(format!("{label}: {}", field.display()));
+                        if response.changed() {
+                            field.edit(text);
+                        }
+                        if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            apply = true;
+                        }
+                        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            apply = true;
+                        }
+                        if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            discard = true;
                         }
                     };
+                    let thickness_text = thickness
+                        .map(|t| short_length(t, locale))
+                        .unwrap_or_default();
                     if compact {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = 3.0;
-                            fields(ui);
-                        });
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        field_ui(ui, 0, 58.0);
+                        ui.label(egui::RichText::new("×").color(theme_widgets::FAINT));
+                        field_ui(ui, 1, 58.0);
+                        ui.label(egui::RichText::new("×").color(theme_widgets::FAINT));
+                        theme_widgets::derived_field(ui, &thickness_text, "", 40.0)
+                            .on_hover_text(self.localizer.text("board-thickness"));
+                        ui.label(
+                            egui::RichText::new(unit_suffix(unit))
+                                .size(12.0)
+                                .color(theme_widgets::FAINT),
+                        );
                     } else {
-                        fields(ui);
-                    }
-                    if !compact {
-                        ui.horizontal(|ui| {
-                            ui.label(self.localizer.text("design-anchor"));
+                        let width = ui.available_width() - 96.0;
+                        theme_widgets::prop_row(ui, &self.localizer.text("board-length"), 88.0, |ui| {
+                            field_ui(ui, 0, width)
+                        });
+                        theme_widgets::prop_row(ui, &self.localizer.text("board-width"), 88.0, |ui| {
+                            field_ui(ui, 1, width)
+                        });
+                        theme_widgets::prop_row(
+                            ui,
+                            &self.localizer.text("board-thickness"),
+                            88.0,
+                            |ui| {
+                                theme_widgets::derived_field(
+                                    ui,
+                                    &thickness_text,
+                                    &self.localizer.text("design-from-material"),
+                                    width,
+                                )
+                            },
+                        );
+                        theme_widgets::prop_row(ui, &self.localizer.text("design-anchor"), 88.0, |ui| {
                             ui.add_enabled_ui(editable, |ui| {
-                                egui::ComboBox::from_id_salt("draft-anchor")
-                                    .selected_text(self.localizer.text(match draft.anchor {
-                                        Anchor::Start => "anchor-start",
-                                        Anchor::Centre => "anchor-centre",
-                                        Anchor::End => "anchor-end",
-                                    }))
-                                    .show_ui(ui, |ui| {
-                                        for (anchor, key) in [
-                                            (Anchor::Start, "anchor-start"),
-                                            (Anchor::Centre, "anchor-centre"),
-                                            (Anchor::End, "anchor-end"),
-                                        ] {
-                                            ui.selectable_value(
-                                                &mut draft.anchor,
-                                                anchor,
-                                                self.localizer.text(key),
-                                            );
-                                        }
-                                    })
-                            });
+                                theme_widgets::segmented(
+                                    ui,
+                                    &mut draft.anchor,
+                                    &[
+                                        (Anchor::Start, &self.localizer.text("anchor-start-short")),
+                                        (Anchor::Centre, &self.localizer.text("anchor-centre-short")),
+                                        (Anchor::End, &self.localizer.text("anchor-end-short")),
+                                    ],
+                                )
+                            })
+                            .inner
+                            .on_hover_text(self.localizer.text("design-anchor-hint"));
                         });
                     }
                     if draft.dirty() {
@@ -670,10 +765,12 @@ impl DesktopApp {
                             } else {
                                 &mut draft.width
                             };
-                            ui.add_enabled(
-                                editable,
-                                egui::Checkbox::new(&mut field.consent, label),
-                            );
+                            theme_widgets::warn_callout().show(ui, |ui| {
+                                ui.add_enabled(
+                                    editable,
+                                    egui::Checkbox::new(&mut field.consent, label),
+                                );
+                            });
                             error = draft.preview(&self.editor).err();
                         }
                     }
@@ -683,26 +780,32 @@ impl DesktopApp {
                             _ => "error-board-dimension",
                         };
                         if !matches!(problem, DraftError::RoundingConsent { .. }) {
-                            ui.colored_label(theme_widgets::WARN_INK, self.localizer.text(key));
+                            ui.label(
+                                egui::RichText::new(self.localizer.text(key))
+                                    .size(11.5)
+                                    .color(theme_widgets::DANGER),
+                            );
                         }
                     }
-                    if !compact {
+                    if !compact && draft.dirty() {
+                        ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(
-                                    editable && draft.dirty() && error.is_none(),
-                                    egui::Button::new(self.localizer.text("navigation-apply")),
-                                )
-                                .clicked()
+                            ui.add_space(88.0);
+                            if theme_widgets::primary_button(
+                                ui,
+                                &self.localizer.text("navigation-apply"),
+                                editable && error.is_none(),
+                            )
+                            .clicked()
                             {
                                 apply = true;
                             }
-                            if ui
-                                .add_enabled(
-                                    editable && draft.dirty(),
-                                    egui::Button::new(self.localizer.text("navigation-discard")),
-                                )
-                                .clicked()
+                            if theme_widgets::secondary_button_enabled(
+                                ui,
+                                &self.localizer.text("navigation-discard"),
+                                editable,
+                            )
+                            .clicked()
                             {
                                 discard = true;
                             }
@@ -731,6 +834,7 @@ impl DesktopApp {
             && let Some(draft) = self
                 .edit_drafts
                 .existing_board_mut(self.editor.project().id, id)
+            && draft.dirty()
         {
             if draft.accept(&mut self.editor).is_err() {
                 ui.colored_label(
@@ -738,6 +842,7 @@ impl DesktopApp {
                     self.localizer.text("error-board-dimension"),
                 );
             } else {
+                self.edit_drafts.cancel_board(self.editor.project().id, id);
                 ui.ctx().request_repaint();
             }
         }
@@ -758,7 +863,6 @@ impl DesktopApp {
         };
         let id = board.id;
         let name = board.name.clone();
-        let thickness = board.dimensions[2];
         egui::Area::new(egui::Id::new("design-board-hud"))
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::CENTER_BOTTOM)
@@ -766,60 +870,58 @@ impl DesktopApp {
             .show(ctx, |ui| {
                 egui::Frame::new()
                     .fill(theme_widgets::PANEL)
-                    .stroke(egui::Stroke::new(1.0, theme_widgets::MUTED))
-                    .inner_margin(egui::Margin::symmetric(8, 5))
-                    .corner_radius(8.0)
+                    .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_STRONG))
+                    .inner_margin(egui::Margin {
+                        left: 14,
+                        right: 6,
+                        top: 5,
+                        bottom: 5,
+                    })
+                    .corner_radius(11)
+                    .shadow(egui::Shadow {
+                        offset: [0, 8],
+                        blur: 24,
+                        spread: 0,
+                        color: egui::Color32::from_rgba_unmultiplied(60, 45, 25, 40),
+                    })
                     .show(ui, |ui| {
-                        ui.set_width(strip.width() - 16.0);
-                        ui.set_max_width(strip.width() - 16.0);
-                        ui.set_min_height(32.0);
-                        if self
-                            .edit_drafts
-                            .existing_board(self.editor.project().id, id)
-                            .is_some_and(|draft| draft.dirty())
-                        {
-                            egui::ScrollArea::vertical()
-                                .max_height((canvas.height() - 130.0).max(80.0))
-                                .show(ui, |ui| {
-                                    self.show_shared_board_dimensions(ui, id, "hud-details")
-                                });
-                            ui.separator();
-                        }
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = 3.0;
-                            ui.add_sized(
-                                [43.0, 24.0],
-                                egui::Label::new(egui::RichText::new(&name).strong()).truncate(),
+                        ui.set_max_width(strip.width());
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.add(
+                                egui::Label::new(
+                                    theme_widgets::semibold(ui, &name, 13.0)
+                                        .color(theme_widgets::ACCENT_INK),
+                                )
+                                .truncate(),
                             )
                             .on_hover_text(&name);
+                            ui.add_space(4.0);
                             self.show_shared_board_dimensions(ui, id, "hud");
-                            ui.label("×");
-                            ui.label(format_length(
-                                thickness,
-                                self.editor.project().display_unit,
-                                if self.localizer.language() == Language::En {
-                                    Locale::En
-                                } else {
-                                    Locale::PtBr
-                                },
-                                2,
-                            ))
-                            .on_hover_text(self.localizer.text("board-thickness"));
-                            ui.separator();
-                            for (action, target, icon) in [
-                                (A::PlaceFace, Target::Board(id), icons::Icon::Place),
-                                (A::DuplicateBoard, Target::Board(id), icons::Icon::Duplicate),
-                                (A::ToggleVisibility, Target::Object(id), icons::Icon::EyeOff),
-                                (A::DeleteObject, Target::None, icons::Icon::Trash),
+                            let (rect, _) =
+                                ui.allocate_exact_size(egui::vec2(9.0, 24.0), egui::Sense::hover());
+                            ui.painter().vline(
+                                rect.center().x,
+                                rect.y_range(),
+                                egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT),
+                            );
+                            for (action, target, icon, color) in [
+                                (A::PlaceFace, Target::Board(id), icons::Icon::Place, theme_widgets::SECONDARY),
+                                (A::DuplicateBoard, Target::Board(id), icons::Icon::Duplicate, theme_widgets::SECONDARY),
+                                (A::ToggleVisibility, Target::Object(id), icons::Icon::EyeOff, theme_widgets::SECONDARY),
+                                (A::DeleteObject, Target::None, icons::Icon::Trash, theme_widgets::DANGER),
                             ] {
                                 let request = Request::with(action, target);
                                 let label = action.label(&self.localizer);
-                                let response = design_icon_button(
+                                let response = theme_widgets::ghost_icon_sized(
                                     ui,
                                     icon,
                                     &label,
-                                    theme_widgets::TEXT,
+                                    color,
+                                    16.0,
+                                    30.0,
                                     self.action_availability(request).is_ok(),
+                                    false,
                                 );
                                 #[cfg(test)]
                                 ui.ctx().data_mut(|data| {
@@ -849,24 +951,6 @@ impl DesktopApp {
                 .edit_drafts
                 .existing_board(self.editor.project().id, id)
                 .is_some_and(|draft| draft.dirty());
-        let mut requested_frame = self.pose_frame;
-        ui.horizontal(|ui| {
-            ui.label(self.localizer.text("placement-frame"));
-            ui.selectable_value(
-                &mut requested_frame,
-                CoordinateFrame::LocalParent,
-                self.localizer.text("placement-local"),
-            );
-            ui.selectable_value(
-                &mut requested_frame,
-                CoordinateFrame::World,
-                self.localizer.text("placement-world"),
-            );
-        });
-        if requested_frame != self.pose_frame {
-            self.request_pose_frame(requested_frame);
-            return;
-        }
         let mut accept = false;
         let mut cancel = false;
         let mut error = None;
@@ -876,55 +960,92 @@ impl DesktopApp {
                 .pose(&self.editor, id, self.pose_frame, unit, locale)
             {
                 Ok(draft) => {
-                    ui.label(self.localizer.text("placement-position"));
-                    ui.horizontal_wrapped(|ui| {
-                        for (axis, label) in ["X", "Y", "Z"].into_iter().enumerate() {
-                            ui.label(label);
-                            let field = &mut draft.position[axis];
-                            let mut text = field.display();
-                            let response = ui.add_enabled(
-                                editable,
-                                egui::TextEdit::singleline(&mut text).desired_width(84.0),
-                            );
-                            if response.changed() {
-                                field.edit(text);
-                            }
-                            if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                accept = true;
-                            }
-                            if response.has_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Escape))
-                            {
-                                cancel = true;
-                            }
+                    let invalid_axis = if draft.dirty() {
+                        match draft.preview(&self.editor).err() {
+                            Some(DraftError::InvalidField { axis, .. }) => Some(axis),
+                            _ => None,
                         }
-                    });
-                    ui.label(self.localizer.text("placement-rotation"));
-                    ui.horizontal_wrapped(|ui| {
-                        for (axis, label) in ["X°", "Y°", "Z°"].into_iter().enumerate() {
-                            ui.label(label);
-                            let mut text = draft.rotation[axis]
-                                .clone()
-                                .unwrap_or_else(|| format!("{:.2}", draft.rotation_degrees[axis]));
-                            let response = ui.add_enabled(
-                                editable,
-                                egui::TextEdit::singleline(&mut text).desired_width(72.0),
-                            );
-                            if response.changed() {
-                                draft.rotation[axis] = Some(text);
+                    } else {
+                        None
+                    };
+                    let width = ((ui.available_width() - 96.0 - 8.0) / 3.0).max(40.0);
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("placement-position"),
+                        88.0,
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            for (axis, label) in ["X", "Y", "Z"].into_iter().enumerate() {
+                                let field = &mut draft.position[axis];
+                                let mut text = field_text(field);
+                                let response = theme_widgets::value_field(
+                                    ui,
+                                    ui.id().with(("position", axis)),
+                                    label,
+                                    &mut text,
+                                    width,
+                                    None,
+                                    Some(AXIS_COLORS[axis]),
+                                    editable,
+                                    invalid_axis == Some(axis),
+                                )
+                                .on_hover_text(format!("{label} · {}", field.display()));
+                                if response.changed() {
+                                    field.edit(text);
+                                }
+                                if (response.has_focus() || response.lost_focus())
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                {
+                                    accept = true;
+                                }
+                                if response.has_focus()
+                                    && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                                {
+                                    cancel = true;
+                                }
                             }
-                            if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                accept = true;
+                        },
+                    );
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("design-rotation"),
+                        88.0,
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            for (axis, label) in ["X°", "Y°", "Z°"].into_iter().enumerate() {
+                                let mut text = draft.rotation[axis].clone().unwrap_or_else(|| {
+                                    let value = draft.rotation_degrees[axis];
+                                    let value = if value.abs() < 0.005 { 0.0 } else { value };
+                                    let text = format!("{value:.2}");
+                                    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+                                });
+                                let response = theme_widgets::value_field(
+                                    ui,
+                                    ui.id().with(("rotation", axis)),
+                                    label,
+                                    &mut text,
+                                    width,
+                                    Some("°"),
+                                    None,
+                                    editable,
+                                    false,
+                                );
+                                if response.changed() {
+                                    draft.rotation[axis] = Some(text);
+                                }
+                                if (response.has_focus() || response.lost_focus())
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                {
+                                    accept = true;
+                                }
+                                if response.has_focus()
+                                    && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                                {
+                                    cancel = true;
+                                }
                             }
-                            if response.has_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Escape))
-                            {
-                                cancel = true;
-                            }
-                        }
-                    });
+                        },
+                    );
                     if draft.dirty() {
                         error = draft.preview(&self.editor).err();
                         if let Some(DraftError::RoundingConsent {
@@ -937,13 +1058,14 @@ impl DesktopApp {
                             args.set("entered", entered.as_str());
                             args.set("rounded", rounded_mm.as_str());
                             let label = self.localizer.format("rounding-confirmation", Some(&args));
-                            ui.add_enabled(
-                                editable,
-                                egui::Checkbox::new(&mut draft.position[*axis].consent, label),
-                            );
+                            theme_widgets::warn_callout().show(ui, |ui| {
+                                ui.add_enabled(
+                                    editable,
+                                    egui::Checkbox::new(&mut draft.position[*axis].consent, label),
+                                );
+                            });
                             error = draft.preview(&self.editor).err();
                         }
-                        ui.small(self.localizer.text("placement-preview"));
                     }
                     if let Some(ref problem) = error {
                         let key = match problem {
@@ -953,29 +1075,37 @@ impl DesktopApp {
                             _ => "placement-invalid",
                         };
                         if !matches!(problem, DraftError::RoundingConsent { .. }) {
-                            ui.colored_label(theme_widgets::WARN_INK, self.localizer.text(key));
+                            ui.label(
+                                egui::RichText::new(self.localizer.text(key))
+                                    .size(11.5)
+                                    .color(theme_widgets::DANGER),
+                            );
                         }
                     }
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(
-                                editable && draft.dirty() && error.is_none(),
-                                egui::Button::new(self.localizer.text("navigation-accept")),
+                    if draft.dirty() {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(88.0);
+                            if theme_widgets::primary_button(
+                                ui,
+                                &self.localizer.text("navigation-accept"),
+                                editable && error.is_none(),
                             )
                             .clicked()
-                        {
-                            accept = true;
-                        }
-                        if ui
-                            .add_enabled(
-                                editable && draft.dirty(),
-                                egui::Button::new(self.localizer.text("navigation-cancel")),
+                            {
+                                accept = true;
+                            }
+                            if theme_widgets::secondary_button_enabled(
+                                ui,
+                                &self.localizer.text("navigation-cancel"),
+                                editable,
                             )
                             .clicked()
-                        {
-                            cancel = true;
-                        }
-                    });
+                            {
+                                cancel = true;
+                            }
+                        });
+                    }
                 }
                 Err(_) => {
                     ui.colored_label(
@@ -999,6 +1129,7 @@ impl DesktopApp {
             && let Some(draft) = self
                 .edit_drafts
                 .existing_pose_mut(self.editor.project().id, id)
+            && draft.dirty()
         {
             if draft.accept(&mut self.editor).is_err() {
                 ui.colored_label(
@@ -1012,39 +1143,170 @@ impl DesktopApp {
         }
     }
 
+    /// Actions that operate on the current outliner selection, offered from the
+    /// outliner's `+` menu and each row's context menu.
+    fn hierarchy_menu(&mut self, ui: &mut egui::Ui, include_create: bool) {
+        let active_assembly = self
+            .selection
+            .active
+            .is_some_and(|id| self.editor.project().assemblies.iter().any(|a| a.id == id));
+        let has_selection = !self.selection.ids.is_empty();
+        let modal = self.modal_open();
+        let mut run = None;
+        if include_create {
+            for action in [A::NewBoard, A::NewMaterial] {
+                let request = Request::new(action);
+                if ui
+                    .add_enabled(
+                        self.action_availability(request).is_ok(),
+                        egui::Button::new(action.label(&self.localizer)),
+                    )
+                    .clicked()
+                {
+                    run = Some(request);
+                }
+            }
+            ui.separator();
+        }
+        for (action, key, enabled) in [
+            (A::Group, "assembly-group", has_selection),
+            (A::Reparent, "assembly-reparent", has_selection),
+            (A::Ungroup, "assembly-ungroup", active_assembly),
+            (A::DuplicateAssembly, "assembly-duplicate", active_assembly),
+            (A::Transform, "assembly-transform", has_selection),
+            (A::BatchDimensions, "", self.selection.ids.len() > 1),
+        ] {
+            let label = if key.is_empty() {
+                action.label(&self.localizer)
+            } else {
+                self.localizer.text(key)
+            };
+            if ui
+                .add_enabled(!modal && enabled, egui::Button::new(label))
+                .clicked()
+            {
+                run = Some(Request::new(action));
+            }
+        }
+        if has_selection {
+            ui.separator();
+            let delete = Request::new(A::DeleteObject);
+            if ui
+                .add_enabled(
+                    self.action_availability(delete).is_ok(),
+                    egui::Button::new(
+                        egui::RichText::new(A::DeleteObject.label(&self.localizer))
+                            .color(theme_widgets::DANGER),
+                    ),
+                )
+                .clicked()
+            {
+                run = Some(delete);
+            }
+        }
+        if let Some(request) = run {
+            ui.close();
+            let _ = self.invoke(request);
+        }
+    }
+
     pub(super) fn show_hierarchy(&mut self, ui: &mut egui::Ui) {
         let Some(model) = self.design_model() else {
             ui.label(self.localizer.text("measurement-invalid"));
             return;
         };
-        design_section(ui, &self.localizer.text("design-outliner-title"));
         let modal = self.modal_open();
-        if model.outliner.is_empty() {
-            ui.small(self.localizer.text("design-empty"));
-        }
-        for row in visible_rows(&model.outliner) {
-            let fill = if row.active {
-                theme_widgets::ACCENT_BG
-            } else if row.selected {
-                egui::Color32::from_rgb(251, 241, 227)
-            } else {
-                egui::Color32::TRANSPARENT
-            };
-            egui::Frame::new()
-                .fill(fill)
-                .corner_radius(5)
-                .show(ui, |ui| {
-                    ui.set_min_height(26.0);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        ui.add_space(row.depth as f32 * 12.0);
+        let pad = egui::Margin {
+            left: 14,
+            right: 10,
+            top: 0,
+            bottom: 8,
+        };
+        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+            theme_widgets::section_bar(ui, &self.localizer.text("design-outliner-title"), |ui| {
+                let plus = theme_widgets::ghost_icon_sized(
+                    ui,
+                    icons::Icon::Plus,
+                    &self.localizer.text("design-add"),
+                    theme_widgets::MUTED,
+                    15.0,
+                    24.0,
+                    !modal,
+                    false,
+                );
+                egui::Popup::menu(&plus)
+                    .align(egui::RectAlign::BOTTOM_END)
+                    .show(|ui| {
+                        ui.set_min_width(200.0);
+                        self.hierarchy_menu(ui, true);
+                    });
+                if theme_widgets::ghost_icon_sized(
+                    ui,
+                    icons::Icon::Search,
+                    &self.localizer.text("palette-title"),
+                    theme_widgets::MUTED,
+                    14.0,
+                    24.0,
+                    !modal,
+                    false,
+                )
+                .clicked()
+                {
+                    self.palette.open(ui.ctx());
+                }
+            });
+            if model.outliner.is_empty() {
+                ui.label(
+                    egui::RichText::new(self.localizer.text("design-empty"))
+                        .size(12.0)
+                        .color(theme_widgets::FAINT),
+                );
+                ui.add_space(6.0);
+                if theme_widgets::icon_text_button(
+                    ui,
+                    icons::Icon::Plus,
+                    &A::NewBoard.label(&self.localizer),
+                    true,
+                    self.action_availability(Request::new(A::NewBoard)).is_ok(),
+                )
+                .clicked()
+                {
+                    let _ = self.invoke(Request::new(A::NewBoard));
+                }
+            }
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for row in visible_rows(&model.outliner) {
+                let state = if row.active {
+                    theme_widgets::RowState::Active
+                } else if row.selected {
+                    theme_widgets::RowState::Selected
+                } else {
+                    theme_widgets::RowState::Normal
+                };
+                let kind = match row.kind {
+                    ObjectKind::Assembly => "assembly-kind",
+                    ObjectKind::Board => "board-kind",
+                    ObjectKind::Hardware => "hardware-kind",
+                };
+                let mut toggle_expand = None;
+                let mut toggle_visibility = false;
+                let (response, ()) = theme_widgets::list_row(
+                    ui,
+                    egui::Id::new(("outliner-row", row.id)),
+                    26.0,
+                    state,
+                    !modal,
+                    &row.name,
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.add_space(row.depth as f32 * 16.0);
                         if let Some(expanded) = row.expanded {
                             let label = self.localizer.text(if expanded {
                                 "design-collapse"
                             } else {
                                 "design-expand"
                             });
-                            if design_icon_button(
+                            if theme_widgets::ghost_icon_sized(
                                 ui,
                                 if expanded {
                                     icons::Icon::ChevDown
@@ -1052,19 +1314,18 @@ impl DesktopApp {
                                     icons::Icon::ChevRight
                                 },
                                 &label,
-                                theme_widgets::MUTED,
+                                theme_widgets::FAINT,
+                                11.0,
+                                16.0,
                                 !modal,
+                                false,
                             )
                             .clicked()
                             {
-                                if expanded {
-                                    self.session.design_expanded.remove(&row.id);
-                                } else {
-                                    self.session.design_expanded.insert(row.id);
-                                }
+                                toggle_expand = Some(expanded);
                             }
                         } else {
-                            ui.add_space(22.0);
+                            ui.add_space(16.0);
                         }
                         let symbol = match row.kind {
                             ObjectKind::Assembly => icons::Icon::Assembly,
@@ -1078,245 +1339,368 @@ impl DesktopApp {
                             } else {
                                 theme_widgets::MUTED
                             },
-                            13.0,
+                            if row.kind == ObjectKind::Assembly { 14.0 } else { 13.0 },
                         ));
-                        let kind = match row.kind {
-                            ObjectKind::Assembly => "assembly-kind",
-                            ObjectKind::Board => "board-kind",
-                            ObjectKind::Hardware => "hardware-kind",
+                        let ink = if row.active {
+                            theme_widgets::ACCENT_INK
+                        } else if !row.visible {
+                            theme_widgets::FAINT
+                        } else {
+                            theme_widgets::TEXT
                         };
-                        let right = 22.0 + if row.issue_count > 0 { 24.0 } else { 0.0 };
-                        let name_width = (ui.available_width() - right - 6.0).max(24.0);
-                        let name = ui
-                            .add_enabled(
-                                !modal,
-                                egui::Button::new(egui::RichText::new(&row.name).color(
-                                    if row.active {
-                                        theme_widgets::ACCENT_INK
-                                    } else if !row.visible {
-                                        theme_widgets::FAINT
-                                    } else {
-                                        theme_widgets::TEXT
-                                    },
-                                ))
-                                .frame(false)
-                                .min_size(egui::vec2(0.0, 24.0)),
-                            )
-                            .on_hover_text(format!("{} · {}", self.localizer.text(kind), row.id));
-                        if name.clicked() {
-                            let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-                            let _ = self.invoke(
-                                Request::with(A::SelectObject, Target::Object(row.id))
-                                    .argument(Argument::Additive(additive)),
-                            );
-                        }
-                        ui.add_space((name_width - name.rect.width()).max(0.0));
-                        if row.issue_count > 0 {
-                            ui.add(icons::icon(
-                                icons::Icon::Warning,
-                                theme_widgets::WARN_INK,
-                                14.0,
-                            ))
-                            .on_hover_text(format!(
-                                "{}: {}",
-                                self.localizer.text("design-issue-count"),
-                                row.issue_count
-                            ));
-                        }
-                        let eye_label =
-                            self.localizer.text(if row.hidden_directly || !row.visible {
-                                "assembly-reveal"
-                            } else {
-                                "assembly-hide"
-                            });
-                        if design_icon_button(
-                            ui,
-                            if row.visible {
-                                icons::Icon::Eye
-                            } else {
-                                icons::Icon::EyeOff
+                        let text = if row.active {
+                            theme_widgets::medium(ui, &row.name, 13.0).color(ink)
+                        } else {
+                            egui::RichText::new(&row.name).size(13.0).color(ink)
+                        };
+                        let name_width = (ui.available_width() - 30.0).max(20.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(name_width, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add(egui::Label::new(text).truncate().selectable(false));
                             },
-                            &eye_label,
-                            theme_widgets::MUTED,
-                            !modal,
-                        )
-                        .clicked()
-                        {
-                            let _ = self
-                                .invoke(Request::with(A::ToggleVisibility, Target::Object(row.id)));
-                        }
-                    });
-                });
-        }
-        let active_assembly = self
-            .selection
-            .active
-            .is_some_and(|id| self.editor.project().assemblies.iter().any(|a| a.id == id));
-        ui.collapsing(self.localizer.text("design-hierarchy-actions"), |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (operation, key, enabled) in [
-                    (
-                        Operation::Group,
-                        "assembly-group",
-                        !self.selection.ids.is_empty(),
-                    ),
-                    (
-                        Operation::Reparent,
-                        "assembly-reparent",
-                        !self.selection.ids.is_empty(),
-                    ),
-                    (Operation::Ungroup, "assembly-ungroup", active_assembly),
-                    (Operation::Duplicate, "assembly-duplicate", active_assembly),
-                    (
-                        Operation::Transform,
-                        "assembly-transform",
-                        !self.selection.ids.is_empty(),
-                    ),
-                ] {
-                    if ui
-                        .add_enabled(
-                            !modal && enabled,
-                            egui::Button::new(self.localizer.text(key)),
-                        )
-                        .clicked()
-                    {
-                        let action = match operation {
-                            Operation::Group => A::Group,
-                            Operation::Reparent => A::Reparent,
-                            Operation::Ungroup => A::Ungroup,
-                            Operation::Duplicate => A::DuplicateAssembly,
-                            Operation::Transform => A::Transform,
-                        };
-                        let _ = self.invoke(Request::new(action));
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if row.issue_count > 0 && row.visible {
+                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 13.0))
+                                    .on_hover_text(format!(
+                                        "{}: {}",
+                                        self.localizer.text("design-issue-count"),
+                                        row.issue_count
+                                    ));
+                            } else {
+                                let eye_label =
+                                    self.localizer.text(if row.hidden_directly || !row.visible {
+                                        "assembly-reveal"
+                                    } else {
+                                        "assembly-hide"
+                                    });
+                                toggle_visibility = theme_widgets::ghost_icon_sized(
+                                    ui,
+                                    if row.visible {
+                                        icons::Icon::Eye
+                                    } else {
+                                        icons::Icon::EyeOff
+                                    },
+                                    &eye_label,
+                                    if row.visible {
+                                        egui::Color32::from_rgb(201, 193, 180)
+                                    } else {
+                                        theme_widgets::MUTED
+                                    },
+                                    13.0,
+                                    22.0,
+                                    !modal,
+                                    false,
+                                )
+                                .clicked();
+                            }
+                        });
+                    },
+                );
+                let response =
+                    response.on_hover_text(format!("{} · {}", self.localizer.text(kind), row.name));
+                if let Some(expanded) = toggle_expand {
+                    if expanded {
+                        self.session.design_expanded.remove(&row.id);
+                    } else {
+                        self.session.design_expanded.insert(row.id);
                     }
+                } else if toggle_visibility {
+                    let _ = self.invoke(Request::with(A::ToggleVisibility, Target::Object(row.id)));
+                } else if response.clicked() {
+                    let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+                    let request = if row.kind == ObjectKind::Board {
+                        Request::with(A::SelectBoard, Target::Board(row.id))
+                    } else {
+                        Request::with(A::SelectObject, Target::Object(row.id))
+                    };
+                    let _ = self.invoke(request.argument(Argument::Additive(additive)));
+                } else if response.double_clicked() {
+                    let _ = self.invoke(Request::new(A::ViewFrame));
                 }
-            })
+                if response.secondary_clicked() && !self.selection.ids.contains(&row.id) {
+                    let _ = self.invoke(
+                        Request::with(A::SelectObject, Target::Object(row.id))
+                            .argument(Argument::Additive(false)),
+                    );
+                }
+                response.context_menu(|ui| {
+                    ui.set_min_width(200.0);
+                    if row.kind == ObjectKind::Board {
+                        for action in [
+                            A::EditDimensions,
+                            A::PositionBoard,
+                            A::PlaceFace,
+                            A::DuplicateBoard,
+                            A::AssignMaterial,
+                        ] {
+                            let request = Request::with(action, Target::Board(row.id));
+                            if ui
+                                .add_enabled(
+                                    self.action_availability(request).is_ok(),
+                                    egui::Button::new(action.label(&self.localizer)),
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                let _ = self.invoke(request);
+                            }
+                        }
+                        ui.separator();
+                    }
+                    self.hierarchy_menu(ui, false);
+                });
+            }
         });
-        design_section(ui, &self.localizer.text("design-materials-title"));
         let locale = if self.localizer.language() == Language::En {
             Locale::En
         } else {
             Locale::PtBr
         };
-        for material in &model.materials {
-            ui.horizontal(|ui| {
-                ui.set_min_height(28.0);
-                ui.spacing_mut().item_spacing.x = 6.0;
-                material_swatch(ui, material.color);
-                let detail = format!(
-                    "{} · {} {} · {} {}",
+        theme_widgets::divider(ui);
+        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+            theme_widgets::section_bar(ui, &self.localizer.text("design-materials-title"), |ui| {
+                if theme_widgets::ghost_icon_sized(
+                    ui,
+                    icons::Icon::Plus,
+                    &A::NewMaterial.label(&self.localizer),
+                    theme_widgets::MUTED,
+                    15.0,
+                    24.0,
+                    self.action_availability(Request::new(A::NewMaterial)).is_ok(),
+                    false,
+                )
+                .clicked()
+                {
+                    let _ = self.invoke(Request::new(A::NewMaterial));
+                }
+            });
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for material in &model.materials {
+                let warning = material.unallocated_board_count;
+                let (response, ()) = theme_widgets::list_row(
+                    ui,
+                    egui::Id::new(("design-material-row", material.id)),
+                    28.0,
+                    theme_widgets::RowState::Normal,
+                    !modal,
+                    &material.name,
+                    |ui| {
+                        material_swatch(ui, material.color);
+                        let name_width = (ui.available_width() - 64.0).max(20.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(name_width, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&material.name).color(theme_widgets::TEXT),
+                                    )
+                                    .truncate()
+                                    .selectable(false),
+                                );
+                            },
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                theme_widgets::mono(
+                                    format!(
+                                        "{} · {}",
+                                        short_length(material.default_thickness, locale),
+                                        material.board_count
+                                    ),
+                                    11.5,
+                                )
+                                .color(theme_widgets::FAINT),
+                            );
+                            if warning > 0 {
+                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 13.0));
+                            }
+                        });
+                    },
+                );
+                let response = response.on_hover_text(format!(
+                    "{} {} mm · {} {} · {} {}{}",
+                    material.name,
                     short_length(material.default_thickness, locale),
                     material.board_count,
-                    self.localizer.text("board-kind"),
+                    self.localizer.text("shell-parts"),
                     material.stock_piece_count,
-                    self.localizer.text("shell-stock-pieces")
-                );
-                let warning = material.unallocated_board_count;
-                let trailing = 70.0 + if warning > 0 { 20.0 } else { 0.0 };
-                let name_width = (ui.available_width() - trailing).max(30.0);
-                let name = ui
-                    .add_enabled(
-                        !modal,
-                        egui::Button::new(&material.name)
-                            .frame(false)
-                            .min_size(egui::vec2(0.0, 24.0)),
-                    )
-                    .on_hover_text(format!(
-                        "{} · {detail} · {}: {warning} · {}",
-                        material.id,
-                        self.localizer.text("board-unallocated"),
-                        self.localizer.text("material-edit")
-                    ));
-                if name.clicked() {
+                    self.localizer.text("shell-stock-pieces"),
+                    if warning > 0 {
+                        format!(" · {warning} {}", self.localizer.text("shell-unallocated"))
+                    } else {
+                        String::new()
+                    }
+                ));
+                if response.clicked() {
                     let _ = self.invoke(Request::with(
                         A::EditMaterial,
                         Target::Material(material.id),
                     ));
                 }
-                ui.add_space((name_width - name.rect.width()).max(0.0));
-                if warning > 0 {
-                    ui.add(icons::icon(
-                        icons::Icon::Warning,
-                        theme_widgets::WARN_INK,
-                        14.0,
-                    ))
-                    .on_hover_text(format!(
-                        "{}: {warning}",
-                        self.localizer.text("board-unallocated")
-                    ));
-                }
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} · {}",
-                        short_length(material.default_thickness, locale),
-                        material.board_count
-                    ))
-                    .font(design_font(ui, "MonoId", crate::theme::MONO_ID.size, true))
-                    .color(theme_widgets::MUTED),
+            }
+        });
+        theme_widgets::divider(ui);
+        let holding: std::collections::HashSet<Uuid> = self
+            .editor
+            .project()
+            .allocations
+            .iter()
+            .filter(|a| self.selection.ids.contains(&a.board_id))
+            .map(|a| a.stock_id)
+            .collect();
+        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+            theme_widgets::section_bar(ui, &self.localizer.text("design-stock-title"), |ui| {
+                if theme_widgets::ghost_icon_sized(
+                    ui,
+                    icons::Icon::Plus,
+                    &self.localizer.text("stock-new"),
+                    theme_widgets::MUTED,
+                    15.0,
+                    24.0,
+                    !modal,
+                    false,
                 )
-                .on_hover_text(detail);
+                .clicked()
+                {
+                    let _ = self.invoke(Request::new(A::NewStock));
+                }
             });
-        }
-        design_section(ui, &self.localizer.text("design-stock-title"));
-        for stock in &model.stock {
-            let source = self.localizer.text(match stock.source {
-                plan_my_cabinet::domain::StockSource::Owned => "stock-owned",
-                plan_my_cabinet::domain::StockSource::ToPurchase => "stock-purchase",
-            });
-            let size = format!(
-                "{}×{}×{}",
-                short_length(stock.size[0], locale),
-                short_length(stock.size[1], locale),
-                short_length(stock.size[2], locale)
-            );
-            ui.horizontal(|ui| {
-                ui.set_min_height(28.0);
-                ui.spacing_mut().item_spacing.x = 5.0;
+            ui.spacing_mut().item_spacing.y = 0.0;
+            if model.stock.is_empty() {
                 ui.label(
-                    egui::RichText::new(&stock.alias)
-                        .font(design_font(ui, "MonoId", crate::theme::MONO_ID.size, true))
-                        .color(if stock.part_count > 0 {
-                            theme_widgets::ACCENT
-                        } else {
-                            theme_widgets::TEXT
-                        }),
-                );
-                ui.label(
-                    egui::RichText::new(format!("#{}", stock.global_rank))
-                        .font(design_font(ui, "MonoId", crate::theme::MONO_ID.size, true))
+                    egui::RichText::new(self.localizer.text("design-no-stock"))
+                        .size(12.0)
                         .color(theme_widgets::FAINT),
                 );
-                ui.label(egui::RichText::new(&size).font(design_font(
+            }
+            for stock in &model.stock {
+                let owned = stock.source == plan_my_cabinet::domain::StockSource::Owned;
+                let source = self.localizer.text(if owned {
+                    "design-stock-owned"
+                } else {
+                    "design-stock-to-buy"
+                });
+                let size = format!(
+                    "{}×{}",
+                    short_length(stock.size[0], locale),
+                    short_length(stock.size[1], locale),
+                );
+                let (response, ()) = theme_widgets::list_row(
                     ui,
-                    "MonoId",
-                    crate::theme::MONO_ID.size,
-                    true,
-                )))
-                .on_hover_text(format!(
-                    "{} · {} · {}: {} · {}",
-                    stock.id,
+                    egui::Id::new(("design-stock-row", stock.id)),
+                    28.0,
+                    theme_widgets::RowState::Normal,
+                    !modal,
+                    &format!("{} {}", stock.alias, stock.name),
+                    |ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(26.0, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.label(theme_widgets::mono(&stock.alias, 11.5).color(
+                                    if holding.contains(&stock.id) {
+                                        theme_widgets::ACCENT
+                                    } else {
+                                        theme_widgets::FAINT
+                                    },
+                                ));
+                            },
+                        );
+                        ui.label(theme_widgets::mono(size, 12.0).color(theme_widgets::TEXT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(source)
+                                    .size(11.5)
+                                    .color(theme_widgets::FAINT),
+                            );
+                        });
+                    },
+                );
+                let response = response.on_hover_text(format!(
+                    "{} · {} · {}×{}×{} mm · {} {}",
+                    stock.alias,
                     stock.name,
-                    self.localizer.text("board-kind"),
+                    short_length(stock.size[0], locale),
+                    short_length(stock.size[1], locale),
+                    short_length(stock.size[2], locale),
                     stock.part_count,
-                    source
+                    self.localizer.text("shell-parts"),
                 ));
-                ui.label(
-                    egui::RichText::new(&source)
-                        .color(theme_widgets::FAINT)
-                        .size(11.0),
-                )
-                .on_hover_text(&stock.name);
+                if response.clicked() && !modal {
+                    self.navigate_session(Destination::Sheet(stock.id));
+                }
+            }
+        });
+    }
+
+    fn inspector_header(
+        &self,
+        ui: &mut egui::Ui,
+        icon: icons::Icon,
+        title: &str,
+        id_text: &str,
+        subline: &str,
+    ) {
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 14,
+                right: 14,
+                top: 14,
+                bottom: 12,
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 7.0;
+                    ui.add(icons::icon(icon, theme_widgets::ACCENT, 15.0));
+                    let title_width = (ui.available_width() - 60.0).max(40.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(title_width, 22.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    theme_widgets::semibold(ui, title, 15.0).color(theme_widgets::TEXT),
+                                )
+                                .truncate(),
+                            );
+                        },
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(theme_widgets::mono(id_text, 11.0).color(theme_widgets::FAINT));
+                    });
+                });
+                if !subline.is_empty() {
+                    ui.label(
+                        egui::RichText::new(subline)
+                            .size(12.0)
+                            .color(theme_widgets::MUTED),
+                    );
+                }
             });
-        }
-        if ui
-            .add_enabled(
-                !self.modal_open(),
-                egui::Button::new(self.localizer.text("stock-new")),
-            )
-            .clicked()
-        {
-            let _ = self.invoke(Request::new(A::NewStock));
-        }
+        theme_widgets::divider(ui);
+    }
+
+    fn inspector_actions(&mut self, ui: &mut egui::Ui, actions: &[(A, Target)]) {
+        ui.add_space(12.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+            for &(action, target) in actions {
+                let request = Request::with(action, target);
+                if theme_widgets::secondary_button_enabled(
+                    ui,
+                    &action.label(&self.localizer),
+                    self.action_availability(request).is_ok(),
+                )
+                .clicked()
+                {
+                    let _ = self.invoke(request);
+                }
+            }
+        });
     }
 
     pub(super) fn show_design_inspector(&mut self, ui: &mut egui::Ui, model: &DesignReadModel) {
@@ -1325,357 +1709,487 @@ impl DesktopApp {
         } else {
             Locale::PtBr
         };
-        let fmt = |value| format_length(value, Unit::Mm, locale, 3);
+        let dims = |values: [f64; 3]| {
+            values
+                .map(|v| short_length(Length::from_micrometres((v * 1000.0).round() as i64), locale))
+                .join(" × ")
+        };
+        let body = egui::Frame::new().inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 2,
+            bottom: 16,
+        });
         match &model.inspector {
             DesignInspector::None => {
-                ui.heading(self.localizer.text("design-no-selection"));
-                ui.small(self.localizer.text("measurement-empty"));
+                body.show(ui, |ui| {
+                    ui.add_space(40.0);
+                    ui.vertical_centered(|ui| {
+                        ui.add(icons::icon(icons::Icon::Cube, theme_widgets::DISABLED, 28.0));
+                        ui.add_space(8.0);
+                        ui.label(
+                            theme_widgets::medium(ui, self.localizer.text("design-no-selection"), 13.0)
+                                .color(theme_widgets::MUTED),
+                        );
+                        ui.label(
+                            egui::RichText::new(self.localizer.text("design-no-selection-hint"))
+                                .size(12.0)
+                                .color(theme_widgets::FAINT),
+                        );
+                        ui.add_space(14.0);
+                        if theme_widgets::icon_text_button(
+                            ui,
+                            icons::Icon::Plus,
+                            &A::NewBoard.label(&self.localizer),
+                            false,
+                            self.action_availability(Request::new(A::NewBoard)).is_ok(),
+                        )
+                        .clicked()
+                        {
+                            let _ = self.invoke(Request::new(A::NewBoard));
+                        }
+                    });
+                });
             }
             DesignInspector::Board(board) => {
-                ui.label(egui::RichText::new(&board.name).font(design_font(
-                    ui,
-                    "Title",
-                    crate::theme::TITLE.size,
-                    false,
-                )));
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} · {}",
-                        self.localizer.text("board-kind"),
-                        board
-                            .parent_name
-                            .as_deref()
-                            .unwrap_or(&self.localizer.text("assembly-root"))
-                    ))
-                    .color(theme_widgets::MUTED),
+                let parent = board
+                    .parent_name
+                    .clone()
+                    .unwrap_or_else(|| self.localizer.text("assembly-root"));
+                let allocation = match board.allocation.status {
+                    AllocationStatus::AllocatedValid => board
+                        .stock
+                        .first()
+                        .and_then(|a| a.stock_alias.clone())
+                        .map(|alias| format!("{} {alias}", self.localizer.text("design-allocated-on")))
+                        .unwrap_or_else(|| self.localizer.text("board-allocated")),
+                    AllocationStatus::Unallocated => self.localizer.text("board-unallocated"),
+                    AllocationStatus::Conflicted => self.localizer.text("global-conflicted"),
+                    AllocationStatus::UnknownSearchBudget => {
+                        self.localizer.text("sheet-feasibility-unknown")
+                    }
+                };
+                let mut args = FluentArgs::new();
+                args.set("parent", parent.as_str());
+                let subline = format!(
+                    "{} · {allocation}",
+                    self.localizer.format("design-board-in", Some(&args))
                 );
-                ui.small(board.id.to_string())
-                    .on_hover_text(board.id.to_string());
-                inspector_section(ui, &self.localizer.text("board-kind"));
-                ui.horizontal(|ui| {
-                    ui.add_sized(
-                        [84.0, 20.0],
-                        egui::Label::new(
-                            egui::RichText::new(self.localizer.text("design-material-title"))
-                                .color(theme_widgets::MUTED),
-                        ),
-                    );
-                    material_swatch(ui, board.material_color);
-                    ui.label(&board.material_name);
-                });
-                let grain_origin = self.localizer.text(match board.grain_provenance {
-                    GrainProvenance::MaterialDefault => "design-grain-default",
-                    GrainProvenance::BoardOverride => "design-grain-override",
-                });
-                inspector_value(
+                self.inspector_header(
                     ui,
-                    &self.localizer.text("design-grain-title"),
-                    self.localizer.text(grain_key(board.grain)),
+                    icons::Icon::Board,
+                    &board.name,
+                    &short_id('b', board.id),
+                    &subline,
                 );
-                ui.small(grain_origin);
                 let source = self
                     .editor
                     .project()
                     .boards
                     .iter()
                     .find(|b| b.id == board.id)
-                    .expect("inspected board");
-                let mut grain = source.grain_override;
-                ui.add_enabled_ui(!self.modal_open(), |ui| {
-                    egui::ComboBox::from_id_salt(("inspector-grain", board.id))
-                        .selected_text(self.localizer.text(board_grain_key(grain)))
-                        .show_ui(ui, |ui| {
-                            for (value, key) in [
-                                (None, "grain-follow-default"),
-                                (Some(BoardGrain::Length), "grain-length"),
-                                (Some(BoardGrain::Width), "grain-width"),
-                                (Some(BoardGrain::Unrestricted), "grain-unrestricted"),
-                            ] {
-                                combo_option(ui, &mut grain, value, self.localizer.text(key));
-                            }
-                        });
-                });
-                if grain != source.grain_override {
-                    let _ = self.invoke(
-                        Request::with(A::SetGrain, Target::Board(board.id))
-                            .argument(Argument::Grain(grain)),
-                    );
-                }
-                inspector_section(ui, &self.localizer.text("design-dimensions-title"));
-                self.show_shared_board_dimensions(ui, board.id, "inspector");
-                inspector_value(
-                    ui,
-                    &self.localizer.text("board-thickness"),
-                    fmt(board.dimensions[2]),
-                );
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("value", fmt(board.material_default_thickness));
-                ui.small(self.localizer.format(
-                    match board.thickness_provenance {
-                        ThicknessProvenance::MatchesCurrentMaterialDefault => {
-                            "design-thickness-stored-note"
-                        }
-                        ThicknessProvenance::StoredBoardValueDiffers => {
-                            "design-thickness-diff-note"
-                        }
-                    },
-                    Some(&args),
-                ));
-                inspector_section(ui, &self.localizer.text("design-transform-title"));
-                let world = self.localizer.text("design-world");
-                let frame_name = board.parent_name.as_deref().unwrap_or(&world);
-                inspector_value(ui, &self.localizer.text("design-frame-title"), frame_name);
-                inspector_value(
-                    ui,
-                    "X / Y / Z",
-                    format!(
-                        "{} / {} / {} mm",
-                        board.frame.local_pose.translation_mm[0],
-                        board.frame.local_pose.translation_mm[1],
-                        board.frame.local_pose.translation_mm[2]
-                    ),
-                );
-                ui.collapsing(self.localizer.text("placement-numeric"), |ui| {
-                    self.show_shared_pose_fields(ui, board.id);
-                });
-                inspector_section(ui, &self.localizer.text("design-stock-title"));
-                ui.label(self.localizer.text(match board.allocation.status {
-                    AllocationStatus::Unallocated => "board-unallocated",
-                    AllocationStatus::Conflicted => "global-conflicted",
-                    AllocationStatus::UnknownSearchBudget => "sheet-feasibility-unknown",
-                    AllocationStatus::AllocatedValid => "board-allocated",
-                }));
-                for allocation in &board.stock {
-                    ui.label(format!(
-                        "{} · ({}, {}) · {} · {}",
-                        allocation.stock_alias.as_deref().unwrap_or("—"),
-                        short_length(allocation.origin[0], locale),
-                        short_length(allocation.origin[1], locale),
-                        self.localizer.text(if allocation.locked {
-                            "design-locked"
-                        } else {
-                            "design-unlocked"
-                        }),
-                        if allocation.quarter_turn {
-                            "90°"
-                        } else {
-                            "0°"
-                        }
-                    ))
-                    .on_hover_text(allocation.stock_id.to_string());
-                    if let Some(piece) = self
-                        .design_stock_snapshot
-                        .as_ref()
-                        .and_then(|(_, stock)| stock.miniature(allocation.stock_id))
-                        && sheet_miniature(ui, piece, board.id, &self.localizer).clicked()
-                        && !self.modal_open()
-                    {
-                        self.navigate_session(Destination::BoardAllocation(board.id));
-                    }
-                }
-                if ui
-                    .add_enabled(
-                        !self.modal_open(),
-                        egui::Button::new(self.localizer.text("sheet-heading")),
-                    )
-                    .clicked()
-                {
-                    self.navigate_session(Destination::BoardAllocation(board.id));
-                }
-                inspector_section(ui, &self.localizer.text("design-bounding"));
-                show_design_measurement(
-                    ui,
-                    &self.localizer,
-                    &board.bounds_world.body,
-                    &format!(
-                        "{} · {}",
-                        self.localizer.text("design-body"),
-                        self.localizer.text("design-world")
-                    ),
-                );
-                ui.push_id("design-inspector-advanced", |ui| {
-                    ui.collapsing(self.localizer.text("shell-advanced"), |ui| {
-                        show_design_pose(ui, &self.localizer, &board.frame, locale);
-                        show_design_bounds(
-                            ui,
-                            &self.localizer,
-                            &board.bounds_world,
-                            &board.bounds_object,
+                    .expect("inspected board")
+                    .clone();
+                body.show(ui, |ui| {
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("board-kind"), |_| {});
+                    let width = ui.available_width() - 96.0;
+                    theme_widgets::prop_row(ui, &self.localizer.text("design-material-title"), 88.0, |ui| {
+                        let request = Request::with(A::AssignMaterial, Target::Board(board.id));
+                        let color = board.material_color.0;
+                        let response = ui.add_enabled(
+                            self.action_availability(request).is_ok(),
+                            egui::Button::new(
+                                egui::RichText::new(format!(
+                                    "{} {}",
+                                    board.material_name,
+                                    short_length(board.material_default_thickness, locale)
+                                ))
+                                .color(theme_widgets::TEXT),
+                            )
+                            .right_text(egui::RichText::new("▾").color(theme_widgets::FAINT))
+                            .fill(theme_widgets::APP)
+                            .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
+                            .corner_radius(6)
+                            .min_size(egui::vec2(width, 28.0)),
                         );
-                        for action in [
-                            A::EditDimensions,
-                            A::AssignMaterial,
-                            A::PositionBoard,
-                            A::PlaceFace,
-                            A::DuplicateBoard,
-                        ] {
-                            let request = Request::with(action, Target::Board(board.id));
-                            if actions::button(
+                        let swatch = egui::Rect::from_center_size(
+                            response.rect.left_center() + egui::vec2(-6.0, 0.0),
+                            egui::vec2(0.0, 0.0),
+                        );
+                        let _ = swatch;
+                        ui.painter().rect(
+                            egui::Rect::from_min_size(
+                                response.rect.right_center() + egui::vec2(-38.0, -6.0),
+                                egui::vec2(12.0, 12.0),
+                            ),
+                            3.0,
+                            egui::Color32::from_rgb(color[0], color[1], color[2]),
+                            egui::Stroke::new(1.0, egui::Color32::from_black_alpha(28)),
+                            egui::StrokeKind::Inside,
+                        );
+                        if response
+                            .on_hover_text(self.localizer.text("board-assign-material"))
+                            .clicked()
+                        {
+                            let _ = self.invoke(request);
+                        }
+                    });
+                    let mut grain = source.grain_override;
+                    theme_widgets::prop_row(ui, &self.localizer.text("design-grain-title"), 88.0, |ui| {
+                        ui.add_enabled_ui(!self.modal_open(), |ui| {
+                            egui::ComboBox::from_id_salt(("inspector-grain", board.id))
+                                .width(width - 8.0)
+                                .selected_text(match grain {
+                                    None => format!(
+                                        "{} · {}",
+                                        self.localizer.text("design-grain-material"),
+                                        self.localizer.text(match board.grain {
+                                            BoardGrain::Length => "grain-short-length",
+                                            BoardGrain::Width => "grain-short-width",
+                                            BoardGrain::Unrestricted => "grain-short-any",
+                                        })
+                                    ),
+                                    Some(_) => self.localizer.text(board_grain_key(grain)),
+                                })
+                                .show_ui(ui, |ui| {
+                                    for (value, key) in [
+                                        (None, "grain-follow-default"),
+                                        (Some(BoardGrain::Length), "grain-length"),
+                                        (Some(BoardGrain::Width), "grain-width"),
+                                        (Some(BoardGrain::Unrestricted), "grain-unrestricted"),
+                                    ] {
+                                        combo_option(ui, &mut grain, value, self.localizer.text(key));
+                                    }
+                                });
+                        });
+                    });
+                    if grain != source.grain_override {
+                        let _ = self.invoke(
+                            Request::with(A::SetGrain, Target::Board(board.id))
+                                .argument(Argument::Grain(grain)),
+                        );
+                    }
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-dimensions-title"),
+                        |_| {},
+                    );
+                    self.show_shared_board_dimensions(ui, board.id, "inspector");
+                    if board.thickness_provenance == ThicknessProvenance::StoredBoardValueDiffers {
+                        let mut args = fluent_bundle::FluentArgs::new();
+                        args.set(
+                            "value",
+                            format_length(board.material_default_thickness, Unit::Mm, locale, 1),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                self.localizer.format("design-thickness-diff-note", Some(&args)),
+                            )
+                            .size(11.5)
+                            .color(theme_widgets::WARN_INK),
+                        );
+                    }
+                    let mut requested_frame = self.pose_frame;
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-transform-title"),
+                        |ui| {
+                            let world = self.localizer.text("placement-world");
+                            let local = format!(
+                                "{} · {}",
+                                self.localizer.text("design-local"),
+                                board.parent_name.as_deref().unwrap_or(&world)
+                            );
+                            let current = if requested_frame == CoordinateFrame::World {
+                                world.clone()
+                            } else {
+                                local.clone()
+                            };
+                            ui.add_enabled_ui(!self.modal_open(), |ui| {
+                                ui.menu_button(
+                                    egui::RichText::new(format!("{current} ▾"))
+                                        .size(11.5)
+                                        .color(theme_widgets::SECONDARY),
+                                    |ui| {
+                                        if ui
+                                            .selectable_label(
+                                                requested_frame == CoordinateFrame::World,
+                                                &world,
+                                            )
+                                            .clicked()
+                                        {
+                                            requested_frame = CoordinateFrame::World;
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .selectable_label(
+                                                requested_frame == CoordinateFrame::LocalParent,
+                                                &local,
+                                            )
+                                            .clicked()
+                                        {
+                                            requested_frame = CoordinateFrame::LocalParent;
+                                            ui.close();
+                                        }
+                                    },
+                                );
+                            });
+                        },
+                    );
+                    if requested_frame != self.pose_frame {
+                        self.request_pose_frame(requested_frame);
+                    } else {
+                        self.show_shared_pose_fields(ui, board.id);
+                    }
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-stock-title"), |_| {});
+                    if board.stock.is_empty() {
+                        theme_widgets::warn_callout().show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 14.0));
+                                ui.label(
+                                    egui::RichText::new(self.localizer.text(match board.allocation.status {
+                                        AllocationStatus::Unallocated => "design-needs-stock",
+                                        AllocationStatus::Conflicted => "global-conflicted",
+                                        AllocationStatus::UnknownSearchBudget => "sheet-feasibility-unknown",
+                                        AllocationStatus::AllocatedValid => "board-allocated",
+                                    }))
+                                    .size(12.0)
+                                    .color(theme_widgets::WARN_INK),
+                                );
+                            });
+                            if theme_widgets::text_button(
                                 ui,
-                                &self.localizer,
-                                request,
-                                self.action_availability(request),
+                                &format!("{} →", self.localizer.text("design-open-cut-plan")),
+                                theme_widgets::ACCENT_DARK,
+                                !self.modal_open(),
                             )
                             .clicked()
                             {
-                                let _ = self.invoke(request);
+                                self.navigate_session(Destination::BoardAllocation(board.id));
                             }
-                        }
-                        let request = Request::new(A::DeleteObject);
-                        if actions::button(
-                            ui,
-                            &self.localizer,
-                            request,
-                            self.action_availability(request),
-                        )
-                        .clicked()
+                        });
+                    }
+                    for allocation in &board.stock {
+                        if let Some(piece) = self
+                            .design_stock_snapshot
+                            .as_ref()
+                            .and_then(|(_, stock)| stock.miniature(allocation.stock_id))
+                            && sheet_miniature(ui, piece, board.id, &self.localizer).clicked()
+                            && !self.modal_open()
                         {
-                            let _ = self.invoke(request);
+                            self.navigate_session(Destination::BoardAllocation(board.id));
                         }
-                    })
+                        ui.add_space(4.0);
+                        theme_widgets::prop_row(ui, &self.localizer.text("design-sheet"), 88.0, |ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.label(
+                                theme_widgets::mono(
+                                    allocation.stock_alias.as_deref().unwrap_or("—"),
+                                    12.5,
+                                )
+                                .color(theme_widgets::TEXT),
+                            );
+                            ui.label(
+                                egui::RichText::new(self.localizer.text("design-at"))
+                                    .size(12.0)
+                                    .color(theme_widgets::FAINT),
+                            );
+                            ui.label(
+                                theme_widgets::mono(
+                                    format!(
+                                        "{}, {}{}",
+                                        short_length(allocation.origin[0], locale),
+                                        short_length(allocation.origin[1], locale),
+                                        if allocation.quarter_turn { " · 90°" } else { "" }
+                                    ),
+                                    12.5,
+                                )
+                                .color(theme_widgets::SECONDARY),
+                            );
+                        });
+                        theme_widgets::prop_row(ui, &self.localizer.text("design-placement"), 88.0, |ui| {
+                            ui.add(icons::icon(icons::Icon::Lock, theme_widgets::MUTED, 13.0));
+                            ui.label(self.localizer.text(if allocation.locked {
+                                "design-locked"
+                            } else {
+                                "design-unlocked"
+                            }));
+                        });
+                    }
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    theme_widgets::prop_row(ui, &self.localizer.text("design-bounding-body"), 88.0, |ui| {
+                        match &board.bounds_world.body {
+                            Ok(m) => ui.label(
+                                theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                    .color(theme_widgets::TEXT),
+                            ),
+                            Err(_) => ui.label(self.localizer.text("measurement-invalid")),
+                        };
+                    });
                 });
             }
             DesignInspector::Assembly(assembly) => {
-                ui.heading(&assembly.name);
-                ui.small(assembly.id.to_string());
-                ui.label(format!(
-                    "{}: {}",
-                    self.localizer.text("assembly-parent"),
-                    assembly
-                        .parent_name
-                        .as_deref()
-                        .unwrap_or(&self.localizer.text("assembly-root"))
-                ));
-                ui.label(format!(
-                    "{}: {} · {}: {}",
-                    self.localizer.text("board-kind"),
-                    assembly.descendant_board_count,
-                    self.localizer.text("design-issue-count"),
-                    assembly.issue_count
-                ));
-                show_design_pose(ui, &self.localizer, &assembly.frame, locale);
-                show_design_bounds(
-                    ui,
-                    &self.localizer,
-                    &assembly.bounds_world,
-                    &assembly.bounds_object,
+                let mut args = FluentArgs::new();
+                args.set(
+                    "count",
+                    assembly.descendant_board_count as i64,
                 );
-                for action in [
-                    A::Ungroup,
-                    A::DuplicateAssembly,
-                    A::Transform,
-                    A::DeleteObject,
-                ] {
-                    let request = Request::new(action);
-                    if actions::button(
-                        ui,
-                        &self.localizer,
-                        request,
-                        self.action_availability(request),
-                    )
-                    .clicked()
-                    {
-                        let _ = self.invoke(request);
+                let parent = assembly
+                    .parent_name
+                    .clone()
+                    .unwrap_or_else(|| self.localizer.text("assembly-root"));
+                let mut in_args = FluentArgs::new();
+                in_args.set("parent", parent.as_str());
+                self.inspector_header(
+                    ui,
+                    icons::Icon::Assembly,
+                    &assembly.name,
+                    &short_id('a', assembly.id),
+                    &format!(
+                        "{} · {}",
+                        self.localizer.format("design-group-in", Some(&in_args)),
+                        self.localizer.format("design-part-count", Some(&args))
+                    ),
+                );
+                body.show(ui, |ui| {
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    for (label, result) in [
+                        ("design-bounding-body", &assembly.bounds_world.body),
+                        ("design-bounding-overall", &assembly.bounds_world.overall),
+                    ] {
+                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| match result {
+                            Ok(m) => {
+                                ui.label(
+                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                        .color(theme_widgets::TEXT),
+                                );
+                            }
+                            Err(_) => {
+                                ui.label(self.localizer.text("measurement-invalid"));
+                            }
+                        });
                     }
-                }
+                    if assembly.issue_count > 0 {
+                        ui.add_space(6.0);
+                        theme_widgets::warn_callout().show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{}: {}",
+                                    self.localizer.text("design-issue-count"),
+                                    assembly.issue_count
+                                ))
+                                .size(12.0)
+                                .color(theme_widgets::WARN_INK),
+                            );
+                        });
+                    }
+                    self.inspector_actions(
+                        ui,
+                        &[
+                            (A::Transform, Target::None),
+                            (A::DuplicateAssembly, Target::None),
+                            (A::Ungroup, Target::None),
+                        ],
+                    );
+                });
             }
             DesignInspector::Multi(multi) => {
-                ui.heading(self.localizer.text("design-multi-selection"));
-                ui.label(format!(
-                    "{}: {} · {}: {} · {}: {}",
-                    self.localizer.text("board-kind"),
-                    multi.board_count,
-                    self.localizer.text("assembly-kind"),
-                    multi.assembly_count,
-                    self.localizer.text("hardware-kind"),
-                    multi.hardware_count
-                ));
-                show_design_measurement(
+                let mut args = FluentArgs::new();
+                args.set("count", (multi.board_count + multi.assembly_count + multi.hardware_count) as i64);
+                self.inspector_header(
                     ui,
-                    &self.localizer,
-                    &multi.bounds_world.body,
-                    &format!(
-                        "{} · {}",
-                        self.localizer.text("design-body"),
-                        self.localizer.text("design-world")
-                    ),
+                    icons::Icon::Layers,
+                    &self.localizer.format("design-multi-count", Some(&args)),
+                    "",
+                    "",
                 );
-                show_design_measurement(
-                    ui,
-                    &self.localizer,
-                    &multi.bounds_world.overall,
-                    &format!(
-                        "{} · {}",
-                        self.localizer.text("design-overall"),
-                        self.localizer.text("design-world")
-                    ),
-                );
-                for action in [A::BatchDimensions, A::Group, A::Reparent, A::Transform] {
-                    let request = Request::new(action);
-                    if actions::button(
-                        ui,
-                        &self.localizer,
-                        request,
-                        self.action_availability(request),
-                    )
-                    .clicked()
-                    {
-                        let _ = self.invoke(request);
+                body.show(ui, |ui| {
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    for (label, result) in [
+                        ("design-bounding-body", &multi.bounds_world.body),
+                        ("design-bounding-overall", &multi.bounds_world.overall),
+                    ] {
+                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| match result {
+                            Ok(m) => {
+                                ui.label(
+                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                        .color(theme_widgets::TEXT),
+                                );
+                            }
+                            Err(_) => {
+                                ui.label(self.localizer.text("measurement-invalid"));
+                            }
+                        });
                     }
-                }
+                    self.inspector_actions(
+                        ui,
+                        &[
+                            (A::BatchDimensions, Target::None),
+                            (A::Group, Target::None),
+                            (A::Reparent, Target::None),
+                            (A::Transform, Target::None),
+                        ],
+                    );
+                });
             }
             DesignInspector::Hardware(hardware) => {
-                ui.heading(&hardware.name);
-                ui.small(hardware.id.to_string());
-                show_design_pose(ui, &self.localizer, &hardware.frame, locale);
-                if let Some(size) = hardware.dimensions {
-                    ui.label(format!(
-                        "X · {}   Y · {}   Z · {}",
-                        fmt(size[0]),
-                        fmt(size[1]),
-                        fmt(size[2])
-                    ));
-                }
-                show_design_measurement(
+                self.inspector_header(
                     ui,
-                    &self.localizer,
-                    &hardware.bounds_world.overall,
-                    &format!(
-                        "{} · {}",
-                        self.localizer.text("design-overall"),
-                        self.localizer.text("design-world")
-                    ),
+                    icons::Icon::Hinge,
+                    &hardware.name,
+                    &short_id('h', hardware.id),
+                    &self.localizer.text("hardware-kind"),
                 );
-                let request = Request::new(A::Transform);
-                if actions::button(
-                    ui,
-                    &self.localizer,
-                    request,
-                    self.action_availability(request),
-                )
-                .clicked()
-                {
-                    let _ = self.invoke(request);
-                }
-                if hardware.dimensions.is_some() {
-                    for action in [A::EditHardware, A::DuplicateHardware] {
-                        let request = Request::with(action, Target::Object(hardware.id));
-                        if actions::button(
+                body.show(ui, |ui| {
+                    if let Some(size) = hardware.dimensions {
+                        theme_widgets::inspector_heading(
                             ui,
-                            &self.localizer,
-                            request,
-                            self.action_availability(request),
-                        )
-                        .clicked()
-                        {
-                            let _ = self.invoke(request);
-                        }
+                            &self.localizer.text("design-dimensions-title"),
+                            |_| {},
+                        );
+                        theme_widgets::prop_row(ui, "X × Y × Z", 88.0, |ui| {
+                            ui.label(
+                                theme_widgets::mono(
+                                    size.map(|v| short_length(v, locale)).join(" × "),
+                                    12.5,
+                                )
+                                .color(theme_widgets::TEXT),
+                            );
+                        });
                     }
-                }
+                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("design-bounding-overall"),
+                        88.0,
+                        |ui| match &hardware.bounds_world.overall {
+                            Ok(m) => {
+                                ui.label(
+                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                        .color(theme_widgets::TEXT),
+                                );
+                            }
+                            Err(_) => {
+                                ui.label(self.localizer.text("measurement-unknown-hardware"));
+                            }
+                        },
+                    );
+                    let mut actions = vec![(A::Transform, Target::None)];
+                    if hardware.dimensions.is_some() {
+                        actions.push((A::EditHardware, Target::Object(hardware.id)));
+                        actions.push((A::DuplicateHardware, Target::Object(hardware.id)));
+                    }
+                    self.inspector_actions(ui, &actions);
+                });
             }
         }
-        ui.separator();
-        self.show_measurement(ui);
+        if self.move_tool.mode == viewport::ToolMode::Measure {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(14, 4))
+                .show(ui, |ui| self.show_measurement(ui));
+        }
     }
 
     pub(super) fn show_assembly_dialog(&mut self, ctx: &egui::Context) {
@@ -2284,7 +2798,7 @@ mod tests {
             assert!(response.rect.height() >= 64.0);
         });
         assert!(output.shapes.iter().any(|shape| match &shape.shape {
-            egui::Shape::Rect(rect) => rect.fill == theme_widgets::ACCENT,
+            egui::Shape::Rect(rect) => rect.fill == egui::Color32::from_rgb(244, 194, 122),
             _ => false,
         }));
         output.drop_without_applying_deltas();
@@ -2369,7 +2883,7 @@ mod tests {
             assert_eq!(strip.center().x, canvas.center().x);
             assert!(canvas.contains_rect(strip));
             assert_eq!(strip.height(), 44.0);
-            assert!(strip.width() <= 460.0);
+            assert!(strip.width() <= 560.0);
         }
         assert!(
             hud_rect(egui::Rect::from_min_size(
@@ -3114,13 +3628,13 @@ mod tests {
             height
         );
         let update = output.platform_output.accesskit_update.as_ref().unwrap();
-        for rank in 1..=4 {
-            let expected = format!("#{rank}");
+        for alias in ["S1", "O1", "S2", "S3"] {
             assert!(
                 update
                     .nodes
                     .iter()
-                    .any(|(_, node)| node.value() == Some(expected.as_str()))
+                    .any(|(_, node)| node.label().is_some_and(|l| l.starts_with(alias))),
+                "stock row {alias} missing"
             );
         }
         assert!(

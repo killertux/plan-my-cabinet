@@ -64,6 +64,499 @@ pub fn apply_visuals(ctx: &egui::Context) {
     });
 }
 
+pub const CARD: Color32 = Color32::WHITE;
+pub const TEXT_2: Color32 = Color32::from_rgb(58, 51, 44);
+pub const DISABLED: Color32 = Color32::from_rgb(181, 172, 159);
+pub const BORDER_STRONG: Color32 = Color32::from_rgb(212, 205, 193);
+pub const ACCENT_DARK: Color32 = Color32::from_rgb(138, 79, 14);
+pub const HOVER_ROW: Color32 = Color32::from_rgb(244, 241, 236);
+pub const MULTI_ROW: Color32 = Color32::from_rgb(251, 241, 227);
+pub const OK: Color32 = Color32::from_rgb(63, 125, 78);
+pub const WARN: Color32 = Color32::from_rgb(183, 121, 31);
+pub const WARN_STROKE: Color32 = Color32::from_rgb(235, 210, 176);
+pub const KERF: Color32 = Color32::from_rgb(196, 69, 58);
+pub const RULE: Color32 = Color32::from_rgb(237, 232, 224);
+
+/// Side panel / header surface with the handoff's panel padding.
+pub fn panel_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(PANEL)
+        .inner_margin(egui::Margin::symmetric(0, 0))
+}
+
+/// Floating toolbars and HUDs over the viewport or sheet canvas.
+pub fn floating_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(10)
+        .inner_margin(4)
+        .shadow(egui::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_rgba_unmultiplied(60, 45, 25, 40),
+        })
+}
+
+/// Warning callout (`warn_bg` fill, soft amber stroke).
+pub fn warn_callout() -> egui::Frame {
+    egui::Frame::new()
+        .fill(WARN_BG)
+        .stroke(Stroke::new(1.0, WARN_STROKE))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+}
+
+pub fn font(ui: &Ui, style: &str, fallback: super::theme::TextToken) -> FontId {
+    ui.style()
+        .text_styles
+        .get(&egui::TextStyle::Name(style.into()))
+        .cloned()
+        .unwrap_or_else(|| fallback.font_id())
+}
+
+pub fn mono(text: impl Into<String>, size: f32) -> RichText {
+    RichText::new(text).font(FontId::monospace(size))
+}
+
+/// Whether the app's named font families are installed in this context.
+/// Bare test contexts only have egui's defaults.
+pub fn weights_available(ui: &Ui) -> bool {
+    ui.style()
+        .text_styles
+        .contains_key(&egui::TextStyle::Name("PrimaryButton".into()))
+}
+
+pub fn weighted_font(ui: &Ui, size: f32, typeface: super::theme::Typeface) -> FontId {
+    if weights_available(ui) {
+        FontId::new(size, typeface.family())
+    } else {
+        FontId::proportional(size)
+    }
+}
+
+pub fn semibold(ui: &Ui, text: impl Into<String>, size: f32) -> RichText {
+    RichText::new(text).font(weighted_font(ui, size, super::theme::Typeface::SansSemibold))
+}
+
+pub fn medium(ui: &Ui, text: impl Into<String>, size: f32) -> RichText {
+    RichText::new(text).font(weighted_font(ui, size, super::theme::Typeface::SansMedium))
+}
+
+/// A frameless square icon button with a hover fill and an accessible name.
+pub fn ghost_icon(
+    ui: &mut Ui,
+    symbol: crate::icons::Icon,
+    accessible_name: &str,
+    color: Color32,
+    size: f32,
+    enabled: bool,
+) -> Response {
+    ghost_icon_sized(ui, symbol, accessible_name, color, size, size + 12.0, enabled, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ghost_icon_sized(
+    ui: &mut Ui,
+    symbol: crate::icons::Icon,
+    accessible_name: &str,
+    color: Color32,
+    icon_size: f32,
+    box_size: f32,
+    enabled: bool,
+    selected: bool,
+) -> Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(box_size, box_size),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let response = response.on_hover_text(accessible_name);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, accessible_name)
+    });
+    if ui.is_rect_visible(rect) {
+        let fill = if selected {
+            TEXT
+        } else if enabled && (response.hovered() || response.has_focus()) {
+            VIEWPORT
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(rect, 7.0, fill);
+        if response.has_focus() {
+            ui.painter().rect_stroke(
+                rect,
+                7.0,
+                Stroke::new(1.0, FOCUS),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let tint = if selected {
+            PANEL
+        } else if enabled {
+            color
+        } else {
+            color.gamma_multiply(0.4)
+        };
+        let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(icon_size));
+        crate::icons::icon(symbol, tint, icon_size).paint_at(ui, icon_rect);
+    }
+    if enabled {
+        response
+    } else {
+        // Keep keyboard/pointer semantics of a disabled widget.
+        response.on_hover_cursor(egui::CursorIcon::Default)
+    }
+}
+
+/// Button with a leading icon (secondary style unless `primary`).
+pub fn icon_text_button(
+    ui: &mut Ui,
+    symbol: crate::icons::Icon,
+    text: &str,
+    primary: bool,
+    enabled: bool,
+) -> Response {
+    let (fill, ink, stroke) = if primary {
+        (TEXT, PANEL, Stroke::NONE)
+    } else {
+        (VIEWPORT, TEXT, Stroke::new(1.0, BORDER_SOFT))
+    };
+    let label = if primary {
+        semibold(ui, text, 13.0).color(ink)
+    } else {
+        medium(ui, text, 13.0).color(ink)
+    };
+    ui.add_enabled(
+        enabled,
+        egui::Button::image_and_text(crate::icons::icon(symbol, ink, 15.0), label)
+            .fill(fill)
+            .stroke(stroke)
+            .corner_radius(7)
+            .min_size(egui::vec2(0.0, 30.0)),
+    )
+}
+
+/// Plain text link-style button (no frame), e.g. "Discard" in danger colour.
+pub fn text_button(ui: &mut Ui, text: &str, color: Color32, enabled: bool) -> Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(medium(ui, text, 13.0).color(color)).frame(false),
+    )
+}
+
+/// Visual state of a list row.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RowState {
+    Normal,
+    /// Member of a multi-selection.
+    Selected,
+    /// The active (primary) selection.
+    Active,
+}
+
+/// A full-width clickable row. The returned response is the row's click
+/// response; interactive widgets added inside `content` take precedence.
+pub fn list_row<R>(
+    ui: &mut Ui,
+    id: egui::Id,
+    height: f32,
+    state: RowState,
+    enabled: bool,
+    accessible_name: &str,
+    content: impl FnOnce(&mut Ui) -> R,
+) -> (Response, R) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let response = ui.interact(
+        rect,
+        id,
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            enabled,
+            state != RowState::Normal,
+            accessible_name,
+        )
+    });
+    let fill = match state {
+        RowState::Active => ACCENT_BG,
+        RowState::Selected => MULTI_ROW,
+        RowState::Normal if enabled && response.hovered() => HOVER_ROW,
+        RowState::Normal => Color32::TRANSPARENT,
+    };
+    ui.painter().rect_filled(rect, 5.0, fill);
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(6.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = 6.0;
+    let inner = content(&mut child);
+    (response, inner)
+}
+
+/// Section header: 36 high, uppercase tracked label and trailing actions.
+pub fn section_bar<R>(ui: &mut Ui, label: &str, actions: impl FnOnce(&mut Ui) -> R) -> R {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &label.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: weighted_font(
+                ui,
+                super::theme::SECTION.size,
+                super::theme::Typeface::SansSemibold,
+            ),
+            color: MUTED,
+            extra_letter_spacing: super::theme::SECTION.size * super::theme::SECTION_TRACKING_EM,
+            ..Default::default()
+        },
+    );
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 36.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.add(egui::Label::new(job).selectable(false));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), actions)
+                .inner
+        },
+    )
+    .inner
+}
+
+/// A 1px full-width divider in `border`, used between panel sections.
+pub fn divider(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range().expand(40.0),
+        rect.center().y,
+        Stroke::new(1.0, BORDER),
+    );
+}
+
+/// Label column + value row used in inspectors (label column `label_width`).
+pub fn prop_row<R>(
+    ui: &mut Ui,
+    label: &str,
+    label_width: f32,
+    value: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 30.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_width, 28.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_width(label_width);
+                    ui.add(
+                        egui::Label::new(RichText::new(label).color(MUTED))
+                            .truncate()
+                            .selectable(false),
+                    );
+                },
+            );
+            value(ui)
+        },
+    )
+    .inner
+}
+
+/// Small painted swatch (radius 3) in an sRGB colour.
+pub fn swatch(ui: &mut Ui, color: Color32, size: egui::Vec2) -> Response {
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    ui.painter().rect(
+        rect,
+        3.0,
+        color,
+        Stroke::new(1.0, Color32::from_black_alpha(28)),
+        egui::StrokeKind::Inside,
+    );
+    response
+}
+
+/// A pill keycap such as `⌘K`.
+pub fn keycap(ui: &mut Ui, text: &str) {
+    egui::Frame::new()
+        .stroke(Stroke::new(1.0, BORDER_STRONG))
+        .corner_radius(4)
+        .inner_margin(egui::Margin::symmetric(5, 0))
+        .show(ui, |ui| {
+            ui.label(mono(text, 11.0).color(FAINT));
+        });
+}
+
+/// Compact inline value field (mono), optionally with an axis-coloured bottom
+/// stroke and a unit suffix. Returns the text edit response.
+#[allow(clippy::too_many_arguments)]
+pub fn value_field(
+    ui: &mut Ui,
+    id: egui::Id,
+    accessible_name: &str,
+    text: &mut String,
+    width: f32,
+    suffix: Option<&str>,
+    axis: Option<Color32>,
+    enabled: bool,
+    invalid: bool,
+) -> Response {
+    let focused = ui.memory(|m| m.has_focus(id));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::hover());
+    let painter = ui.painter().clone();
+    if focused {
+        painter.rect_stroke(
+            rect.expand(2.0),
+            8.0,
+            Stroke::new(3.0, ACCENT_BG),
+            egui::StrokeKind::Outside,
+        );
+    }
+    painter.rect(
+        rect,
+        6.0,
+        if focused { CARD } else { APP },
+        Stroke::new(
+            1.0,
+            if invalid {
+                DANGER
+            } else if focused {
+                FOCUS
+            } else {
+                BORDER_SOFT
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    if let Some(color) = axis {
+        painter.line_segment(
+            [
+                rect.left_bottom() + egui::vec2(3.0, -1.0),
+                rect.right_bottom() + egui::vec2(-3.0, -1.0),
+            ],
+            Stroke::new(2.0, color),
+        );
+    }
+    let suffix_width = suffix.map_or(0.0, |suffix| {
+        painter
+            .layout_no_wrap(suffix.into(), FontId::monospace(11.5), FAINT)
+            .size()
+            .x
+            + 6.0
+    });
+    if let Some(suffix) = suffix {
+        painter.text(
+            rect.right_center() - egui::vec2(8.0, 0.0),
+            egui::Align2::RIGHT_CENTER,
+            suffix,
+            FontId::monospace(11.5),
+            FAINT,
+        );
+    }
+    let inner = egui::Rect::from_min_max(
+        rect.min + egui::vec2(8.0, 0.0),
+        rect.max - egui::vec2(8.0 + suffix_width, 0.0),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let response = child.add_enabled(
+        enabled,
+        egui::TextEdit::singleline(text)
+            .id(id)
+            .frame(egui::Frame::NONE)
+            .font(FontId::monospace(12.5))
+            .text_color(TEXT)
+            .desired_width(inner.width()),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, enabled, accessible_name)
+    });
+    response
+}
+
+/// Read-only derived value (dashed `border_strong` stroke, no fill).
+pub fn derived_field(ui: &mut Ui, value: &str, suffix: &str, width: f32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::hover());
+    let painter = ui.painter();
+    let r = rect.shrink(0.5);
+    let dash = |a: egui::Pos2, b: egui::Pos2| {
+        painter.extend(egui::Shape::dashed_line(
+            &[a, b],
+            Stroke::new(1.0, BORDER_STRONG),
+            3.0,
+            2.5,
+        ));
+    };
+    dash(r.left_top() + egui::vec2(5.0, 0.0), r.right_top() - egui::vec2(5.0, 0.0));
+    dash(r.left_bottom() + egui::vec2(5.0, 0.0), r.right_bottom() - egui::vec2(5.0, 0.0));
+    dash(r.left_top() + egui::vec2(0.0, 5.0), r.left_bottom() - egui::vec2(0.0, 5.0));
+    dash(r.right_top() + egui::vec2(0.0, 5.0), r.right_bottom() - egui::vec2(0.0, 5.0));
+    painter.text(
+        rect.left_center() + egui::vec2(8.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        value,
+        FontId::monospace(12.5),
+        SECONDARY,
+    );
+    painter.text(
+        rect.right_center() - egui::vec2(8.0, 0.0),
+        egui::Align2::RIGHT_CENTER,
+        suffix,
+        FontId::proportional(11.0),
+        FAINT,
+    );
+    response
+}
+
+/// Inspector section title: small uppercase tracked label with trailing slot.
+pub fn inspector_heading<R>(ui: &mut Ui, label: &str, trailing: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.add_space(10.0);
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &label.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: weighted_font(
+                ui,
+                super::theme::SECTION_COMPACT.size,
+                super::theme::Typeface::SansSemibold,
+            ),
+            color: FAINT,
+            extra_letter_spacing: super::theme::SECTION_COMPACT.size
+                * super::theme::SECTION_TRACKING_EM,
+            ..Default::default()
+        },
+    );
+    let r = ui
+        .allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), 22.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add(egui::Label::new(job).selectable(false));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), trailing)
+                    .inner
+            },
+        )
+        .inner;
+    ui.add_space(2.0);
+    r
+}
+
 pub fn card() -> egui::Frame {
     egui::Frame::new()
         .fill(Color32::WHITE)
@@ -110,16 +603,29 @@ pub fn primary_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
         egui::Button::new(RichText::new(text).font(font).color(PANEL))
             .fill(TEXT)
             .stroke(Stroke::NONE)
-            .corner_radius(7),
+            .corner_radius(7)
+            .min_size(egui::vec2(0.0, 30.0)),
     )
 }
 
 pub fn secondary_button(ui: &mut Ui, text: &str) -> Response {
     ui.add(
-        egui::Button::new(text)
+        egui::Button::new(medium(ui, text, 13.0).color(TEXT))
             .fill(VIEWPORT)
             .stroke(Stroke::new(1.0, BORDER_SOFT))
-            .corner_radius(7),
+            .corner_radius(7)
+            .min_size(egui::vec2(0.0, 30.0)),
+    )
+}
+
+pub fn secondary_button_enabled(ui: &mut Ui, text: &str, enabled: bool) -> Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(medium(ui, text, 13.0).color(TEXT))
+            .fill(VIEWPORT)
+            .stroke(Stroke::new(1.0, BORDER_SOFT))
+            .corner_radius(7)
+            .min_size(egui::vec2(0.0, 30.0)),
     )
 }
 
@@ -149,9 +655,15 @@ pub fn segmented<T: Copy + PartialEq>(
                 let mut union: Option<Response> = None;
                 for &(candidate, label) in options {
                     let selected = *value == candidate;
+                    let text = if selected {
+                        medium(ui, label, 12.5).color(TEXT)
+                    } else {
+                        RichText::new(label).size(12.5).color(SECONDARY)
+                    };
                     let r = ui.add(
-                        egui::Button::new(label)
+                        egui::Button::new(text)
                             .selected(selected)
+                            .min_size(egui::vec2(0.0, 24.0))
                             .fill(if selected {
                                 PANEL
                             } else {
