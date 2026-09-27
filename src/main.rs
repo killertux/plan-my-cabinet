@@ -96,6 +96,8 @@ fn unit_key(unit: Unit) -> &'static str {
     }
 }
 
+
+#[cfg(test)]
 fn stock_reference(project: &Project, id: Uuid) -> String {
     project
         .stock_alias(id)
@@ -650,49 +652,6 @@ fn error_key(error: InputError) -> &'static str {
     }
 }
 
-fn dimension_field(
-    ui: &mut egui::Ui,
-    localizer: &Localizer,
-    label: &str,
-    field: &mut DimensionDraft,
-    unit: Unit,
-) -> bool {
-    ui.horizontal(|ui| {
-        ui.label(localizer.text(label));
-        if ui.text_edit_singleline(&mut field.text).changed() {
-            field.consent = false;
-        }
-    });
-    match parse_length(&field.text, unit)
-        .and_then(|v| dimension(v.conversion).map_err(InputError::Unit))
-    {
-        Ok(parsed) => {
-            let value = parsed.suggested();
-            let locale = match localizer.language() {
-                Language::En => Locale::En,
-                Language::PtBr => Locale::PtBr,
-            };
-            if let Conversion::NeedsConfirmation(_) = parsed {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("entered", field.text.as_str());
-                args.set("rounded", format_length(value, Unit::Mm, locale, 3));
-                ui.checkbox(
-                    &mut field.consent,
-                    localizer.format("rounding-confirmation", Some(&args)),
-                );
-            } else {
-                ui.small(format_length(value, Unit::Mm, locale, 3));
-            }
-            field.value(unit).is_ok()
-        }
-        Err(error) => {
-            if !field.text.is_empty() {
-                ui.colored_label(egui::Color32::LIGHT_RED, localizer.text(error_key(error)));
-            }
-            false
-        }
-    }
-}
 
 /// `539.75`, `18`, `12,7`: a millimetre value without the unit or needless zeros.
 fn short_mm(value: Length, locale: Locale) -> String {

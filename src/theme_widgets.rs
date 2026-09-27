@@ -77,12 +77,6 @@ pub const WARN_STROKE: Color32 = Color32::from_rgb(235, 210, 176);
 pub const KERF: Color32 = Color32::from_rgb(196, 69, 58);
 pub const RULE: Color32 = Color32::from_rgb(237, 232, 224);
 
-/// Side panel / header surface with the handoff's panel padding.
-pub fn panel_frame() -> egui::Frame {
-    egui::Frame::new()
-        .fill(PANEL)
-        .inner_margin(egui::Margin::symmetric(0, 0))
-}
 
 /// Floating toolbars and HUDs over the viewport or sheet canvas.
 pub fn floating_frame() -> egui::Frame {
@@ -108,13 +102,6 @@ pub fn warn_callout() -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(10, 8))
 }
 
-pub fn font(ui: &Ui, style: &str, fallback: super::theme::TextToken) -> FontId {
-    ui.style()
-        .text_styles
-        .get(&egui::TextStyle::Name(style.into()))
-        .cloned()
-        .unwrap_or_else(|| fallback.font_id())
-}
 
 pub fn mono(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(FontId::monospace(size))
@@ -144,17 +131,6 @@ pub fn medium(ui: &Ui, text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(weighted_font(ui, size, super::theme::Typeface::SansMedium))
 }
 
-/// A frameless square icon button with a hover fill and an accessible name.
-pub fn ghost_icon(
-    ui: &mut Ui,
-    symbol: crate::icons::Icon,
-    accessible_name: &str,
-    color: Color32,
-    size: f32,
-    enabled: bool,
-) -> Response {
-    ghost_icon_sized(ui, symbol, accessible_name, color, size, size + 12.0, enabled, false)
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn ghost_icon_sized(
