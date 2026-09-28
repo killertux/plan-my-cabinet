@@ -62,9 +62,9 @@ mod app;
 use app::{
     actions, assembly_ui, capture, catalog_ui, command_palette, currency_ui, door_joint_ui,
     handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
-    pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, state,
-    stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
-    workspace_state,
+    pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui, recovery_cleanup_ui,
+    sheet_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery,
+    workspace_shell, workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
 use actions::{ActionId as A, Argument, Request, Target};
@@ -519,6 +519,7 @@ impl DesktopApp {
         {
             self.show_welcome(ui);
             self.show_project_dialog(ui.ctx());
+            self.show_project_name_dialog(ui.ctx());
             self.show_navigation_prompt(ui.ctx());
             self.show_settings(ui.ctx());
             self.show_template_setup(ui.ctx());

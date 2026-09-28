@@ -389,6 +389,7 @@ fn enter_activates_the_live_action_and_popup_keys_do_not_escape() {
         app.show_palette(ui.ctx());
     });
     frame.textures_delta.clear();
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, old_project);
     assert!(!app.palette.open);
 }

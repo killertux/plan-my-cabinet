@@ -57,6 +57,7 @@ const COMMANDS: &[A] = &[
     A::OpenProject,
     A::SaveProject,
     A::SaveProjectAs,
+    A::RenameProject,
     A::Undo,
     A::Redo,
     A::NewBoard,

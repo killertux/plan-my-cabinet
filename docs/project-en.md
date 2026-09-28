@@ -14,6 +14,10 @@ indicator beside the project name/path. Native pickers run asynchronously.
 New, Open and window close ask to save, discard or cancel unsaved changes.
 Open validates the selected file before asking to discard current work.
 Save As requires confirmation before replacing an existing destination.
+New project first asks for the project's name, currency and input unit
+(the same choices as a template's first step); Cancel creates nothing.
+To rename the open project, click its name in the header and choose
+**Rename project…** (also in ⌘K). Renaming is one undoable edit.
 Undo/redo history starts fresh for each opened or newly created project.
 
 ## Pending edits, navigation and shortcuts

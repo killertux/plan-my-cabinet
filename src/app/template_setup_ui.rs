@@ -971,7 +971,7 @@ fn locale(l: &Localizer) -> Locale {
     }
 }
 
-fn unit_label(unit: Unit) -> &'static str {
+pub(crate) fn unit_label(unit: Unit) -> &'static str {
     match unit {
         Unit::Mm => "mm",
         Unit::Cm => "cm",

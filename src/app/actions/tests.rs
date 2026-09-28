@@ -193,6 +193,7 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::PositionBoard, R::Design),
         (A::PlaceFace, R::Design),
         (A::DuplicateBoard, R::Design),
+        (A::RenameProject, R::Project),
         (A::RenameObject, R::Design),
         (A::EditDimensions, R::Design),
         (A::SetGrain, R::Design),

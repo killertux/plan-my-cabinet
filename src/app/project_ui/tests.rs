@@ -117,6 +117,7 @@ fn a_panic_flush_writes_recovery_without_waiting_and_discarding_removes_it() {
     assert_eq!(untitled_snapshots(&dir.join("user")), 1);
     // Leaving the untitled project on purpose (after Discard) drops it.
     app.proceed(NextAction::New);
+    app.confirm_new_project();
     assert_eq!(untitled_snapshots(&dir.join("user")), 0);
     fs::remove_dir_all(dir).unwrap();
 }
@@ -218,6 +219,7 @@ fn unsaved_footer_buttons_save_discard_or_cancel_without_crossing_decisions() {
             assert_eq!(app.editor.project().id, original_id);
             assert!(app.editor.is_dirty());
         } else {
+            app.confirm_new_project();
             assert_ne!(app.editor.project().id, original_id, "{decision}");
         }
     }
@@ -330,6 +332,7 @@ fn unsaved_project_dialog_traps_focus_and_popup_keys_before_saving() {
             .is_active()
     );
     assert_eq!(ctx.memory(|m| m.focused()), invoker);
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, original_id);
     let saved = persistence::prepare_reader(File::open(path).unwrap()).unwrap();
     assert_eq!(saved.project().id, original_id);
@@ -418,6 +421,7 @@ fn unsaved_discard_keyboard_action_does_not_save_project_file() {
         dialog_key(egui::Key::Enter, egui::Modifiers::NONE),
     );
     assert!(app.project_files.prompt.is_none());
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, original_id);
     let original_file = persistence::prepare_reader(File::open(path).unwrap()).unwrap();
     assert_eq!(original_file.project().id, original_id);
@@ -736,6 +740,7 @@ fn background_packet_preparation_does_not_block_project_prompt_and_is_cancelled_
         .take()
         .expect("repeat dirty prompt");
     app.resolve_project_choice(prompt, Some("project-discard"));
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, original);
     assert!(cancel.load(Ordering::Relaxed));
     assert!(app.handoff.preparation_pending.is_none());
@@ -936,6 +941,7 @@ fn failed_local_index_write_reports_error_without_undoing_save_or_open() {
     );
 
     app.proceed(NextAction::New);
+    app.confirm_new_project();
     app.open_path(path.clone());
     assert_eq!(app.editor.project(), &saved);
     assert!(

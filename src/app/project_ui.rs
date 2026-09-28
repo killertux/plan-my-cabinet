@@ -190,18 +190,33 @@ impl DesktopApp {
         }
     }
 
+    pub(crate) fn create_blank_project(
+        &mut self,
+        name: &str,
+        currency: Currency,
+        unit: plan_my_cabinet::units::Unit,
+    ) {
+        let name = plan_my_cabinet::board_commands::project_name(name)
+            .map(str::to_owned)
+            .unwrap_or_else(|_| self.localizer.text("project-default-name"));
+        let mut project = Project::new(name, currency);
+        project.display_unit = unit;
+        plan_my_cabinet::material_presets::seed_defaults(&mut project, self.localizer.language());
+        self.replace_project(ProjectEditor::new(project).expect("empty project"), None);
+        self.project_files.message = None;
+        self.project_files.welcome.leave();
+    }
+
     pub(crate) fn proceed(&mut self, action: NextAction) {
         match action {
+            // Ask for the name first; the project is created on confirm.
             NextAction::New => {
-                let mut project =
-                    Project::new(self.localizer.text("project-default-name"), Currency::Brl);
-                plan_my_cabinet::material_presets::seed_defaults(
-                    &mut project,
-                    self.localizer.language(),
-                );
-                self.replace_project(ProjectEditor::new(project).expect("empty project"), None);
-                self.project_files.message = None;
-                self.project_files.welcome.leave();
+                self.modals
+                    .set_project_name(Some(crate::project_name_ui::ProjectNameDialog::new(
+                        crate::project_name_ui::NameMode::Create,
+                        self.localizer.text("project-default-name"),
+                        self.editor.project(),
+                    )))
             }
             NextAction::Open => {
                 if let Some((path, editor)) = self.project_files.pending_open.take() {
@@ -734,6 +749,18 @@ impl DesktopApp {
         if ui.button(self.localizer.text("shell-projects")).clicked() {
             self.request_project_action(NextAction::Welcome);
             ui.close();
+        }
+        let rename = Request::new(A::RenameProject);
+        if actions::button(
+            ui,
+            &self.localizer,
+            rename,
+            self.action_availability(rename),
+        )
+        .clicked()
+        {
+            ui.close();
+            self.invoke_or_report(rename);
         }
         ui.horizontal_wrapped(|ui| {
             for action in [A::NewProject, A::OpenProject] {

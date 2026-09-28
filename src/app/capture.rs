@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 pub const HELP: &str = "Usage: plan-my-cabinet [--capture-baseline|--capture-gallery NEW_DIRECTORY \
     [--capture-size WIDTHxHEIGHT] [--capture-scale 90|100|115|130] \
-    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved|palette|catalog]]\n\
+    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved|palette|catalog|new-project]]\n\
     Baseline captures a selected application workspace or the isolated empty Welcome; gallery captures offline UI primitives.\n\
     A capture is evidence to review, not automatic redesign acceptance.\n\
     Writes capture.ppm and manifest.json without opening user projects.\n\
@@ -34,10 +34,11 @@ pub enum Dialog {
     Unsaved,
     Palette,
     Catalog,
+    NewProject,
 }
 
 impl Dialog {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Board,
         Self::Position,
         Self::Face,
@@ -46,6 +47,7 @@ impl Dialog {
         Self::Unsaved,
         Self::Palette,
         Self::Catalog,
+        Self::NewProject,
     ];
 
     pub fn name(self) -> &'static str {
@@ -58,6 +60,7 @@ impl Dialog {
             Self::Unsaved => "unsaved",
             Self::Palette => "palette",
             Self::Catalog => "catalog",
+            Self::NewProject => "new-project",
         }
     }
 
@@ -79,6 +82,9 @@ impl Dialog {
                 ("fgvtn", "ms-slow-calco-fixo", "51MS15XFG0115BF"),
             );
             app.modals.set_catalog(Some(dialog));
+        } else if self == Self::NewProject {
+            app.invoke(Request::new(A::NewProject))
+                .expect("new project dialog opens");
         } else if self == Self::Unsaved {
             app.project_files.prompt = Some(crate::project_ui::Prompt::Dirty(
                 crate::project_ui::NextAction::New,
@@ -90,7 +96,9 @@ impl Dialog {
                 Self::Face => A::PlaceFace,
                 Self::Resize => A::BatchDimensions,
                 Self::Material => A::NewMaterial,
-                Self::Unsaved | Self::Palette | Self::Catalog => unreachable!(),
+                Self::Unsaved | Self::Palette | Self::Catalog | Self::NewProject => {
+                    unreachable!()
+                }
             };
             let request = if matches!(self, Self::Position | Self::Face) {
                 Request::with(action, Target::Board(LEFT_SIDE_ID))

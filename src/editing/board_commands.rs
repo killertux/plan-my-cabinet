@@ -24,7 +24,18 @@ pub enum CreationError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenameError {
     EmptyName,
+    /// Project names are limited to 256 bytes, as in the template setup.
+    TooLong,
     MissingObject(Uuid),
+}
+
+/// A project name as stored: trimmed, non-empty and at most 256 bytes.
+pub fn project_name(name: &str) -> Result<&str, RenameError> {
+    match name.trim() {
+        "" => Err(RenameError::EmptyName),
+        name if name.len() > 256 => Err(RenameError::TooLong),
+        name => Ok(name),
+    }
 }
 
 pub struct NewMaterial {
@@ -142,6 +153,15 @@ impl ProjectEditor {
         Ok((id, fit))
     }
 
+    /// Rename the project, as one undo step.
+    pub fn rename_project(&mut self, name: &str) -> Result<bool, EditError<RenameError>> {
+        let name = project_name(name).map_err(EditError::Command)?;
+        self.transact(|project| {
+            name.clone_into(&mut project.name);
+            Ok(())
+        })
+    }
+
     /// Rename a board, assembly or hardware item. Surrounding whitespace is
     /// dropped; an unchanged name records no undo step.
     pub fn rename_object(&mut self, id: Uuid, name: &str) -> Result<bool, EditError<RenameError>> {
@@ -243,6 +263,20 @@ mod tests {
             Err(EditError::Command(RenameError::MissingObject(_)))
         ));
         assert_eq!(editor.project(), &before);
+    }
+
+    #[test]
+    fn project_rename_trims_rejects_blank_or_long_and_undoes() {
+        let mut editor = ProjectEditor::new(Project::new("Cabinet", Currency::Brl)).unwrap();
+        assert!(editor.rename_project("  Kitchen  ").unwrap());
+        assert_eq!(editor.project().name, "Kitchen");
+        assert!(!editor.rename_project("Kitchen").unwrap());
+        for bad in ["   ", &"x".repeat(257)] {
+            assert!(editor.rename_project(bad).is_err());
+        }
+        assert_eq!(editor.project().name, "Kitchen");
+        editor.undo().unwrap();
+        assert_eq!(editor.project().name, "Cabinet");
     }
 
     #[test]

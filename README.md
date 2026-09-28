@@ -88,7 +88,9 @@ them. You get a complete cut plan straight away.
 The template creates ordinary boards. After that, you can change anything by
 hand.
 
-You can also start with **New project** and add boards yourself.
+You can also start with **New project**, which asks for the project's name,
+currency and units, and add boards yourself. To rename a project later, click
+its name at the top of the window and choose **Rename project…**.
 
 ### 2. Design the boards
 

@@ -20,6 +20,7 @@ pub(crate) mod navigation;
 pub(crate) mod optimization_ui;
 pub(crate) mod pending_navigation;
 pub(crate) mod placement_ui;
+pub(crate) mod project_name_ui;
 pub(crate) mod project_ui;
 pub(crate) mod receipt_ui;
 pub(crate) mod recovery_cleanup_ui;

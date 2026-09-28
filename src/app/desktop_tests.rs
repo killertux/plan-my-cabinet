@@ -2294,6 +2294,7 @@ fn project_replacement_clears_session_targets_and_preserves_document_identity() 
     app.session.stock.filter = "kept within project".into();
 
     app.proceed(project_ui::NextAction::New);
+    app.confirm_new_project();
     app.sync_scene_inspector();
     assert_ne!(app.editor.project().id, before.id);
     assert!(app.selection.ids.is_empty());
@@ -2396,6 +2397,7 @@ fn project_action_offers_preview_cancellation_before_replacement() {
         Outcome::Navigated
     );
     assert!(app.modals.placement().is_none());
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, original);
 }
 
@@ -2636,6 +2638,7 @@ fn project_dirty_prompt_cancel_and_discard_are_explicit() {
     repair_frame(&mut app, &ctx, vec![]);
     let discard = app.localizer.text("project-discard");
     click_repair_button(&mut app, &ctx, &discard);
+    app.confirm_new_project();
     assert_ne!(app.editor.project().id, old);
     assert!(!app.editor.can_undo());
 }
@@ -2732,6 +2735,7 @@ fn mac_desktop_new_save_as_open_and_dirty_close_preserve_disk_on_refusal() {
     assert_eq!(std::fs::read(&first).unwrap(), first_bytes);
     let second_bytes = std::fs::read(&second).unwrap();
     app.request_project_action(project_ui::NextAction::New);
+    app.confirm_new_project();
     assert_ne!(
         app.editor.project().id,
         plan_my_cabinet::persistence::prepare_reader(second_bytes.as_slice())

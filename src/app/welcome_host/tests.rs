@@ -302,6 +302,7 @@ fn locate_valid_copy_updates_only_the_index_and_stale_picker_cannot_update_it() 
 fn returning_to_welcome_retains_unsaved_document_and_new_still_prompts() {
     let mut app = DesktopApp::default();
     app.proceed(project_ui::NextAction::New);
+    app.confirm_new_project();
     app.editor
         .set_grid_spacing(Length::from_micrometres(20_000))
         .unwrap();

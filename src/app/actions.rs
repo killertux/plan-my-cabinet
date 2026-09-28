@@ -9,6 +9,7 @@ pub(crate) enum ActionId {
     OpenProject,
     SaveProject,
     SaveProjectAs,
+    RenameProject,
     OpenSettings,
     Undo,
     Redo,
@@ -157,6 +158,7 @@ registry! {
     OpenProject => ("project-open", Project, "open file", "abrir arquivo"),
     SaveProject => ("project-save", Project, "save", "salvar"),
     SaveProjectAs => ("project-save-as", Project, "save as", "salvar como"),
+    RenameProject => ("project-rename", Project, "rename project name", "renomear projeto nome"),
     OpenSettings => ("settings-open", Project, "settings preferences units shortcuts", "configurações preferências unidades atalhos"),
     Undo => ("undo", Design, "undo", "desfazer"),
     Redo => ("redo", Design, "redo", "refazer"),
@@ -931,6 +933,14 @@ impl DesktopApp {
         };
         match (request.id, request.target) {
             (A::NewProject, _) => self.request_project_action(project_ui::NextAction::New),
+            (A::RenameProject, _) => {
+                self.modals
+                    .set_project_name(Some(project_name_ui::ProjectNameDialog::new(
+                        project_name_ui::NameMode::Rename,
+                        self.editor.project().name.clone(),
+                        self.editor.project(),
+                    )))
+            }
             (A::OpenWelcome, _) => self.request_project_action(project_ui::NextAction::Welcome),
             (A::OpenSettings, _) => self.settings.open = true,
             (A::OpenProject, _) => self.request_project_action(project_ui::NextAction::Open),

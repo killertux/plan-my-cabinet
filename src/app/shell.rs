@@ -1465,6 +1465,7 @@ impl DesktopApp {
         self.show_door_dialog(ui.ctx());
         self.show_removal_dialog(ui.ctx());
         self.show_project_dialog(ui.ctx());
+        self.show_project_name_dialog(ui.ctx());
         self.show_export_overwrite(ui.ctx());
         self.show_navigation_prompt(ui.ctx());
         self.show_palette(ui.ctx());

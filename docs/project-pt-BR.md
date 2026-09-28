@@ -13,7 +13,11 @@ indicador de alterações não salvas ao lado do nome/caminho. As janelas de
 seleção nativas são assíncronas. Novo, Abrir e fechar pedem para salvar,
 descartar ou cancelar alterações não salvas. Abrir valida o arquivo escolhido
 antes de pedir para descartar o trabalho atual. Salvar como exige confirmação
-antes de substituir um destino existente. O histórico de desfazer/refazer
+antes de substituir um destino existente. Novo projeto pede primeiro o nome,
+a moeda e a unidade de entrada do projeto (as mesmas escolhas da primeira etapa
+de um modelo); Cancelar não cria nada. Para renomear o projeto aberto, clique
+no nome no cabeçalho e escolha **Renomear projeto…** (também no ⌘K).
+Renomear é uma edição que pode ser desfeita. O histórico de desfazer/refazer
 recomeça para cada projeto aberto ou criado.
 
 ## Edições pendentes, navegação e atalhos

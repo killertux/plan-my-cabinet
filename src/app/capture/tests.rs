@@ -193,6 +193,7 @@ fn reference_dialogs_are_exclusive_nonmutating_real_drafts() {
             Dialog::Unsaved => app.project_files.prompt.is_some(),
             Dialog::Palette => app.palette.open,
             Dialog::Catalog => app.modals.catalog().is_some(),
+            Dialog::NewProject => app.modals.project_name().is_some(),
         });
     }
     assert!(parse(&["--capture-baseline", "out", "--capture-dialog", "unknown"]).is_err());
