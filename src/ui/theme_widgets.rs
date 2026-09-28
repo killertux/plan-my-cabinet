@@ -77,7 +77,6 @@ pub const WARN_STROKE: Color32 = Color32::from_rgb(235, 210, 176);
 pub const KERF: Color32 = Color32::from_rgb(196, 69, 58);
 pub const RULE: Color32 = Color32::from_rgb(237, 232, 224);
 
-
 /// Floating toolbars and HUDs over the viewport or sheet canvas.
 pub fn floating_frame() -> egui::Frame {
     egui::Frame::new()
@@ -102,7 +101,6 @@ pub fn warn_callout() -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(10, 8))
 }
 
-
 pub fn mono(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(FontId::monospace(size))
 }
@@ -124,13 +122,16 @@ pub fn weighted_font(ui: &Ui, size: f32, typeface: super::theme::Typeface) -> Fo
 }
 
 pub fn semibold(ui: &Ui, text: impl Into<String>, size: f32) -> RichText {
-    RichText::new(text).font(weighted_font(ui, size, super::theme::Typeface::SansSemibold))
+    RichText::new(text).font(weighted_font(
+        ui,
+        size,
+        super::theme::Typeface::SansSemibold,
+    ))
 }
 
 pub fn medium(ui: &Ui, text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(weighted_font(ui, size, super::theme::Typeface::SansMedium))
 }
-
 
 #[allow(clippy::too_many_arguments)]
 pub fn ghost_icon_sized(
@@ -165,12 +166,8 @@ pub fn ghost_icon_sized(
         };
         ui.painter().rect_filled(rect, 7.0, fill);
         if response.has_focus() {
-            ui.painter().rect_stroke(
-                rect,
-                7.0,
-                Stroke::new(1.0, FOCUS),
-                egui::StrokeKind::Inside,
-            );
+            ui.painter()
+                .rect_stroke(rect, 7.0, Stroke::new(1.0, FOCUS), egui::StrokeKind::Inside);
         }
         let tint = if selected {
             PANEL
@@ -234,8 +231,10 @@ pub fn empty_state(
         ui.add_space(top);
         let (tile, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
         ui.painter().rect_filled(tile, 10.0, ACCENT_BG);
-        crate::icons::icon(symbol, ACCENT_DARK, 22.0)
-            .paint_at(ui, egui::Rect::from_center_size(tile.center(), egui::vec2(22.0, 22.0)));
+        crate::icons::icon(symbol, ACCENT_DARK, 22.0).paint_at(
+            ui,
+            egui::Rect::from_center_size(tile.center(), egui::vec2(22.0, 22.0)),
+        );
         ui.add_space(14.0);
         ui.label(semibold(ui, title, 15.0).color(TEXT));
         ui.add_space(4.0);
@@ -351,12 +350,10 @@ pub fn section_bar<R>(ui: &mut Ui, label: &str, actions: impl FnOnce(&mut Ui) ->
 
 /// A 1px full-width divider in `border`, used between panel sections.
 pub fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.center().y,
-        Stroke::new(1.0, BORDER),
-    );
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter()
+        .hline(rect.x_range(), rect.center().y, Stroke::new(1.0, BORDER));
 }
 
 /// Label column + value row used in inspectors (label column `label_width`).
@@ -515,10 +512,22 @@ pub fn derived_field(ui: &mut Ui, value: &str, suffix: &str, width: f32) -> Resp
             2.5,
         ));
     };
-    dash(r.left_top() + egui::vec2(5.0, 0.0), r.right_top() - egui::vec2(5.0, 0.0));
-    dash(r.left_bottom() + egui::vec2(5.0, 0.0), r.right_bottom() - egui::vec2(5.0, 0.0));
-    dash(r.left_top() + egui::vec2(0.0, 5.0), r.left_bottom() - egui::vec2(0.0, 5.0));
-    dash(r.right_top() + egui::vec2(0.0, 5.0), r.right_bottom() - egui::vec2(0.0, 5.0));
+    dash(
+        r.left_top() + egui::vec2(5.0, 0.0),
+        r.right_top() - egui::vec2(5.0, 0.0),
+    );
+    dash(
+        r.left_bottom() + egui::vec2(5.0, 0.0),
+        r.right_bottom() - egui::vec2(5.0, 0.0),
+    );
+    dash(
+        r.left_top() + egui::vec2(0.0, 5.0),
+        r.left_bottom() - egui::vec2(0.0, 5.0),
+    );
+    dash(
+        r.right_top() + egui::vec2(0.0, 5.0),
+        r.right_bottom() - egui::vec2(0.0, 5.0),
+    );
     painter.text(
         rect.left_center() + egui::vec2(8.0, 0.0),
         egui::Align2::LEFT_CENTER,

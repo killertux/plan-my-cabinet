@@ -1,7 +1,6 @@
 //! Workspace shell: header, status bar, rail wiring and the three-pane layout.
 use crate::*;
 
-
 impl DesktopApp {
     /// The status bar and rail share committed global diagnostics. Repair
     /// previews use their own key in the issue list, never masquerading as a
@@ -31,7 +30,12 @@ impl DesktopApp {
             self.cut_plan.allocation_diagnostics = Some((key, diagnose(project)));
         }
         let counts = workspace_shell::IssueCounts::from_diagnostics(
-            &self.cut_plan.allocation_diagnostics.as_ref().expect("diagnosed").1,
+            &self
+                .cut_plan
+                .allocation_diagnostics
+                .as_ref()
+                .expect("diagnosed")
+                .1,
             |id| !self.selection.visible(project, id),
         );
         let estimate_key = (project.id, project.revision);
@@ -88,12 +92,14 @@ impl DesktopApp {
                 let full = ui.max_rect();
                 // Centered command search, painted first so the left and right
                 // clusters can never overlap it at the reference width.
-                let search_width = if compact { 0.0 } else { (width - 640.0).clamp(220.0, 440.0) };
+                let search_width = if compact {
+                    0.0
+                } else {
+                    (width - 640.0).clamp(220.0, 440.0)
+                };
                 if search_width > 0.0 {
-                    let rect = egui::Rect::from_center_size(
-                        full.center(),
-                        egui::vec2(search_width, 30.0),
-                    );
+                    let rect =
+                        egui::Rect::from_center_size(full.center(), egui::vec2(search_width, 30.0));
                     let response = ui
                         .interact(
                             rect,
@@ -135,10 +141,21 @@ impl DesktopApp {
                         egui::FontId::proportional(13.0),
                         theme_widgets::FAINT,
                     );
-                    let key = if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl K" };
+                    let key = if cfg!(target_os = "macos") {
+                        "⌘K"
+                    } else {
+                        "Ctrl K"
+                    };
                     let key_rect = egui::Rect::from_center_size(
                         rect.right_center() - egui::vec2(24.0, 0.0),
-                        egui::vec2(if cfg!(target_os = "macos") { 28.0 } else { 40.0 }, 18.0),
+                        egui::vec2(
+                            if cfg!(target_os = "macos") {
+                                28.0
+                            } else {
+                                40.0
+                            },
+                            18.0,
+                        ),
                     );
                     painter.rect_stroke(
                         key_rect,
@@ -161,7 +178,8 @@ impl DesktopApp {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     if ui
                         .add_enabled(
-                            self.action_availability(Request::new(A::OpenWelcome)).is_ok(),
+                            self.action_availability(Request::new(A::OpenWelcome))
+                                .is_ok(),
                             egui::Button::new(
                                 egui::RichText::new(self.localizer.text("shell-projects"))
                                     .color(theme_widgets::MUTED),
@@ -189,11 +207,15 @@ impl DesktopApp {
                         },
                     )
                     .response
-                    .on_hover_text(format!("{name} · {}", self.localizer.text("shell-project-menu")));
+                    .on_hover_text(format!(
+                        "{name} · {}",
+                        self.localizer.text("shell-project-menu")
+                    ));
                     if self.editor.is_dirty() {
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(7.0, 7.0), egui::Sense::hover());
-                        ui.painter().circle_filled(rect.center(), 3.5, theme_widgets::ACCENT);
+                        ui.painter()
+                            .circle_filled(rect.center(), 3.5, theme_widgets::ACCENT);
                         if !compact {
                             ui.label(
                                 egui::RichText::new(self.localizer.text("shell-unsaved"))
@@ -269,7 +291,9 @@ impl DesktopApp {
                             self.invoke_or_report(save);
                         }
                         ui.add_space(4.0);
-                        for (action, icon) in [(A::Redo, icons::Icon::Redo), (A::Undo, icons::Icon::Undo)] {
+                        for (action, icon) in
+                            [(A::Redo, icons::Icon::Redo), (A::Undo, icons::Icon::Undo)]
+                        {
                             let request = Request::new(action);
                             if theme_widgets::ghost_icon_sized(
                                 ui,
@@ -297,14 +321,17 @@ impl DesktopApp {
                             && width >= 1180.0
                         {
                             ui.add_space(8.0);
-                            let step = self.localizer.text(
-                                workspace_shell::ENTRIES[(next.number() - 1) as usize].1,
-                            );
+                            let step = self
+                                .localizer
+                                .text(workspace_shell::ENTRIES[(next.number() - 1) as usize].1);
                             let mut args = FluentArgs::new();
                             args.set("step", step);
                             if theme_widgets::text_button(
                                 ui,
-                                &format!("{} ›", self.localizer.format("shell-next-step", Some(&args))),
+                                &format!(
+                                    "{} ›",
+                                    self.localizer.format("shell-next-step", Some(&args))
+                                ),
                                 theme_widgets::ACCENT_DARK,
                                 chrome_enabled,
                             )
@@ -400,7 +427,11 @@ impl DesktopApp {
         } else {
             Locale::PtBr
         };
-        let small = |text: String| egui::RichText::new(text).size(11.5).color(theme_widgets::MUTED);
+        let small = |text: String| {
+            egui::RichText::new(text)
+                .size(11.5)
+                .color(theme_widgets::MUTED)
+        };
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
             if let Some(error) = &self.preferences_error {
@@ -632,7 +663,10 @@ impl DesktopApp {
             format!(
                 "{} {} mm · {}",
                 self.localizer.text("shell-kerf"),
-                assembly_ui::short_length(p.cutting_kerf, if en { Locale::En } else { Locale::PtBr }),
+                assembly_ui::short_length(
+                    p.cutting_kerf,
+                    if en { Locale::En } else { Locale::PtBr }
+                ),
                 self.localizer
                     .text(if p.confirmed_shop_kerf == Some(p.cutting_kerf) {
                         ""
@@ -714,7 +748,8 @@ impl DesktopApp {
                 }
                 let blocked = self.external_modal_open();
                 let top = ui.cursor().top();
-                self.cut_plan.optimizer
+                self.cut_plan
+                    .optimizer
                     .show(ui, &mut self.editor, &self.localizer, blocked);
                 let used = ui.min_rect().bottom() - top;
                 ui.data_mut(|d| d.insert_temp(height_id, used));
@@ -753,7 +788,12 @@ impl DesktopApp {
         }
     }
 
-    pub(crate) fn show_scrolled_workspace_inspector(&mut self, ui: &mut egui::Ui, width: f32, height: f32) {
+    pub(crate) fn show_scrolled_workspace_inspector(
+        &mut self,
+        ui: &mut egui::Ui,
+        width: f32,
+        height: f32,
+    ) {
         let index = (self.session.active.number() - 1) as usize;
         let width = width.min(ui.available_width());
         if self.session.active == Workspace::Handoff {
@@ -800,12 +840,7 @@ impl DesktopApp {
                 .show_separator_line(true)
                 .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 10)))
                 .show(ui, |ui| {
-                    sheet_ui::show_sheet_footer(
-                        ui,
-                        &self.localizer,
-                        &self.cut_plan.repair,
-                        blocked,
-                    )
+                    sheet_ui::show_sheet_footer(ui, &self.localizer, &self.cut_plan.repair, blocked)
                 })
                 .inner;
             if let Some(request) = footer {
@@ -930,7 +965,12 @@ impl DesktopApp {
     }
 
     /// Central pane: 3D viewport, sheet canvas, stock table or PDF preview.
-    pub(crate) fn show_canvas_pane(&mut self, ui: &mut egui::Ui, drawer_modal: bool, inspector_visible: bool) {
+    pub(crate) fn show_canvas_pane(
+        &mut self,
+        ui: &mut egui::Ui,
+        drawer_modal: bool,
+        inspector_visible: bool,
+    ) {
         match self.session.active {
             Workspace::Stock => {
                 egui::ScrollArea::vertical()
@@ -945,9 +985,17 @@ impl DesktopApp {
             Workspace::Handoff | Workspace::Hardware if self.editor.project().boards.is_empty() => {
                 // Nothing to hand off or put hinges on yet: point back to the first step.
                 let (icon, title, detail) = if self.session.active == Workspace::Handoff {
-                    (icons::Icon::Export, "empty-handoff-title", "empty-handoff-detail")
+                    (
+                        icons::Icon::Export,
+                        "empty-handoff-title",
+                        "empty-handoff-detail",
+                    )
                 } else {
-                    (icons::Icon::Hinge, "empty-hardware-title", "empty-hardware-detail")
+                    (
+                        icons::Icon::Hinge,
+                        "empty-hardware-title",
+                        "empty-hardware-detail",
+                    )
                 };
                 if theme_widgets::empty_state(
                     ui,
@@ -1058,7 +1106,11 @@ impl DesktopApp {
                 .and_then(|j| {
                     plan_my_cabinet::door_joint::derived_poses(self.editor.project(), j, angle).ok()
                 })
-                .map(|poses| poses.into_iter().collect::<std::collections::HashMap<_, _>>())
+                .map(|poses| {
+                    poses
+                        .into_iter()
+                        .collect::<std::collections::HashMap<_, _>>()
+                })
         });
         // Face handles only when a resize can be committed right away: Design,
         // nothing else previewing, and no unfinished dimension draft that the
@@ -1091,7 +1143,9 @@ impl DesktopApp {
                     self.localizer.language(),
                     self.preferences.inverse_scroll_zoom,
                     self.preferences.material_tint,
-                    self.modals.placement().and_then(PlacementDialog::highlighted),
+                    self.modals
+                        .placement()
+                        .and_then(PlacementDialog::highlighted),
                     motion_poses.as_ref(),
                     self.design.measurement_scope,
                     self.design.measurement_frame,
@@ -1200,7 +1254,9 @@ impl DesktopApp {
                 Ok(conflicts) => self.cut_plan.material_conflicts = conflicts,
                 Err(error) => self.report_edit(Err::<(), _>(error)),
             },
-            Err(_) => self.toasts.error(self.localizer.text("toast-edit-rejected")),
+            Err(_) => self
+                .toasts
+                .error(self.localizer.text("toast-edit-rejected")),
         }
     }
 
@@ -1290,7 +1346,10 @@ impl DesktopApp {
                 let available = ui.available_size();
                 let active = self.session.active;
                 let layout = workspace_shell::PaneLayout::for_width(active, available.x);
-                if self.open_drawer.is_some_and(|drawer| !layout.collapsed(drawer)) {
+                if self
+                    .open_drawer
+                    .is_some_and(|drawer| !layout.collapsed(drawer))
+                {
                     self.open_drawer = None;
                 }
                 let drawer_pos = ui.min_rect().min;
@@ -1308,9 +1367,10 @@ impl DesktopApp {
                     let width = workspace_shell::PaneLayout::preferred(active)
                         .controls
                         .min(available.x - 20.0);
-                    egui::Window::new(self.localizer.text(
-                        workspace_shell::ENTRIES[(active.number() - 1) as usize].1,
-                    ))
+                    egui::Window::new(
+                        self.localizer
+                            .text(workspace_shell::ENTRIES[(active.number() - 1) as usize].1),
+                    )
                     .id(egui::Id::new("workspace-controls-drawer"))
                     .fixed_pos(drawer_pos)
                     .fixed_size(egui::vec2(width, (available.y - 50.0).max(1.0)))

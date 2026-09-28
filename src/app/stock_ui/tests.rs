@@ -82,11 +82,7 @@ fn explicit_free_fee_is_known_zero_not_unknown() {
     let text = &app.modals.cut_fee().unwrap().text;
     assert_eq!(text, "0");
     assert_eq!(app.editor.project().cut_fee, None);
-    let fee = Money::parse(
-        app.editor.project().currency,
-        text,
-    )
-    .unwrap();
+    let fee = Money::parse(app.editor.project().currency, text).unwrap();
     app.editor.set_cut_fee(Some(fee)).unwrap();
     assert_eq!(
         app.editor.project().cut_fee,

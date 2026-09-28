@@ -154,9 +154,12 @@ impl TemplateSetupUi {
         ] {
             if kind.fields().contains(&field) {
                 let mut entry = LengthEntry::new_mm(mm, unit);
-                setup
-                    .dimensions
-                    .insert(field, entry.parse().expect("built-in defaults are exact millimetres"));
+                setup.dimensions.insert(
+                    field,
+                    entry
+                        .parse()
+                        .expect("built-in defaults are exact millimetres"),
+                );
                 fields.insert(field, entry);
             }
         }

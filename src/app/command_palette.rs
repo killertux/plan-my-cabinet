@@ -417,7 +417,11 @@ impl DesktopApp {
                     .inner_margin(egui::Margin::symmetric(16, 12))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.add(crate::icons::icon(crate::icons::Icon::Search, tw::FAINT, 17.0));
+                            ui.add(crate::icons::icon(
+                                crate::icons::Icon::Search,
+                                tw::FAINT,
+                                17.0,
+                            ));
                             let edit_width = ui.available_width() - 44.0;
                             if ui
                                 .add(
@@ -434,9 +438,12 @@ impl DesktopApp {
                                 self.palette.error = None;
                                 query_changed = true;
                             }
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                tw::keycap(ui, "Esc");
-                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    tw::keycap(ui, "Esc");
+                                },
+                            );
                         });
                     });
                 tw::divider(ui);
@@ -517,14 +524,16 @@ impl DesktopApp {
                                             } else {
                                                 tw::TEXT
                                             };
-                                            let label_width = (ui.available_width() * 0.62).max(80.0);
+                                            let label_width =
+                                                (ui.available_width() * 0.62).max(80.0);
                                             ui.allocate_ui_with_layout(
                                                 egui::vec2(label_width, 28.0),
                                                 egui::Layout::left_to_right(egui::Align::Center),
                                                 |ui| {
                                                     ui.add(
                                                         egui::Label::new(
-                                                            egui::RichText::new(&row.label).color(ink),
+                                                            egui::RichText::new(&row.label)
+                                                                .color(ink),
                                                         )
                                                         .truncate()
                                                         .selectable(false),
@@ -537,7 +546,8 @@ impl DesktopApp {
                                                     ui.add_space(4.0);
                                                     ui.add(
                                                         egui::Label::new(
-                                                            tw::mono(&row.detail, 11.5).color(tw::FAINT),
+                                                            tw::mono(&row.detail, 11.5)
+                                                                .color(tw::FAINT),
                                                         )
                                                         .truncate()
                                                         .selectable(false),
@@ -547,7 +557,9 @@ impl DesktopApp {
                                         },
                                     );
                                     if let Some(reason) = unavailable {
-                                        response.on_hover_text(reason.reason(self.localizer.language()));
+                                        response.on_hover_text(
+                                            reason.reason(self.localizer.language()),
+                                        );
                                     } else if response.clicked() {
                                         clicked = Some(index);
                                     }

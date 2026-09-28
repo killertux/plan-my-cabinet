@@ -105,13 +105,17 @@ fn stock_pieces_offer_duplicate_and_delete_with_in_use_guard() {
             == ResultRoute::Action(Request::with(action, Target::Stock(used)))));
     }
     let by_command = results(project, &app.localizer, "delete");
-    assert!(by_command.iter().any(|r| r.route
-        == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(unused)))));
+    assert!(
+        by_command.iter().any(|r| r.route
+            == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(unused))))
+    );
     // Deleting a piece that still holds parts is refused with a reason.
     let before = app.editor.project().clone();
     let delete_used = rows
         .iter()
-        .find(|r| r.route == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(used))))
+        .find(|r| {
+            r.route == ResultRoute::Action(Request::with(A::DeleteStock, Target::Stock(used)))
+        })
         .unwrap()
         .clone();
     assert!(app.invoke_palette(&delete_used).is_err());

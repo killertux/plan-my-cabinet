@@ -510,40 +510,38 @@ fn pointer_accept_is_disabled_during_invalid_stage_and_commits_after_repair() {
     assert!(!repair.can_accept(&mut editor));
     let ctx = egui::Context::default();
     let localizer = Localizer::new(Language::En);
-    let frame = |events,
-                 editor: &mut ProjectEditor,
-                 repair: &mut RepairUi,
-                 selection: &mut Selection| {
-        let output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1100.0, 1000.0),
-                )),
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                show(
-                    ui,
-                    editor,
-                    selection,
-                    &localizer,
-                    false,
-                    repair,
-                    SheetFocus::default(),
-                );
-            },
-        );
-        let accept = output.shapes.iter().find_map(|shape| match &shape.shape {
-            egui::Shape::Text(text) if text.galley.text() == "Accept repair" => {
-                Some(text.pos + egui::vec2(5.0, 5.0))
-            }
-            _ => None,
-        });
-        output.drop_without_applying_deltas();
-        accept.expect("repair accept button drawn")
-    };
+    let frame =
+        |events, editor: &mut ProjectEditor, repair: &mut RepairUi, selection: &mut Selection| {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1100.0, 1000.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    show(
+                        ui,
+                        editor,
+                        selection,
+                        &localizer,
+                        false,
+                        repair,
+                        SheetFocus::default(),
+                    );
+                },
+            );
+            let accept = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "Accept repair" => {
+                    Some(text.pos + egui::vec2(5.0, 5.0))
+                }
+                _ => None,
+            });
+            output.drop_without_applying_deltas();
+            accept.expect("repair accept button drawn")
+        };
     let mut accept = frame(vec![], &mut editor, &mut repair, &mut selection);
     let click = |at, pressed| egui::Event::PointerButton {
         pos: at,
@@ -632,33 +630,31 @@ fn escape_cancels_dirty_numeric_repair_and_captured_unit_keeps_its_meaning() {
         Some(Length::from_micrometres(38_100))
     );
     let ctx = egui::Context::default();
-    let frame = |events,
-                 editor: &mut ProjectEditor,
-                 repair: &mut RepairUi,
-                 selection: &mut Selection| {
-        let output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1100.0, 1000.0),
-                )),
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                show(
-                    ui,
-                    editor,
-                    selection,
-                    &Localizer::new(Language::En),
-                    false,
-                    repair,
-                    SheetFocus::default(),
-                );
-            },
-        );
-        output.drop_without_applying_deltas();
-    };
+    let frame =
+        |events, editor: &mut ProjectEditor, repair: &mut RepairUi, selection: &mut Selection| {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1100.0, 1000.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    show(
+                        ui,
+                        editor,
+                        selection,
+                        &Localizer::new(Language::En),
+                        false,
+                        repair,
+                        SheetFocus::default(),
+                    );
+                },
+            );
+            output.drop_without_applying_deltas();
+        };
     frame(vec![], &mut editor, &mut repair, &mut selection);
     frame(
         vec![egui::Event::Key {
@@ -707,10 +703,8 @@ fn drag_stages_only_on_release_and_coordinates_require_rounding_consent() {
                 ..Default::default()
             },
             |ui| {
-                let (rect, response) = ui.allocate_exact_size(
-                    egui::vec2(200.0, 100.0),
-                    egui::Sense::click_and_drag(),
-                );
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(200.0, 100.0), egui::Sense::click_and_drag());
                 ui.painter().rect_filled(rect, 0.0, egui::Color32::RED);
                 *started |= response.drag_started();
                 *stopped |= response.drag_stopped();
@@ -822,9 +816,7 @@ fn sheet_drag_shows_live_conflict_and_valid_witness_without_staging_until_releas
                 .shapes
                 .iter()
                 .filter_map(|shape| match &shape.shape {
-                    egui::Shape::Rect(rect) if rect.stroke.width == 3.0 => {
-                        Some(rect.stroke.color)
-                    }
+                    egui::Shape::Rect(rect) if rect.stroke.width == 3.0 => Some(rect.stroke.color),
                     _ => None,
                 })
                 .collect();
@@ -1276,43 +1268,41 @@ fn reference_layout_keeps_hovered_sequence_and_matching_marker_in_one_visible_fr
     )
     .canvas;
     assert!(canvas_width >= SHEET_SIDE_BY_SIDE_MIN);
-    let frame = |events,
-                 editor: &mut ProjectEditor,
-                 repair: &mut RepairUi,
-                 selection: &mut Selection| {
-        ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1440.0, 900.0),
-                )),
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(
-                        canvas_width,
-                        900.0
-                            - crate::workspace_shell::HEADER_HEIGHT
-                            - crate::workspace_shell::STATUS_HEIGHT,
-                    ),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        show(
-                            ui,
-                            editor,
-                            selection,
-                            &localizer,
-                            false,
-                            repair,
-                            SheetFocus::default(),
-                        );
-                    },
-                );
-            },
-        )
-    };
+    let frame =
+        |events, editor: &mut ProjectEditor, repair: &mut RepairUi, selection: &mut Selection| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1440.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            canvas_width,
+                            900.0
+                                - crate::workspace_shell::HEADER_HEIGHT
+                                - crate::workspace_shell::STATUS_HEIGHT,
+                        ),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            show(
+                                ui,
+                                editor,
+                                selection,
+                                &localizer,
+                                false,
+                                repair,
+                                SheetFocus::default(),
+                            );
+                        },
+                    );
+                },
+            )
+        };
     let first_op = cut_operation_text(tree, &tree.operations()[0], false, &localizer);
     let last_op = cut_operation_text(tree, &tree.operations()[8], false, &localizer);
     let first = frame(vec![], &mut editor, &mut repair, &mut selection);
@@ -1440,52 +1430,50 @@ fn host_inspector_hover_links_next_frame_without_shrinking_canvas_or_rebuilding_
             .width(),
         width
     );
-    let frame = |events,
-                 editor: &mut ProjectEditor,
-                 repair: &mut RepairUi,
-                 selection: &mut Selection| {
-        ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1440.0, 900.0),
-                )),
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(width, 828.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            show_with_layout(
-                                ui,
-                                editor,
-                                selection,
-                                &localizer,
-                                false,
-                                repair,
-                                SheetFocus::default(),
-                                true,
-                            );
-                        },
-                    );
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(SHEET_INSPECTOR_WIDTH, 828.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt("host-cut-inspector")
-                                .show(ui, |ui| {
-                                    show_focused_inspector(ui, editor, &localizer, repair);
-                                });
-                        },
-                    );
-                });
-            },
-        )
-    };
+    let frame =
+        |events, editor: &mut ProjectEditor, repair: &mut RepairUi, selection: &mut Selection| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1440.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(width, 828.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                show_with_layout(
+                                    ui,
+                                    editor,
+                                    selection,
+                                    &localizer,
+                                    false,
+                                    repair,
+                                    SheetFocus::default(),
+                                    true,
+                                );
+                            },
+                        );
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(SHEET_INSPECTOR_WIDTH, 828.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("host-cut-inspector")
+                                    .show(ui, |ui| {
+                                        show_focused_inspector(ui, editor, &localizer, repair);
+                                    });
+                            },
+                        );
+                    });
+                },
+            )
+        };
     let tree = StockReadModel::build(editor.project())
         .unwrap()
         .miniature(WHITE_STOCK_ID)
@@ -1621,33 +1609,31 @@ fn compact_panes_stack_without_overlap_and_keep_both_scroll_targets_reachable() 
     let mut repair = RepairUi::default();
     let mut selection = Selection::default();
     let ctx = egui::Context::default();
-    let frame = |events,
-                 editor: &mut ProjectEditor,
-                 repair: &mut RepairUi,
-                 selection: &mut Selection| {
-        ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(650.0, 650.0),
-                )),
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                show_with_layout(
-                    ui,
-                    editor,
-                    selection,
-                    &Localizer::new(Language::En),
-                    false,
-                    repair,
-                    SheetFocus::default(),
-                    false,
-                );
-            },
-        )
-    };
+    let frame =
+        |events, editor: &mut ProjectEditor, repair: &mut RepairUi, selection: &mut Selection| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(650.0, 650.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    show_with_layout(
+                        ui,
+                        editor,
+                        selection,
+                        &Localizer::new(Language::En),
+                        false,
+                        repair,
+                        SheetFocus::default(),
+                        false,
+                    );
+                },
+            )
+        };
     let output = frame(vec![], &mut editor, &mut repair, &mut selection);
     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
         egui::Shape::Rect(rect) if rect.fill == SHEET_FILL)));
@@ -1747,9 +1733,7 @@ fn toggles_only_filter_verified_projection_and_conflicts_retain_positions() {
         .shapes
         .iter()
         .filter_map(|shape| match &shape.shape {
-            egui::Shape::Rect(rect)
-                if rect.fill == CONFLICT_FILL && rect.rect.height() > 11.0 =>
-            {
+            egui::Shape::Rect(rect) if rect.fill == CONFLICT_FILL && rect.rect.height() > 11.0 => {
                 Some(rect.rect)
             }
             _ => None,

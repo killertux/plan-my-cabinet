@@ -388,7 +388,11 @@ mod display_unit_tests {
         editor.begin_preview();
         let first = editor.preview_generation().unwrap();
         editor.update_preview(|_| Ok::<_, ()>(())).unwrap();
-        assert_eq!(editor.preview_generation(), Some(first), "no-op keeps the key");
+        assert_eq!(
+            editor.preview_generation(),
+            Some(first),
+            "no-op keeps the key"
+        );
         editor
             .update_preview(|p| {
                 p.name = "moved".into();

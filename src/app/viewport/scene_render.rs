@@ -203,7 +203,15 @@ pub(super) fn scene_with_faces(
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
     material_tint: bool,
 ) -> (Mesh, f64) {
-    scene_with_hover(project, camera, selection, faces, poses, material_tint, None)
+    scene_with_hover(
+        project,
+        camera,
+        selection,
+        faces,
+        poses,
+        material_tint,
+        None,
+    )
 }
 
 pub(super) fn scene_with_hover(

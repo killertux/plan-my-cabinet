@@ -319,11 +319,7 @@ fn rectangular_cabinet_release_walkthrough() {
             let text = String::from_utf8(text.stdout).unwrap();
             for label in match language {
                 Language::En => ["NOT A CUTTING TEMPLATE", "Hinge", "Hardware"],
-                Language::PtBr => [
-                    "NÃO É GABARITO DE CORTE",
-                    "Dobradiça",
-                    "Ferragens",
-                ],
+                Language::PtBr => ["NÃO É GABARITO DE CORTE", "Dobradiça", "Ferragens"],
             } {
                 assert!(text.contains(label), "{filename}: missing {label}");
             }

@@ -1,7 +1,6 @@
 //! Board, material, dimension and grid dialogs: drafts, form helpers and their show methods.
 use crate::*;
 
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DialogKind {
     Board,
@@ -106,7 +105,11 @@ pub(crate) struct BoardPreview {
     pub(crate) placement: Option<([Length; 2], bool)>,
 }
 
-pub(crate) fn fit_new_board(project: &mut Project, name: String, key: BoardPreviewKey) -> BoardPreview {
+pub(crate) fn fit_new_board(
+    project: &mut Project,
+    name: String,
+    key: BoardPreviewKey,
+) -> BoardPreview {
     let material = project
         .materials
         .iter()
@@ -306,8 +309,8 @@ pub(crate) fn unit_value_field(
 ) -> bool {
     use modal_chrome::form;
     let locale = dialog_locale(localizer);
-    let parsed =
-        parse_length(&field.text, unit).and_then(|v| dimension(v.conversion).map_err(InputError::Unit));
+    let parsed = parse_length(&field.text, unit)
+        .and_then(|v| dimension(v.conversion).map_err(InputError::Unit));
     let invalid = parsed.is_err() && !field.text.trim().is_empty();
     ui.vertical(|ui| {
         ui.set_width(width);
@@ -378,9 +381,13 @@ pub(crate) fn material_option_content(
         });
     theme_widgets::swatch(ui, color, egui::vec2(14.0, 14.0));
     ui.add(
-        egui::Label::new(egui::RichText::new(&material.name).size(13.0).color(theme_widgets::TEXT))
-            .truncate()
-            .selectable(false),
+        egui::Label::new(
+            egui::RichText::new(&material.name)
+                .size(13.0)
+                .color(theme_widgets::TEXT),
+        )
+        .truncate()
+        .selectable(false),
     );
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.add(
@@ -509,7 +516,12 @@ pub(crate) fn creation_color_swatches(
                     ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
                 let selected = *color == value;
                 response.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, selected, &label)
+                    egui::WidgetInfo::selected(
+                        egui::WidgetType::RadioButton,
+                        true,
+                        selected,
+                        &label,
+                    )
                 });
                 let painter = ui.painter();
                 if selected {
@@ -665,13 +677,16 @@ impl DesktopApp {
         });
         let mut args = FluentArgs::new();
         args.set("value", format!("{} mm", short_mm(draft.original, locale)));
-        self.chromes.grid
-            .set_context(Some(self.localizer.format("dialog-current-value", Some(&args))));
-        self.chromes.grid.set_hint(Some(self.localizer.text(if draft.kerf {
-            "cutting-kerf-dialog-hint"
-        } else {
-            "grid-dialog-hint"
-        })));
+        self.chromes.grid.set_context(Some(
+            self.localizer.format("dialog-current-value", Some(&args)),
+        ));
+        self.chromes
+            .grid
+            .set_hint(Some(self.localizer.text(if draft.kerf {
+                "cutting-kerf-dialog-hint"
+            } else {
+                "grid-dialog-hint"
+            })));
         let result = self.chromes.grid.show(
             ctx,
             &title,
@@ -754,8 +769,7 @@ impl DesktopApp {
                                 ui.checkbox(
                                     &mut draft.value.consent,
                                     egui::RichText::new(
-                                        self.localizer
-                                            .format("rounding-confirmation", Some(&args)),
+                                        self.localizer.format("rounding-confirmation", Some(&args)),
                                     )
                                     .size(11.5)
                                     .color(theme_widgets::WARN_INK),
@@ -854,7 +868,8 @@ impl DesktopApp {
             .collect::<Vec<_>>()
             .join(", ");
         self.chromes.batch_dimension.set_context(Some(names));
-        self.chromes.batch_dimension
+        self.chromes
+            .batch_dimension
             .set_hint(Some(self.localizer.text("board-resize-atomic")));
         let result = self.chromes.batch_dimension.show(
             ctx,
@@ -892,8 +907,14 @@ impl DesktopApp {
                             "batch-axis",
                             &mut draft.dimension,
                             &[
-                                (BoardDimension::Length, &self.localizer.text("grain-seg-length")),
-                                (BoardDimension::Width, &self.localizer.text("grain-seg-width")),
+                                (
+                                    BoardDimension::Length,
+                                    &self.localizer.text("grain-seg-length"),
+                                ),
+                                (
+                                    BoardDimension::Width,
+                                    &self.localizer.text("grain-seg-width"),
+                                ),
                                 (
                                     BoardDimension::Thickness,
                                     &self.localizer.text("board-thickness-short"),
@@ -912,7 +933,10 @@ impl DesktopApp {
                             "batch-anchor",
                             &mut chosen,
                             &[
-                                (Some(Anchor::Start), &self.localizer.text("anchor-start-short")),
+                                (
+                                    Some(Anchor::Start),
+                                    &self.localizer.text("anchor-start-short"),
+                                ),
                                 (
                                     Some(Anchor::Centre),
                                     &self.localizer.text("anchor-centre-short"),
@@ -1139,9 +1163,10 @@ impl DesktopApp {
                                 .boards
                                 .iter()
                                 .find(|b| b.id == *board_id)
-                                .map_or_else(|| assembly_ui::short_id('b', *board_id), |b| {
-                                    b.name.clone()
-                                })
+                                .map_or_else(
+                                    || assembly_ui::short_id('b', *board_id),
+                                    |b| { b.name.clone() }
+                                )
                         ),
                         _ => self.localizer.text("error-board-dimension"),
                     };
@@ -1218,9 +1243,11 @@ impl DesktopApp {
         let title = self.localizer.text("board-edit-dimension");
         let cancel_label = self.localizer.text("cancel");
         let confirm_label = self.localizer.text("board-resize-one-action");
-        self.chromes.board_dimension
+        self.chromes
+            .board_dimension
             .set_context(board.map(|board| board.name.clone()));
-        self.chromes.board_dimension
+        self.chromes
+            .board_dimension
             .set_hint(Some(self.localizer.text("board-input-hint-short")));
         let modal = self.chromes.board_dimension.show(
             ctx,
@@ -1320,12 +1347,9 @@ impl DesktopApp {
                     .and_then(|value| dimension(value.conversion).map_err(InputError::Unit));
                 let suffix = self.localizer.text(unit_key(unit));
                 let accessible = self.localizer.text(axis_key);
-                let mut input = form::Input::new(
-                    egui::Id::new("board-dimension-value"),
-                    &accessible,
-                    width,
-                )
-                .invalid(parsed.is_err() && !draft.value.text.trim().is_empty());
+                let mut input =
+                    form::Input::new(egui::Id::new("board-dimension-value"), &accessible, width)
+                        .invalid(parsed.is_err() && !draft.value.text.trim().is_empty());
                 if !is_unit_expression(&draft.value.text) {
                     input = input.suffix(&suffix);
                 }
@@ -1664,8 +1688,9 @@ impl DesktopApp {
             .count();
         let mut args = FluentArgs::new();
         args.set("count", used_by as i64);
-        self.chromes.material_edit
-            .set_context(Some(self.localizer.format("material-edit-context", Some(&args))));
+        self.chromes.material_edit.set_context(Some(
+            self.localizer.format("material-edit-context", Some(&args)),
+        ));
         let modal = self.chromes.material_edit.show(
             ctx,
             &title,
@@ -1737,7 +1762,12 @@ impl DesktopApp {
                     draft.error = None;
                 }
                 form::gap(ui);
-                let mut color = self.editor.project().material_colors.get(&draft.id).copied();
+                let mut color = self
+                    .editor
+                    .project()
+                    .material_colors
+                    .get(&draft.id)
+                    .copied();
                 if creation_color_swatches(ui, &self.localizer, &mut color) {
                     let _ = self.editor.set_material_color(draft.id, color);
                 }
@@ -1808,9 +1838,10 @@ impl DesktopApp {
                                         {
                                             let detail = board.apply_error.map_or_else(
                                                 || {
-                                                    board.allocation_if_applied.as_ref().map_or_else(
-                                                        String::new,
-                                                        |conflict| {
+                                                    board
+                                                        .allocation_if_applied
+                                                        .as_ref()
+                                                        .map_or_else(String::new, |conflict| {
                                                             format!(
                                                                 "{}: {}",
                                                                 self.localizer.text(
@@ -1821,8 +1852,7 @@ impl DesktopApp {
                                                                     conflict
                                                                 )
                                                             )
-                                                        },
-                                                    )
+                                                        })
                                                 },
                                                 |error| {
                                                     format!(
@@ -2118,13 +2148,12 @@ impl DesktopApp {
                     }
                     form::gap(ui);
                     form::field(ui, &self.localizer.text("board-grain-short"), |ui| {
-                        let material_grain = material.map_or("grain-seg-any", |m| {
-                            match m.default_grain {
+                        let material_grain =
+                            material.map_or("grain-seg-any", |m| match m.default_grain {
                                 BoardGrain::Length => "grain-short-length",
                                 BoardGrain::Width => "grain-short-width",
                                 BoardGrain::Unrestricted => "grain-short-any",
-                            }
-                        });
+                            });
                         let mut args = FluentArgs::new();
                         args.set("grain", self.localizer.text(material_grain));
                         let follow = self.localizer.format("grain-seg-material", Some(&args));
@@ -2172,14 +2201,14 @@ impl DesktopApp {
                                     let [l, w] = [key.length, key.width]
                                         .map(|v| v.micrometres().max(1) as f32);
                                     let scale = (48.0 / l).min(38.0 / w);
-                                    let size = egui::vec2(
-                                        (l * scale).max(4.0),
-                                        (w * scale).max(4.0),
-                                    );
-                                    let fill = project.material_colors.get(&material.id).map_or(
-                                        egui::Color32::from_rgb(233, 227, 215),
-                                        |c| egui::Color32::from_rgb(c.0[0], c.0[1], c.0[2]),
-                                    );
+                                    let size =
+                                        egui::vec2((l * scale).max(4.0), (w * scale).max(4.0));
+                                    let fill = project
+                                        .material_colors
+                                        .get(&material.id)
+                                        .map_or(egui::Color32::from_rgb(233, 227, 215), |c| {
+                                            egui::Color32::from_rgb(c.0[0], c.0[1], c.0[2])
+                                        });
                                     ui.painter().rect(
                                         egui::Rect::from_center_size(area.center(), size),
                                         0.0,
@@ -2210,7 +2239,10 @@ impl DesktopApp {
                                             .selectable(false),
                                         );
                                         let outlook = match (preview.fit, preview.placement) {
-                                            (FirstFit::Allocated(stock_id), Some((origin, turn))) => {
+                                            (
+                                                FirstFit::Allocated(stock_id),
+                                                Some((origin, turn)),
+                                            ) => {
                                                 let mut args = FluentArgs::new();
                                                 args.set(
                                                     "stock",
@@ -2270,64 +2302,75 @@ impl DesktopApp {
                                 format!("{} · {} mm", preset.name(language), preset.thickness_mm)
                             },
                         );
-                        let response =
-                            form::select_box(ui, popup, &preset_label, width, |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(&preset_label)
-                                            .size(13.0)
-                                            .color(if current.is_some() {
-                                                theme_widgets::TEXT
-                                            } else {
-                                                theme_widgets::MUTED
-                                            }),
-                                    )
-                                    .truncate()
-                                    .selectable(false),
-                                );
-                            });
+                        let response = form::select_box(ui, popup, &preset_label, width, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&preset_label).size(13.0).color(
+                                        if current.is_some() {
+                                            theme_widgets::TEXT
+                                        } else {
+                                            theme_widgets::MUTED
+                                        },
+                                    ),
+                                )
+                                .truncate()
+                                .selectable(false),
+                            );
+                        });
                         egui::Popup::menu(&response)
                             .id(popup)
                             .width(width)
                             .show(|ui| {
                                 ui.set_min_width(width - 12.0);
-                                egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                                    for (index, preset) in
-                                        plan_my_cabinet::material_presets::BR_STANDARD
-                                            .iter()
-                                            .enumerate()
-                                    {
-                                        let name = preset.name(language);
-                                        if form::option(ui, current == Some(index), name, |ui| {
-                                            theme_widgets::swatch(
+                                egui::ScrollArea::vertical()
+                                    .max_height(260.0)
+                                    .show(ui, |ui| {
+                                        for (index, preset) in
+                                            plan_my_cabinet::material_presets::BR_STANDARD
+                                                .iter()
+                                                .enumerate()
+                                        {
+                                            let name = preset.name(language);
+                                            if form::option(
                                                 ui,
-                                                egui::Color32::from_rgb(
-                                                    preset.color.0[0],
-                                                    preset.color.0[1],
-                                                    preset.color.0[2],
-                                                ),
-                                                egui::vec2(14.0, 14.0),
-                                            );
-                                            ui.label(egui::RichText::new(name).size(13.0));
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                current == Some(index),
+                                                name,
                                                 |ui| {
-                                                    ui.label(
-                                                        theme_widgets::mono(
-                                                            format!("{} mm", preset.thickness_mm),
-                                                            12.0,
-                                                        )
-                                                        .color(theme_widgets::FAINT),
+                                                    theme_widgets::swatch(
+                                                        ui,
+                                                        egui::Color32::from_rgb(
+                                                            preset.color.0[0],
+                                                            preset.color.0[1],
+                                                            preset.color.0[2],
+                                                        ),
+                                                        egui::vec2(14.0, 14.0),
+                                                    );
+                                                    ui.label(egui::RichText::new(name).size(13.0));
+                                                    ui.with_layout(
+                                                        egui::Layout::right_to_left(
+                                                            egui::Align::Center,
+                                                        ),
+                                                        |ui| {
+                                                            ui.label(
+                                                                theme_widgets::mono(
+                                                                    format!(
+                                                                        "{} mm",
+                                                                        preset.thickness_mm
+                                                                    ),
+                                                                    12.0,
+                                                                )
+                                                                .color(theme_widgets::FAINT),
+                                                            );
+                                                        },
                                                     );
                                                 },
-                                            );
-                                        })
-                                        .clicked()
-                                        {
-                                            chosen = Some(index);
+                                            )
+                                            .clicked()
+                                            {
+                                                chosen = Some(index);
+                                            }
                                         }
-                                    }
-                                });
+                                    });
                             });
                     });
                     if chosen != current
@@ -2379,10 +2422,7 @@ impl DesktopApp {
                             &[
                                 (BoardGrain::Length, &self.localizer.text("grain-length")),
                                 (BoardGrain::Width, &self.localizer.text("grain-width")),
-                                (
-                                    BoardGrain::Unrestricted,
-                                    &self.localizer.text("grain-none"),
-                                ),
+                                (BoardGrain::Unrestricted, &self.localizer.text("grain-none")),
                             ],
                             width,
                         );

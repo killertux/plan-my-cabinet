@@ -22,8 +22,7 @@ fn invalid_field_apply_stays_and_discard_routes_to_the_actual_target() {
     session.navigate(editor.project(), &mut selection, Destination::Board(first));
     let mut guard = NavigationGuard::default();
     let block = field(editor.project(), first, false);
-    let intent =
-        NavigationIntent::at(editor.project(), Route::Entity(Destination::Board(second)));
+    let intent = NavigationIntent::at(editor.project(), Route::Entity(Destination::Board(second)));
     assert_eq!(
         guard.request(
             intent,
@@ -80,8 +79,7 @@ fn selecting_or_deselecting_a_scene_target_waits_for_the_edit_decision() {
     session.navigate(editor.project(), &mut selection, Destination::Board(first));
     let mut guard = NavigationGuard::default();
     for (target, additive) in [(Some(second), false), (None, false), (Some(first), true)] {
-        let source =
-            NavigationIntent::at(editor.project(), Route::Selection { target, additive });
+        let source = NavigationIntent::at(editor.project(), Route::Selection { target, additive });
         assert!(matches!(
             guard.request(
                 source,

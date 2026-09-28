@@ -1,7 +1,6 @@
 //! Pending-edit guard: routes, drafts and previews that must resolve before navigating.
 use crate::*;
 
-
 impl DesktopApp {
     // Every mounted draft is owned by the app session, not either editing surface.
     pub(crate) fn navigation_edit(&mut self) -> Option<EditBlock> {
@@ -86,7 +85,9 @@ impl DesktopApp {
 
     pub(crate) fn request_navigation(&mut self, route: NavigationRoute) -> Outcome {
         if self.project_files.blocking()
-            || self.other_modal_open() && self.modals.placement().is_none() && self.modals.board_dimension().is_none()
+            || self.other_modal_open()
+                && self.modals.placement().is_none()
+                && self.modals.board_dimension().is_none()
         {
             return Outcome::Blocked(pending_navigation::Blocked::PendingDecision);
         }
@@ -102,7 +103,11 @@ impl DesktopApp {
         outcome
     }
 
-    pub(crate) fn request_scene_selection(&mut self, target: Option<Uuid>, additive: bool) -> Outcome {
+    pub(crate) fn request_scene_selection(
+        &mut self,
+        target: Option<Uuid>,
+        additive: bool,
+    ) -> Outcome {
         if self.navigation.pending().is_none()
             && !self.other_modal_open()
             && !additive

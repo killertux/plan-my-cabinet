@@ -694,12 +694,11 @@ fn snap_ranks_visible_candidates_in_pixels_and_alt_bypasses() {
     camera.target = [100.0, 50.0, 10.0];
     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
     let seed = Pose::new([60.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
-    let candidate =
-        plan_my_cabinet::placement::snap_candidates(&project, source, seed, 1_000.0)
-            .unwrap()
-            .into_iter()
-            .find(|c| visible_face(&project, &camera, rect, source, c))
-            .unwrap();
+    let candidate = plan_my_cabinet::placement::snap_candidates(&project, source, seed, 1_000.0)
+        .unwrap()
+        .into_iter()
+        .find(|c| visible_face(&project, &camera, rect, source, c))
+        .unwrap();
     let free = Pose::new(
         std::array::from_fn(|i| {
             candidate.world_pose.translation_mm[i] + if i == 0 { 2.0 } else { 0.0 }
@@ -714,16 +713,14 @@ fn snap_ranks_visible_candidates_in_pixels_and_alt_bypasses() {
     assert_eq!(selected.target_id, target);
     assert_eq!(snapped, selected.world_pose);
     let origin = camera.project(free.translation_mm, rect).unwrap();
-    let chosen_distance =
-        origin.distance(camera.project(snapped.translation_mm, rect).unwrap());
-    for c in plan_my_cabinet::placement::snap_candidates(&project, source, free, 1_000_000.0)
-        .unwrap()
+    let chosen_distance = origin.distance(camera.project(snapped.translation_mm, rect).unwrap());
+    for c in
+        plan_my_cabinet::placement::snap_candidates(&project, source, free, 1_000_000.0).unwrap()
     {
         if visible_face(&project, &camera, rect, source, &c) {
             assert!(
                 chosen_distance
-                    <= origin
-                        .distance(camera.project(c.world_pose.translation_mm, rect).unwrap())
+                    <= origin.distance(camera.project(c.world_pose.translation_mm, rect).unwrap())
                         + 1e-4
             );
         }
@@ -775,12 +772,11 @@ fn independent_snap_modes_alt_and_spacing_leave_committed_poses_alone() {
     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
     let start = Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap();
     let seed = Pose::new([60.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
-    let candidate =
-        plan_my_cabinet::placement::snap_candidates(&project, source, seed, 1_000.0)
-            .unwrap()
-            .into_iter()
-            .find(|c| visible_face(&project, &camera, rect, source, c))
-            .unwrap();
+    let candidate = plan_my_cabinet::placement::snap_candidates(&project, source, seed, 1_000.0)
+        .unwrap()
+        .into_iter()
+        .find(|c| visible_face(&project, &camera, rect, source, c))
+        .unwrap();
     let mut translation = candidate.world_pose.translation_mm;
     translation[0] += 2.0;
     let free = Pose::new(translation, Quaternion::IDENTITY).unwrap();
@@ -1022,9 +1018,8 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let project = editor.preview().unwrap_or(editor.project());
                     controls::show(ui, camera, project, selection, tool, false, false, false);
-                    (canvas_rect, result) = canvas::interact(
-                        ui, camera, project, selection, tool, false, false, false,
-                    );
+                    (canvas_rect, result) =
+                        canvas::interact(ui, camera, project, selection, tool, false, false, false);
                 });
             },
         )
@@ -1032,15 +1027,13 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
         match result {
             Some(DragAction::Preview(board, pose)) => {
                 let mut session =
-                    plan_my_cabinet::placement::PlacementSession::resume(editor, board)
-                        .unwrap();
+                    plan_my_cabinet::placement::PlacementSession::resume(editor, board).unwrap();
                 session.preview_free(pose).unwrap();
                 session.pause();
             }
             Some(DragAction::Accept(board, Some(pose))) => {
                 let mut session =
-                    plan_my_cabinet::placement::PlacementSession::resume(editor, board)
-                        .unwrap();
+                    plan_my_cabinet::placement::PlacementSession::resume(editor, board).unwrap();
                 session.preview_free(pose).unwrap();
                 session.accept().unwrap();
             }
@@ -1648,8 +1641,7 @@ fn guarded_camera_actions_match_shader_projection_and_picking_without_project_ed
                 let relative =
                     std::array::from_fn::<_, 3, _>(|i| (point[i] - camera.target[i]) as f32);
                 let d = std::array::from_fn::<_, 3, _>(|i| relative[i] - floats[12 + i]);
-                let axis_dot =
-                    |base: usize| (0..3).map(|i| d[i] * floats[base + i]).sum::<f32>();
+                let axis_dot = |base: usize| (0..3).map(|i| d[i] * floats[base + i]).sum::<f32>();
                 let depth = axis_dot(8);
                 let w = if projection == Projection::Perspective {
                     depth

@@ -199,9 +199,7 @@ fn enter_escape_and_popup_events_do_not_fall_through() {
             |ui| {
                 ui.add(egui::TextEdit::singleline(&mut String::new()).id(Id::new("name")));
                 // An active draft/editing layer handles this Escape first.
-                assert!(
-                    ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
-                );
+                assert!(ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
                 ((), true)
             },
         );

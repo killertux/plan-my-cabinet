@@ -599,7 +599,12 @@ fn segmented<T: Copy + PartialEq>(
             );
         }
         let color = if selected { tw::TEXT } else { tw::SECONDARY };
-        let galley = painter.layout((*label).to_owned(), font(ui, selected), color, segment_width);
+        let galley = painter.layout(
+            (*label).to_owned(),
+            font(ui, selected),
+            color,
+            segment_width,
+        );
         painter.galley(segment.center() - galley.size() / 2.0, galley, color);
     }
 }
@@ -772,11 +777,8 @@ fn link(ui: &mut egui::Ui, text: &str, color: Color32) -> egui::Response {
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     if response.hovered() || response.has_focus() {
         let rect = response.rect;
-        ui.painter().hline(
-            rect.x_range(),
-            rect.bottom() - 1.0,
-            Stroke::new(1.0, color),
-        );
+        ui.painter()
+            .hline(rect.x_range(), rect.bottom() - 1.0, Stroke::new(1.0, color));
     }
     let name = text.to_owned();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, &name));
@@ -879,9 +881,8 @@ fn toggle(ui: &mut egui::Ui, value: bool, label: &str) -> egui::Response {
     }
     painter.galley(egui::pos2(rect.left() + 42.0, rect.top()), galley, tw::TEXT);
     let name = label.to_owned();
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, value, &name)
-    });
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, value, &name));
     response
 }
 
@@ -1188,10 +1189,7 @@ fn costs(
                     || (tr(language, "unknown", "desconhecido").to_owned(), true),
                     |fee| {
                         let text = fee.display(money_locale);
-                        (
-                            text.trim_start_matches(code).trim().to_owned(),
-                            false,
-                        )
+                        (text.trim_start_matches(code).trim().to_owned(), false)
                     },
                 );
                 if value_button(
@@ -1299,12 +1297,7 @@ fn costs(
                         .try_fold(0_u64, |sum, stock| sum.checked_add(stock.cuts?));
                     let cuts_label = cuts.map_or_else(
                         || tr(language, "Cuts × fee", "Cortes × custo").to_owned(),
-                        |n| {
-                            format!(
-                                "{n} {}",
-                                tr(language, "cuts × fee", "cortes × custo")
-                            )
-                        },
+                        |n| format!("{n} {}", tr(language, "cuts × fee", "cortes × custo")),
                     );
                     let lines = [
                         (
@@ -1313,7 +1306,12 @@ fn costs(
                             estimate.material.is_none(),
                             false,
                         ),
-                        (cuts_label, money(estimate.cutting), estimate.cutting.is_none(), false),
+                        (
+                            cuts_label,
+                            money(estimate.cutting),
+                            estimate.cutting.is_none(),
+                            false,
+                        ),
                         (
                             tr(language, "New spending", "Novo gasto").to_owned(),
                             estimate.total.map_or_else(
@@ -1495,7 +1493,15 @@ fn general(
                 .iter()
                 .map(|(scale, label)| (*scale, label.as_str()))
                 .collect();
-            segmented(ui, "settings-scale", &mut scale, &options, 280.0, 30.0, true);
+            segmented(
+                ui,
+                "settings-scale",
+                &mut scale,
+                &options,
+                280.0,
+                30.0,
+                true,
+            );
             if scale != prefs.interface_scale {
                 out.push(SettingsIntent::SetScale(scale));
             }
@@ -1574,11 +1580,7 @@ fn shortcuts(ui: &mut egui::Ui, language: Language, out: &mut Vec<SettingsIntent
     ui.add_space(10.0);
     if link(
         ui,
-        tr(
-            language,
-            "Open shortcut help →",
-            "Abrir ajuda de atalhos →",
-        ),
+        tr(language, "Open shortcut help →", "Abrir ajuda de atalhos →"),
         LINK,
     )
     .clicked()

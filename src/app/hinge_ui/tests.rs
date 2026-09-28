@@ -78,8 +78,7 @@ fn valid_and_unsupported_preview_and_refresh() {
     );
     draft.values[3] = "18".into();
     let unsupported =
-        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap())
-            .unwrap();
+        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap()).unwrap();
     assert!(
         unsupported
             .issues
@@ -385,8 +384,7 @@ fn independent_draft_coordinates_and_pairs_never_commit_on_preview() {
     draft.values[3] = "18".into();
     draft.side.mount_face = BoardFace::MaxZ;
     let status =
-        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap())
-            .unwrap();
+        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap()).unwrap();
     assert!(status.issues.is_empty());
     assert_eq!(
         status.references.unwrap().plate_hole_centers_um[0][1],
@@ -394,8 +392,7 @@ fn independent_draft_coordinates_and_pairs_never_commit_on_preview() {
     );
     draft.values[3] = "17".into();
     let status =
-        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap())
-            .unwrap();
+        hinge_installation::preview(app.editor.project(), &draft.proposed(&app).unwrap()).unwrap();
     assert!(
         status
             .issues

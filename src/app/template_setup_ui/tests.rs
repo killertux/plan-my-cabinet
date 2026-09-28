@@ -40,8 +40,7 @@ fn key(key: egui::Key) -> egui::RawInput {
 fn wizard_body_change_does_not_publish_a_removed_accessibility_focus() {
     let ctx = egui::Context::default();
     let l = Localizer::new(Language::En);
-    let mut state =
-        TemplateSetupUi::new(TemplateKind::Drawers, "Cabinet", Currency::Brl, Unit::Mm);
+    let mut state = TemplateSetupUi::new(TemplateKind::Drawers, "Cabinet", Currency::Brl, Unit::Mm);
     frame(&ctx, &mut state, &l, screen());
     assert_eq!(
         ctx.memory(|m| m.focused()),
@@ -71,8 +70,7 @@ fn first_run_role_assignment_review_and_cancel_leave_existing_editor_untouched()
     let before = old.project().clone();
     let ctx = egui::Context::default();
     let l = Localizer::new(Language::En);
-    let mut state =
-        TemplateSetupUi::new(TemplateKind::Drawers, "Kitchen", Currency::Brl, Unit::Mm);
+    let mut state = TemplateSetupUi::new(TemplateKind::Drawers, "Kitchen", Currency::Brl, Unit::Mm);
     frame(&ctx, &mut state, &l, screen());
     assert!(state.is_active());
     assert!(

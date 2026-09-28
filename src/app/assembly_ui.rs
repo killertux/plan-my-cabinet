@@ -1,6 +1,6 @@
-use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::modal_chrome::{ModalAction, ModalActions, ModalChrome};
+use crate::*;
 use plan_my_cabinet::assembly_edit::{AssemblyEditError, world_pose};
 use plan_my_cabinet::design_read_models::{
     DesignInspector, DesignReadModel, ObjectKind, OutlinerRow, ThicknessProvenance,
@@ -77,8 +77,12 @@ fn sheet_miniature(
     let inner = frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(
-                theme_widgets::medium(ui, format!("{} · {}", piece.alias, piece.material_name), 12.5)
-                    .color(theme_widgets::TEXT),
+                theme_widgets::medium(
+                    ui,
+                    format!("{} · {}", piece.alias, piece.material_name),
+                    12.5,
+                )
+                .color(theme_widgets::TEXT),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
@@ -158,7 +162,10 @@ fn sheet_miniature(
     });
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!("{label} · {}", localizer.text("design-open-cut-plan")))
+        .on_hover_text(format!(
+            "{label} · {}",
+            localizer.text("design-open-cut-plan")
+        ))
 }
 
 fn hud_rect(canvas: egui::Rect) -> Option<egui::Rect> {
@@ -740,10 +747,30 @@ impl DesktopApp {
                                 egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT),
                             );
                             for (action, target, icon, color) in [
-                                (A::PlaceFace, Target::Board(id), icons::Icon::Place, theme_widgets::SECONDARY),
-                                (A::DuplicateBoard, Target::Board(id), icons::Icon::Duplicate, theme_widgets::SECONDARY),
-                                (A::ToggleVisibility, Target::Object(id), icons::Icon::EyeOff, theme_widgets::SECONDARY),
-                                (A::DeleteObject, Target::None, icons::Icon::Trash, theme_widgets::DANGER),
+                                (
+                                    A::PlaceFace,
+                                    Target::Board(id),
+                                    icons::Icon::Place,
+                                    theme_widgets::SECONDARY,
+                                ),
+                                (
+                                    A::DuplicateBoard,
+                                    Target::Board(id),
+                                    icons::Icon::Duplicate,
+                                    theme_widgets::SECONDARY,
+                                ),
+                                (
+                                    A::ToggleVisibility,
+                                    Target::Object(id),
+                                    icons::Icon::EyeOff,
+                                    theme_widgets::SECONDARY,
+                                ),
+                                (
+                                    A::DeleteObject,
+                                    Target::None,
+                                    icons::Icon::Trash,
+                                    theme_widgets::DANGER,
+                                ),
                             ] {
                                 let request = Request::with(action, target);
                                 let label = action.label(&self.localizer);
@@ -1173,7 +1200,11 @@ impl DesktopApp {
                             } else {
                                 theme_widgets::MUTED
                             },
-                            if row.kind == ObjectKind::Assembly { 14.0 } else { 13.0 },
+                            if row.kind == ObjectKind::Assembly {
+                                14.0
+                            } else {
+                                13.0
+                            },
                         ));
                         let ink = if row.active {
                             theme_widgets::ACCENT_INK
@@ -1197,12 +1228,16 @@ impl DesktopApp {
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if row.issue_count > 0 && row.visible {
-                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 13.0))
-                                    .on_hover_text(format!(
-                                        "{}: {}",
-                                        self.localizer.text("design-issue-count"),
-                                        row.issue_count
-                                    ));
+                                ui.add(icons::icon(
+                                    icons::Icon::Warning,
+                                    theme_widgets::WARN,
+                                    13.0,
+                                ))
+                                .on_hover_text(format!(
+                                    "{}: {}",
+                                    self.localizer.text("design-issue-count"),
+                                    row.issue_count
+                                ));
                             } else {
                                 let eye_label =
                                     self.localizer.text(if row.hidden_directly || !row.visible {
@@ -1245,7 +1280,10 @@ impl DesktopApp {
                         self.session.design_expanded.insert(row.id);
                     }
                 } else if toggle_visibility {
-                    self.invoke_or_report(Request::with(A::ToggleVisibility, Target::Object(row.id)));
+                    self.invoke_or_report(Request::with(
+                        A::ToggleVisibility,
+                        Target::Object(row.id),
+                    ));
                 } else if response.clicked() {
                     let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
                     let request = if row.kind == ObjectKind::Board {
@@ -1306,7 +1344,8 @@ impl DesktopApp {
                     theme_widgets::MUTED,
                     15.0,
                     24.0,
-                    self.action_availability(Request::new(A::NewMaterial)).is_ok(),
+                    self.action_availability(Request::new(A::NewMaterial))
+                        .is_ok(),
                     false,
                 )
                 .clicked()
@@ -1333,7 +1372,8 @@ impl DesktopApp {
                             |ui| {
                                 ui.add(
                                     egui::Label::new(
-                                        egui::RichText::new(&material.name).color(theme_widgets::TEXT),
+                                        egui::RichText::new(&material.name)
+                                            .color(theme_widgets::TEXT),
                                     )
                                     .truncate()
                                     .selectable(false),
@@ -1353,7 +1393,11 @@ impl DesktopApp {
                                 .color(theme_widgets::FAINT),
                             );
                             if warning > 0 {
-                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 13.0));
+                                ui.add(icons::icon(
+                                    icons::Icon::Warning,
+                                    theme_widgets::WARN,
+                                    13.0,
+                                ));
                             }
                         });
                     },
@@ -1500,7 +1544,8 @@ impl DesktopApp {
                         |ui| {
                             ui.add(
                                 egui::Label::new(
-                                    theme_widgets::semibold(ui, title, 15.0).color(theme_widgets::TEXT),
+                                    theme_widgets::semibold(ui, title, 15.0)
+                                        .color(theme_widgets::TEXT),
                                 )
                                 .truncate(),
                             );
@@ -1548,7 +1593,12 @@ impl DesktopApp {
         };
         let dims = |values: [f64; 3]| {
             values
-                .map(|v| short_length(Length::from_micrometres((v * 1000.0).round() as i64), locale))
+                .map(|v| {
+                    short_length(
+                        Length::from_micrometres((v * 1000.0).round() as i64),
+                        locale,
+                    )
+                })
                 .join(" × ")
         };
         let body = egui::Frame::new().inner_margin(egui::Margin {
@@ -1562,11 +1612,19 @@ impl DesktopApp {
                 body.show(ui, |ui| {
                     ui.add_space(40.0);
                     ui.vertical_centered(|ui| {
-                        ui.add(icons::icon(icons::Icon::Cube, theme_widgets::DISABLED, 28.0));
+                        ui.add(icons::icon(
+                            icons::Icon::Cube,
+                            theme_widgets::DISABLED,
+                            28.0,
+                        ));
                         ui.add_space(8.0);
                         ui.label(
-                            theme_widgets::medium(ui, self.localizer.text("design-no-selection"), 13.0)
-                                .color(theme_widgets::MUTED),
+                            theme_widgets::medium(
+                                ui,
+                                self.localizer.text("design-no-selection"),
+                                13.0,
+                            )
+                            .color(theme_widgets::MUTED),
                         );
                         ui.label(
                             egui::RichText::new(self.localizer.text("design-no-selection-hint"))
@@ -1598,7 +1656,9 @@ impl DesktopApp {
                         .stock
                         .first()
                         .and_then(|a| a.stock_alias.clone())
-                        .map(|alias| format!("{} {alias}", self.localizer.text("design-allocated-on")))
+                        .map(|alias| {
+                            format!("{} {alias}", self.localizer.text("design-allocated-on"))
+                        })
                         .unwrap_or_else(|| self.localizer.text("board-allocated")),
                     AllocationStatus::Unallocated => self.localizer.text("board-unallocated"),
                     AllocationStatus::Conflicted => self.localizer.text("global-conflicted"),
@@ -1628,78 +1688,97 @@ impl DesktopApp {
                     .expect("inspected board")
                     .clone();
                 body.show(ui, |ui| {
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("board-kind"), |_| {});
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("board-kind"),
+                        |_| {},
+                    );
                     let width = ui.available_width() - 96.0;
-                    theme_widgets::prop_row(ui, &self.localizer.text("design-material-title"), 88.0, |ui| {
-                        let request = Request::with(A::AssignMaterial, Target::Board(board.id));
-                        let color = board.material_color.0;
-                        let response = ui.add_enabled(
-                            self.action_availability(request).is_ok(),
-                            egui::Button::new(
-                                egui::RichText::new(format!(
-                                    "{} {}",
-                                    board.material_name,
-                                    short_length(board.material_default_thickness, locale)
-                                ))
-                                .color(theme_widgets::TEXT),
-                            )
-                            .right_text(egui::RichText::new("▾").color(theme_widgets::FAINT))
-                            .fill(theme_widgets::APP)
-                            .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
-                            .corner_radius(6)
-                            .min_size(egui::vec2(width, 28.0)),
-                        );
-                        let swatch = egui::Rect::from_center_size(
-                            response.rect.left_center() + egui::vec2(-6.0, 0.0),
-                            egui::vec2(0.0, 0.0),
-                        );
-                        let _ = swatch;
-                        ui.painter().rect(
-                            egui::Rect::from_min_size(
-                                response.rect.right_center() + egui::vec2(-38.0, -6.0),
-                                egui::vec2(12.0, 12.0),
-                            ),
-                            3.0,
-                            egui::Color32::from_rgb(color[0], color[1], color[2]),
-                            egui::Stroke::new(1.0, egui::Color32::from_black_alpha(28)),
-                            egui::StrokeKind::Inside,
-                        );
-                        if response
-                            .on_hover_text(self.localizer.text("board-assign-material"))
-                            .clicked()
-                        {
-                            self.invoke_or_report(request);
-                        }
-                    });
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("design-material-title"),
+                        88.0,
+                        |ui| {
+                            let request = Request::with(A::AssignMaterial, Target::Board(board.id));
+                            let color = board.material_color.0;
+                            let response = ui.add_enabled(
+                                self.action_availability(request).is_ok(),
+                                egui::Button::new(
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        board.material_name,
+                                        short_length(board.material_default_thickness, locale)
+                                    ))
+                                    .color(theme_widgets::TEXT),
+                                )
+                                .right_text(egui::RichText::new("▾").color(theme_widgets::FAINT))
+                                .fill(theme_widgets::APP)
+                                .stroke(egui::Stroke::new(1.0, theme_widgets::BORDER_SOFT))
+                                .corner_radius(6)
+                                .min_size(egui::vec2(width, 28.0)),
+                            );
+                            let swatch = egui::Rect::from_center_size(
+                                response.rect.left_center() + egui::vec2(-6.0, 0.0),
+                                egui::vec2(0.0, 0.0),
+                            );
+                            let _ = swatch;
+                            ui.painter().rect(
+                                egui::Rect::from_min_size(
+                                    response.rect.right_center() + egui::vec2(-38.0, -6.0),
+                                    egui::vec2(12.0, 12.0),
+                                ),
+                                3.0,
+                                egui::Color32::from_rgb(color[0], color[1], color[2]),
+                                egui::Stroke::new(1.0, egui::Color32::from_black_alpha(28)),
+                                egui::StrokeKind::Inside,
+                            );
+                            if response
+                                .on_hover_text(self.localizer.text("board-assign-material"))
+                                .clicked()
+                            {
+                                self.invoke_or_report(request);
+                            }
+                        },
+                    );
                     let mut grain = source.grain_override;
-                    theme_widgets::prop_row(ui, &self.localizer.text("design-grain-title"), 88.0, |ui| {
-                        ui.add_enabled_ui(!self.modal_open(), |ui| {
-                            egui::ComboBox::from_id_salt(("inspector-grain", board.id))
-                                .width(width - 8.0)
-                                .selected_text(match grain {
-                                    None => format!(
-                                        "{} · {}",
-                                        self.localizer.text("design-grain-material"),
-                                        self.localizer.text(match board.grain {
-                                            BoardGrain::Length => "grain-short-length",
-                                            BoardGrain::Width => "grain-short-width",
-                                            BoardGrain::Unrestricted => "grain-short-any",
-                                        })
-                                    ),
-                                    Some(_) => self.localizer.text(board_grain_key(grain)),
-                                })
-                                .show_ui(ui, |ui| {
-                                    for (value, key) in [
-                                        (None, "grain-follow-default"),
-                                        (Some(BoardGrain::Length), "grain-length"),
-                                        (Some(BoardGrain::Width), "grain-width"),
-                                        (Some(BoardGrain::Unrestricted), "grain-unrestricted"),
-                                    ] {
-                                        combo_option(ui, &mut grain, value, self.localizer.text(key));
-                                    }
-                                });
-                        });
-                    });
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("design-grain-title"),
+                        88.0,
+                        |ui| {
+                            ui.add_enabled_ui(!self.modal_open(), |ui| {
+                                egui::ComboBox::from_id_salt(("inspector-grain", board.id))
+                                    .width(width - 8.0)
+                                    .selected_text(match grain {
+                                        None => format!(
+                                            "{} · {}",
+                                            self.localizer.text("design-grain-material"),
+                                            self.localizer.text(match board.grain {
+                                                BoardGrain::Length => "grain-short-length",
+                                                BoardGrain::Width => "grain-short-width",
+                                                BoardGrain::Unrestricted => "grain-short-any",
+                                            })
+                                        ),
+                                        Some(_) => self.localizer.text(board_grain_key(grain)),
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        for (value, key) in [
+                                            (None, "grain-follow-default"),
+                                            (Some(BoardGrain::Length), "grain-length"),
+                                            (Some(BoardGrain::Width), "grain-width"),
+                                            (Some(BoardGrain::Unrestricted), "grain-unrestricted"),
+                                        ] {
+                                            combo_option(
+                                                ui,
+                                                &mut grain,
+                                                value,
+                                                self.localizer.text(key),
+                                            );
+                                        }
+                                    });
+                            });
+                        },
+                    );
                     if grain != source.grain_override {
                         self.invoke_or_report(
                             Request::with(A::SetGrain, Target::Board(board.id))
@@ -1720,7 +1799,8 @@ impl DesktopApp {
                         );
                         ui.label(
                             egui::RichText::new(
-                                self.localizer.format("design-thickness-diff-note", Some(&args)),
+                                self.localizer
+                                    .format("design-thickness-diff-note", Some(&args)),
                             )
                             .size(11.5)
                             .color(theme_widgets::WARN_INK),
@@ -1778,19 +1858,31 @@ impl DesktopApp {
                     } else {
                         self.show_shared_pose_fields(ui, board.id);
                     }
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-stock-title"), |_| {});
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-stock-title"),
+                        |_| {},
+                    );
                     if board.stock.is_empty() {
                         theme_widgets::warn_callout().show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             ui.horizontal(|ui| {
-                                ui.add(icons::icon(icons::Icon::Warning, theme_widgets::WARN, 14.0));
+                                ui.add(icons::icon(
+                                    icons::Icon::Warning,
+                                    theme_widgets::WARN,
+                                    14.0,
+                                ));
                                 ui.label(
-                                    egui::RichText::new(self.localizer.text(match board.allocation.status {
-                                        AllocationStatus::Unallocated => "design-needs-stock",
-                                        AllocationStatus::Conflicted => "global-conflicted",
-                                        AllocationStatus::UnknownSearchBudget => "sheet-feasibility-unknown",
-                                        AllocationStatus::AllocatedValid => "board-allocated",
-                                    }))
+                                    egui::RichText::new(self.localizer.text(
+                                        match board.allocation.status {
+                                            AllocationStatus::Unallocated => "design-needs-stock",
+                                            AllocationStatus::Conflicted => "global-conflicted",
+                                            AllocationStatus::UnknownSearchBudget => {
+                                                "sheet-feasibility-unknown"
+                                            }
+                                            AllocationStatus::AllocatedValid => "board-allocated",
+                                        },
+                                    ))
                                     .size(12.0)
                                     .color(theme_widgets::WARN_INK),
                                 );
@@ -1819,60 +1911,80 @@ impl DesktopApp {
                             self.navigate_session(Destination::BoardAllocation(board.id));
                         }
                         ui.add_space(4.0);
-                        theme_widgets::prop_row(ui, &self.localizer.text("design-sheet"), 88.0, |ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            ui.label(
-                                theme_widgets::mono(
-                                    allocation.stock_alias.as_deref().unwrap_or("—"),
-                                    12.5,
-                                )
-                                .color(theme_widgets::TEXT),
-                            );
-                            ui.label(
-                                egui::RichText::new(self.localizer.text("design-at"))
-                                    .size(12.0)
-                                    .color(theme_widgets::FAINT),
-                            );
-                            ui.label(
-                                theme_widgets::mono(
-                                    format!(
-                                        "{}, {}{}",
-                                        short_length(allocation.origin[0], locale),
-                                        short_length(allocation.origin[1], locale),
-                                        if allocation.quarter_turn { " · 90°" } else { "" }
-                                    ),
-                                    12.5,
-                                )
-                                .color(theme_widgets::SECONDARY),
-                            );
-                        });
-                        theme_widgets::prop_row(ui, &self.localizer.text("design-placement"), 88.0, |ui| {
-                            ui.add(icons::icon(icons::Icon::Lock, theme_widgets::MUTED, 13.0));
-                            ui.label(self.localizer.text(if allocation.locked {
-                                "design-locked"
-                            } else {
-                                "design-unlocked"
-                            }));
-                        });
-                    }
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
-                    theme_widgets::prop_row(ui, &self.localizer.text("design-bounding-body"), 88.0, |ui| {
-                        match &board.bounds_world.body {
-                            Ok(m) => ui.label(
-                                theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                        theme_widgets::prop_row(
+                            ui,
+                            &self.localizer.text("design-sheet"),
+                            88.0,
+                            |ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                ui.label(
+                                    theme_widgets::mono(
+                                        allocation.stock_alias.as_deref().unwrap_or("—"),
+                                        12.5,
+                                    )
                                     .color(theme_widgets::TEXT),
-                            ),
-                            Err(_) => ui.label(self.localizer.text("measurement-invalid")),
-                        };
-                    });
+                                );
+                                ui.label(
+                                    egui::RichText::new(self.localizer.text("design-at"))
+                                        .size(12.0)
+                                        .color(theme_widgets::FAINT),
+                                );
+                                ui.label(
+                                    theme_widgets::mono(
+                                        format!(
+                                            "{}, {}{}",
+                                            short_length(allocation.origin[0], locale),
+                                            short_length(allocation.origin[1], locale),
+                                            if allocation.quarter_turn {
+                                                " · 90°"
+                                            } else {
+                                                ""
+                                            }
+                                        ),
+                                        12.5,
+                                    )
+                                    .color(theme_widgets::SECONDARY),
+                                );
+                            },
+                        );
+                        theme_widgets::prop_row(
+                            ui,
+                            &self.localizer.text("design-placement"),
+                            88.0,
+                            |ui| {
+                                ui.add(icons::icon(icons::Icon::Lock, theme_widgets::MUTED, 13.0));
+                                ui.label(self.localizer.text(if allocation.locked {
+                                    "design-locked"
+                                } else {
+                                    "design-unlocked"
+                                }));
+                            },
+                        );
+                    }
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-bounding"),
+                        |_| {},
+                    );
+                    theme_widgets::prop_row(
+                        ui,
+                        &self.localizer.text("design-bounding-body"),
+                        88.0,
+                        |ui| {
+                            match &board.bounds_world.body {
+                                Ok(m) => ui.label(
+                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                        .color(theme_widgets::TEXT),
+                                ),
+                                Err(_) => ui.label(self.localizer.text("measurement-invalid")),
+                            };
+                        },
+                    );
                 });
             }
             DesignInspector::Assembly(assembly) => {
                 let mut args = FluentArgs::new();
-                args.set(
-                    "count",
-                    assembly.descendant_board_count as i64,
-                );
+                args.set("count", assembly.descendant_board_count as i64);
                 let parent = assembly
                     .parent_name
                     .clone()
@@ -1891,20 +2003,26 @@ impl DesktopApp {
                     ),
                 );
                 body.show(ui, |ui| {
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-bounding"),
+                        |_| {},
+                    );
                     for (label, result) in [
                         ("design-bounding-body", &assembly.bounds_world.body),
                         ("design-bounding-overall", &assembly.bounds_world.overall),
                     ] {
-                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| match result {
-                            Ok(m) => {
-                                ui.label(
-                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
-                                        .color(theme_widgets::TEXT),
-                                );
-                            }
-                            Err(_) => {
-                                ui.label(self.localizer.text("measurement-invalid"));
+                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| {
+                            match result {
+                                Ok(m) => {
+                                    ui.label(
+                                        theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                            .color(theme_widgets::TEXT),
+                                    );
+                                }
+                                Err(_) => {
+                                    ui.label(self.localizer.text("measurement-invalid"));
+                                }
                             }
                         });
                     }
@@ -1935,7 +2053,10 @@ impl DesktopApp {
             }
             DesignInspector::Multi(multi) => {
                 let mut args = FluentArgs::new();
-                args.set("count", (multi.board_count + multi.assembly_count + multi.hardware_count) as i64);
+                args.set(
+                    "count",
+                    (multi.board_count + multi.assembly_count + multi.hardware_count) as i64,
+                );
                 self.inspector_header(
                     ui,
                     icons::Icon::Layers,
@@ -1944,20 +2065,26 @@ impl DesktopApp {
                     "",
                 );
                 body.show(ui, |ui| {
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-bounding"),
+                        |_| {},
+                    );
                     for (label, result) in [
                         ("design-bounding-body", &multi.bounds_world.body),
                         ("design-bounding-overall", &multi.bounds_world.overall),
                     ] {
-                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| match result {
-                            Ok(m) => {
-                                ui.label(
-                                    theme_widgets::mono(dims(m.dimensions_mm), 12.5)
-                                        .color(theme_widgets::TEXT),
-                                );
-                            }
-                            Err(_) => {
-                                ui.label(self.localizer.text("measurement-invalid"));
+                        theme_widgets::prop_row(ui, &self.localizer.text(label), 88.0, |ui| {
+                            match result {
+                                Ok(m) => {
+                                    ui.label(
+                                        theme_widgets::mono(dims(m.dimensions_mm), 12.5)
+                                            .color(theme_widgets::TEXT),
+                                    );
+                                }
+                                Err(_) => {
+                                    ui.label(self.localizer.text("measurement-invalid"));
+                                }
                             }
                         });
                     }
@@ -1997,7 +2124,11 @@ impl DesktopApp {
                             );
                         });
                     }
-                    theme_widgets::inspector_heading(ui, &self.localizer.text("design-bounding"), |_| {});
+                    theme_widgets::inspector_heading(
+                        ui,
+                        &self.localizer.text("design-bounding"),
+                        |_| {},
+                    );
                     theme_widgets::prop_row(
                         ui,
                         &self.localizer.text("design-bounding-overall"),

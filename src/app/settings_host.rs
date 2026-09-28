@@ -1,7 +1,6 @@
 //! Local preferences, the Settings window and template setup hosting.
 use crate::*;
 
-
 impl DesktopApp {
     /// The desktop host owns the platform path. Capture runs do not call this
     /// initializer and therefore never read or write the user's preferences.

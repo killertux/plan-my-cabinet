@@ -53,7 +53,6 @@ pub(crate) struct SettingsHost {
     pub(crate) cleanup: Option<CleanupUi>,
 }
 
-
 /// The cabinet template setup flow.
 #[derive(Default)]
 pub(crate) struct TemplateHost {
@@ -61,7 +60,6 @@ pub(crate) struct TemplateHost {
     pub(crate) guard_pending: bool,
     pub(crate) message: Option<String>,
 }
-
 
 /// Controllers of the app-level dialogs. They outlive each dialog so focus
 /// returns to the control that opened it.
@@ -154,11 +152,9 @@ pub(crate) struct CutPlanState {
     pub(crate) material_conflicts: Vec<AllocationConflict>,
 }
 
-
 /// Hardware workspace session state.
 #[derive(Default)]
 pub(crate) struct HardwareState {
     pub(crate) door_motion: Option<(Uuid, f64)>,
     pub(crate) catalog_update_notice: Option<String>,
 }
-

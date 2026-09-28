@@ -230,9 +230,7 @@ fn dense_bilingual_cut_callouts_and_continuations_retain_witness_identity() {
                 .unwrap()
                 .0;
             // Parts are keyed by short part numbers; machine identifiers never print.
-            assert!(whole.contains(&format!(
-                "Prateleira número {n:02} — ação (P{node})"
-            )));
+            assert!(whole.contains(&format!("Prateleira número {n:02} — ação (P{node})")));
             assert!(!whole.contains(&id(100 + n).to_string()));
             assert!(!whole.contains(&id(1000 + n).to_string()));
         }

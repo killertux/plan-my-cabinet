@@ -130,9 +130,21 @@ pub(super) fn show(
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.vertical(|ui| {
                     for (request, selected, icon) in [
-                        (Request::new(A::ViewNavigate), tool.mode == ToolMode::Navigate, Icon::Orbit),
-                        (Request::new(A::ViewMove), tool.mode == ToolMode::Move, Icon::Move),
-                        (Request::new(A::ViewMeasure), tool.mode == ToolMode::Measure, Icon::Measure),
+                        (
+                            Request::new(A::ViewNavigate),
+                            tool.mode == ToolMode::Navigate,
+                            Icon::Orbit,
+                        ),
+                        (
+                            Request::new(A::ViewMove),
+                            tool.mode == ToolMode::Move,
+                            Icon::Move,
+                        ),
+                        (
+                            Request::new(A::ViewMeasure),
+                            tool.mode == ToolMode::Measure,
+                            Icon::Measure,
+                        ),
                     ] {
                         let allowed = availability(request, tool);
                         let label = request.id.label(&localizer);
@@ -207,8 +219,14 @@ pub(super) fn show(
                             }
                             let mut projection = camera.projection;
                             let labels = [
-                                (Projection::Perspective, localizer.text("viewport-persp-short")),
-                                (Projection::Orthographic, localizer.text("viewport-ortho-short")),
+                                (
+                                    Projection::Perspective,
+                                    localizer.text("viewport-persp-short"),
+                                ),
+                                (
+                                    Projection::Orthographic,
+                                    localizer.text("viewport-ortho-short"),
+                                ),
                             ];
                             let options: Vec<_> =
                                 labels.iter().map(|(p, l)| (*p, l.as_str())).collect();
@@ -250,7 +268,9 @@ pub(super) fn show(
                     egui::Popup::menu(&response).show(|ui| {
                         presets(ui, &localizer, camera.preset, &mut |r| pending = Some(r));
                         ui.separator();
-                        projections(ui, &localizer, camera.projection, &mut |r| pending = Some(r));
+                        projections(ui, &localizer, camera.projection, &mut |r| {
+                            pending = Some(r)
+                        });
                     });
                 });
             });

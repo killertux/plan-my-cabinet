@@ -193,10 +193,7 @@ impl DesktopApp {
                     &mut project,
                     self.localizer.language(),
                 );
-                self.replace_project(
-                    ProjectEditor::new(project).expect("empty project"),
-                    None,
-                );
+                self.replace_project(ProjectEditor::new(project).expect("empty project"), None);
                 self.project_files.message = None;
                 self.project_files.welcome.leave();
             }
@@ -824,7 +821,8 @@ impl DesktopApp {
         let title = if dirty {
             let mut args = fluent_bundle::FluentArgs::new();
             args.set("name", self.editor.project().name.as_str());
-            self.localizer.format("project-unsaved-question", Some(&args))
+            self.localizer
+                .format("project-unsaved-question", Some(&args))
         } else {
             self.localizer.text(title)
         };

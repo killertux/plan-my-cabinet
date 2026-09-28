@@ -1,7 +1,7 @@
-use crate::*;
 use crate::actions::{ActionId as A, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
+use crate::*;
 use plan_my_cabinet::domain::{
     BoardEdge, BoardFace, CatalogReference, HingeInstallation, HingeMountingSide, Project,
 };

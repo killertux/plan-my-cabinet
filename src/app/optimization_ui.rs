@@ -117,7 +117,10 @@ impl OptimizeUi {
             && !project.boards.is_empty()
             && !project.stock.is_empty()
             && self.searched != Some(key)
-            && !self.result.as_ref().is_some_and(|result| result.is_current(project));
+            && !self
+                .result
+                .as_ref()
+                .is_some_and(|result| result.is_current(project));
         if !ready {
             self.waiting = None;
             return;

@@ -197,7 +197,8 @@ pub(crate) fn rail(
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                let (logo, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                let (logo, _) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
                 ui.painter().rect_filled(logo, 8.0, colors::TEXT);
                 icons::icon(Icon::Board, Color32::from_rgb(244, 194, 122), 18.0).paint_at(
                     ui,
@@ -262,7 +263,11 @@ pub(crate) fn rail(
                     let shortcut = format!(
                         "{} · {}{}",
                         label,
-                        if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" },
+                        if cfg!(target_os = "macos") {
+                            "⌘"
+                        } else {
+                            "Ctrl+"
+                        },
                         workspace.number()
                     );
                     let response = if workspace == Workspace::CutPlan && issues.total() > 0 {

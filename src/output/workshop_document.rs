@@ -452,8 +452,18 @@ fn sheet_pages(
     let sheet = local(root);
     // The grain arrow occupies the sheet's top-left corner.
     let mut taken: Vec<Rect> = match stock.grain {
-        StockGrain::AlongX => vec![Rect { x: 0.0, y: 0.0, width: 17.0, height: 4.0 }],
-        StockGrain::AlongY => vec![Rect { x: 0.0, y: 0.0, width: 4.0, height: 17.0 }],
+        StockGrain::AlongX => vec![Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 17.0,
+            height: 4.0,
+        }],
+        StockGrain::AlongY => vec![Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 17.0,
+        }],
         _ => Vec::new(),
     };
     let mut part_labels = Vec::new();
@@ -633,7 +643,13 @@ fn sheet_pages(
     for (label, label_width, spot) in &tags {
         let spot = place(*spot);
         builder.box_at(spot, Some(tag_stroke), Some(TAG_FILL))?;
-        builder.label_at(label, TextStyle::CAPTION, spot.x + 0.5, spot.y, *label_width)?;
+        builder.label_at(
+            label,
+            TextStyle::CAPTION,
+            spot.x + 0.5,
+            spot.y,
+            *label_width,
+        )?;
     }
     for (i, (label, label_width, centre)) in unplaced.iter().enumerate() {
         let label_x = frame.x + 3.0 + (i % 5) as f32 * 35.0;
@@ -951,7 +967,11 @@ pub fn build_workshop_document(
     }
     let mut builder = DocumentBuilder::new(PageContext {
         project: project.name.clone(),
-        revision: format!("{} {}", loc.text("pdf-revision"), prepared.snapshot.revision()),
+        revision: format!(
+            "{} {}",
+            loc.text("pdf-revision"),
+            prepared.snapshot.revision()
+        ),
         packet: format!(
             "{} · {}",
             loc.text("pdf-packet"),
@@ -1134,7 +1154,11 @@ pub fn build_workshop_document(
                 })
                 .collect::<Vec<_>>(),
         )?;
-        for stock in project.stock.iter().filter(|s| s.trim.iter().any(|t| t.micrometres() != 0)) {
+        for stock in project
+            .stock
+            .iter()
+            .filter(|s| s.trim.iter().any(|t| t.micrometres() != 0))
+        {
             builder.paragraph(&format!(
                 "{} · {} (X- / X+ / Y- / Y+): {} / {} / {} / {}",
                 stock_ref(project, stock.id),
@@ -1253,7 +1277,15 @@ pub fn build_workshop_document(
     if sections.sheets_and_cut_steps {
         for (id, tree) in &prepared.witnesses {
             if let Some(stock) = project.stock.iter().find(|s| s.id == *id) {
-                sheet_pages(&mut builder, tree, stock, project, &labels, &loc, settings.units)?;
+                sheet_pages(
+                    &mut builder,
+                    tree,
+                    stock,
+                    project,
+                    &labels,
+                    &loc,
+                    settings.units,
+                )?;
             }
         }
     }

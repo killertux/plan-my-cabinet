@@ -1,8 +1,8 @@
 //! Explicit relationship drafts and dependency-aware object removal.
-use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
+use crate::*;
 use plan_my_cabinet::door_joint::{self, JointPreview};
 
 pub(crate) struct DoorDialog {

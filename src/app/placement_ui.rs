@@ -318,7 +318,11 @@ fn pose_input(
 
 /// Explicit rounding consent (and validation messages) under a group of
 /// pose inputs. Editing a field clears its consent.
-fn pose_messages(ui: &mut egui::Ui, localizer: &Localizer, fields: &mut [(&str, &mut DimensionDraft)]) {
+fn pose_messages(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    fields: &mut [(&str, &mut DimensionDraft)],
+) {
     let locale = if localizer.language() == Language::En {
         Locale::En
     } else {
@@ -382,9 +386,13 @@ fn face_selector(
     let current = localizer.text(face_key(*face));
     let response = form::select_box(ui, popup, &current, width, |ui| {
         ui.add(
-            egui::Label::new(egui::RichText::new(&current).size(13.0).color(theme_widgets::TEXT))
-                .truncate()
-                .selectable(false),
+            egui::Label::new(
+                egui::RichText::new(&current)
+                    .size(13.0)
+                    .color(theme_widgets::TEXT),
+            )
+            .truncate()
+            .selectable(false),
         );
     });
     egui::Popup::menu(&response)
@@ -433,7 +441,8 @@ fn align_axis(
 ) -> (bool, bool) {
     use modal_chrome::form;
     let split_id = egui::Id::new(("placement-align-split", index));
-    let mut split = ui.data(|d| d.get_temp::<bool>(split_id)).unwrap_or(false) || source_align != target_align;
+    let mut split =
+        ui.data(|d| d.get_temp::<bool>(split_id)).unwrap_or(false) || source_align != target_align;
     ui.vertical(|ui| {
         ui.set_width(width);
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -451,7 +460,11 @@ fn align_axis(
                     ui,
                     icons::Icon::Sliders,
                     &localizer.text("placement-align-separately"),
-                    if split { theme_widgets::ACCENT_DARK } else { theme_widgets::FAINT },
+                    if split {
+                        theme_widgets::ACCENT_DARK
+                    } else {
+                        theme_widgets::FAINT
+                    },
                     12.0,
                     18.0,
                     true,
@@ -468,17 +481,35 @@ fn align_axis(
         ui.data_mut(|d| d.insert_temp(split_id, split));
         let options = [Align::Start, Align::Centre, Align::End]
             .map(|value| (value, localizer.text(align_key(value))));
-        let options: Vec<(Align, &str)> =
-            options.iter().map(|(value, text)| (*value, text.as_str())).collect();
+        let options: Vec<(Align, &str)> = options
+            .iter()
+            .map(|(value, text)| (*value, text.as_str()))
+            .collect();
         if split {
             let half = ((width - 18.0) / 2.0).max(40.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                form::segmented_sized(ui, ("source-align", index), source_align, &options, half, 30.0, false)
-                    .on_hover_text(localizer.text("placement-source-face"));
+                form::segmented_sized(
+                    ui,
+                    ("source-align", index),
+                    source_align,
+                    &options,
+                    half,
+                    30.0,
+                    false,
+                )
+                .on_hover_text(localizer.text("placement-source-face"));
                 ui.label(egui::RichText::new("→").color(theme_widgets::FAINT));
-                form::segmented_sized(ui, ("target-align", index), target_align, &options, half, 30.0, false)
-                    .on_hover_text(localizer.text("placement-target-face"));
+                form::segmented_sized(
+                    ui,
+                    ("target-align", index),
+                    target_align,
+                    &options,
+                    half,
+                    30.0,
+                    false,
+                )
+                .on_hover_text(localizer.text("placement-target-face"));
             });
         } else {
             let before = *target_align;
@@ -490,9 +521,13 @@ fn align_axis(
         let offset_label = localizer.text("placement-offset-short");
         pose_input(
             ui,
-            form::Input::new(egui::Id::new(("placement-offset", index)), &offset_label, width)
-                .prefix(&offset_label, theme_widgets::FAINT)
-                .suffix("mm"),
+            form::Input::new(
+                egui::Id::new(("placement-offset", index)),
+                &offset_label,
+                width,
+            )
+            .prefix(&offset_label, theme_widgets::FAINT)
+            .suffix("mm"),
             offset,
         )
     })
@@ -531,7 +566,8 @@ impl DesktopApp {
         let mut args = fluent_bundle::FluentArgs::new();
         args.set("name", board_name.as_str());
         let title = if numeric {
-            self.localizer.format("placement-position-title", Some(&args))
+            self.localizer
+                .format("placement-position-title", Some(&args))
         } else {
             self.localizer.text("placement-face")
         };
@@ -550,11 +586,13 @@ impl DesktopApp {
         } else {
             self.localizer.format("placement-face-context", Some(&args))
         }));
-        self.chromes.placement.set_hint(Some(self.localizer.text(if numeric {
-            "placement-numeric-hint"
-        } else {
-            "placement-face-hint"
-        })));
+        self.chromes
+            .placement
+            .set_hint(Some(self.localizer.text(if numeric {
+                "placement-numeric-hint"
+            } else {
+                "placement-face-hint"
+            })));
         let parent_name = project
             .boards
             .iter()
@@ -675,8 +713,7 @@ impl DesktopApp {
                                 }
                             }
                         }
-                        let source =
-                            framed_pose(self.editor.project(), dialog.board_id, *frame)
+                        let source = framed_pose(self.editor.project(), dialog.board_id, *frame)
                             .expect("the modal's board cannot be removed while it is open");
                         form::gap(ui);
                         let third = ((width - 16.0) / 3.0).max(50.0);
@@ -714,11 +751,7 @@ impl DesktopApp {
                         });
                         {
                             let [x, y, z] = position;
-                            pose_messages(
-                                ui,
-                                &self.localizer,
-                                &mut [("X", x), ("Y", y), ("Z", z)],
-                            );
+                            pose_messages(ui, &self.localizer, &mut [("X", x), ("Y", y), ("Z", z)]);
                         }
                         first_focus = Some(egui::Id::new(("placement-position", 0)));
                         let position_edited = std::array::from_fn(|i| {
@@ -896,12 +929,9 @@ impl DesktopApp {
                             };
                             form::gap(ui);
                             let strip = form::strip(ui, |ui| {
-                                if let Ok(bounds) = measure(
-                                    preview,
-                                    &[dialog.board_id],
-                                    Scope::Body,
-                                    measure_frame,
-                                ) {
+                                if let Ok(bounds) =
+                                    measure(preview, &[dialog.board_id], Scope::Body, measure_frame)
+                                {
                                     ui.horizontal_wrapped(|ui| {
                                         ui.spacing_mut().item_spacing.x = 14.0;
                                         for axis in 0..3 {
@@ -931,7 +961,8 @@ impl DesktopApp {
                                 }
                             });
                             strip
-                                .response.on_hover_text(self.localizer.text("placement-derived-extents"));
+                                .response
+                                .on_hover_text(self.localizer.text("placement-derived-extents"));
                         }
                     }
                     PlacementDraft::Face {
@@ -977,27 +1008,34 @@ impl DesktopApp {
                                         );
                                     },
                                 );
-                                egui::Popup::menu(&response).id(popup).width(width).show(|ui| {
-                                    ui.set_min_width(width - 12.0);
-                                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                                        for board in &targets {
-                                            if form::option(
-                                                ui,
-                                                board.id == *target,
-                                                &board.name,
-                                                |ui| {
-                                                    ui.label(
-                                                        egui::RichText::new(&board.name).size(13.0),
-                                                    );
-                                                },
-                                            )
-                                            .clicked()
-                                            {
-                                                *target = board.id;
-                                            }
-                                        }
+                                egui::Popup::menu(&response)
+                                    .id(popup)
+                                    .width(width)
+                                    .show(|ui| {
+                                        ui.set_min_width(width - 12.0);
+                                        egui::ScrollArea::vertical().max_height(240.0).show(
+                                            ui,
+                                            |ui| {
+                                                for board in &targets {
+                                                    if form::option(
+                                                        ui,
+                                                        board.id == *target,
+                                                        &board.name,
+                                                        |ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(&board.name)
+                                                                    .size(13.0),
+                                                            );
+                                                        },
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        *target = board.id;
+                                                    }
+                                                }
+                                            },
+                                        );
                                     });
-                                });
                                 response
                             })
                             .inner;
@@ -1064,8 +1102,10 @@ impl DesktopApp {
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 14.0;
                             for i in 0..2 {
-                                let target_axis =
-                                    (0..3).filter(|a| *a != target_face.axis).nth(i).expect("two axes lie in a face");
+                                let target_axis = (0..3)
+                                    .filter(|a| *a != target_face.axis)
+                                    .nth(i)
+                                    .expect("two axes lie in a face");
                                 let (ok, needs) = align_axis(
                                     ui,
                                     &self.localizer,
@@ -1262,7 +1302,8 @@ mod preset_dialog_tests {
         app.selection.choose(Some(other_id), true);
         let original_selection = app.selection.ids.clone();
         let original = app.editor.project().clone();
-        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        app.modals
+            .set_placement(PlacementDialog::numeric(&app, board_id));
         let dialog = app.modals.placement_mut().unwrap();
         let PlacementDraft::Numeric {
             position,
@@ -1306,7 +1347,8 @@ mod preset_dialog_tests {
         ctx.run_ui(egui::RawInput::default(), |ui| app.show_placement(ui.ctx()))
             .drop_without_applying_deltas();
         assert_eq!(app.editor.preview().unwrap().boards[0].pose, turned);
-        let PlacementDraft::Numeric { position, .. } = &mut app.modals.placement_mut().unwrap().draft
+        let PlacementDraft::Numeric { position, .. } =
+            &mut app.modals.placement_mut().unwrap().draft
         else {
             unreachable!()
         };
@@ -1346,7 +1388,8 @@ mod preset_dialog_tests {
             editor: ProjectEditor::new(project).unwrap(),
             ..Default::default()
         };
-        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        app.modals
+            .set_placement(PlacementDialog::numeric(&app, board_id));
         let before = app.editor.project().clone();
         let PlacementDraft::Numeric {
             position, frame, ..
@@ -1379,7 +1422,8 @@ mod preset_dialog_tests {
             editor: ProjectEditor::new(project).unwrap(),
             ..Default::default()
         };
-        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        app.modals
+            .set_placement(PlacementDialog::numeric(&app, board_id));
         let before = app.editor.project().clone();
         let PlacementDraft::Numeric {
             position, frame, ..
@@ -1438,7 +1482,8 @@ mod preset_dialog_tests {
             })
             .unwrap();
         let original = app.editor.project().clone();
-        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        app.modals
+            .set_placement(PlacementDialog::numeric(&app, board_id));
         let PlacementDraft::Numeric {
             position,
             rotation,
@@ -1502,10 +1547,12 @@ mod preset_dialog_tests {
             })
             .unwrap();
         let original = app.editor.project().clone();
-        app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+        app.modals
+            .set_placement(PlacementDialog::numeric(&app, board_id));
         let ctx = egui::Context::default();
         for frame_choice in [CoordinateFrame::World, CoordinateFrame::LocalParent] {
-            let PlacementDraft::Numeric { frame, .. } = &mut app.modals.placement_mut().unwrap().draft
+            let PlacementDraft::Numeric { frame, .. } =
+                &mut app.modals.placement_mut().unwrap().draft
             else {
                 unreachable!()
             };

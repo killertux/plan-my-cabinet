@@ -389,7 +389,6 @@ impl ProjectEditor {
     }
 }
 
-
 /// Priority follows the position in `order`; pieces not listed keep theirs.
 fn reprioritize(project: &mut Project, order: &[Uuid]) {
     for piece in &mut project.stock {

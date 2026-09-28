@@ -770,7 +770,9 @@ impl DesktopApp {
             A::StartMotion if !matches!(request.target, T::Door(id) if project.door_joints.iter().find(|j| j.id == id).is_some_and(|j| plan_my_cabinet::door_joint::opening_limit(project, j).is_ok())) => {
                 Err(Unavailable::InvalidMotion)
             }
-            A::CloseMotion if self.hardware.door_motion.is_none() => Err(Unavailable::InvalidMotion),
+            A::CloseMotion if self.hardware.door_motion.is_none() => {
+                Err(Unavailable::InvalidMotion)
+            }
             A::AcceptRepair
             | A::CancelRepair
             | A::StageRepair
@@ -781,7 +783,9 @@ impl DesktopApp {
                 Err(Unavailable::NoRepair)
             }
             A::BeginRepair if self.cut_plan.repair.active() => Err(Unavailable::NoRepair),
-            A::CancelOptimization if !self.cut_plan.optimizer.running() => Err(Unavailable::NoOptimization),
+            A::CancelOptimization if !self.cut_plan.optimizer.running() => {
+                Err(Unavailable::NoOptimization)
+            }
             A::StartOptimization | A::SetOptimizerObjective
                 if self.cut_plan.optimizer.running() || self.editor.preview().is_some() =>
             {
@@ -826,9 +830,13 @@ impl DesktopApp {
     }
 
     /// Edits are atomic, so a rejected one changed nothing; say so.
-    pub(crate) fn report_edit<T, E>(&mut self, result: Result<T, plan_my_cabinet::commands::EditError<E>>) {
+    pub(crate) fn report_edit<T, E>(
+        &mut self,
+        result: Result<T, plan_my_cabinet::commands::EditError<E>>,
+    ) {
         if result.is_err() {
-            self.toasts.error(self.localizer.text("toast-edit-rejected"));
+            self.toasts
+                .error(self.localizer.text("toast-edit-rejected"));
         }
     }
 
@@ -919,18 +927,17 @@ impl DesktopApp {
                     &self.selection,
                 );
             }
-            (A::NewBoard, _) => {
-                self.modals.set_creation(Some(CreationDialog::board(
-                    self.editor.project().materials.first().map(|m| m.id),
-                )))
-            }
+            (A::NewBoard, _) => self.modals.set_creation(Some(CreationDialog::board(
+                self.editor.project().materials.first().map(|m| m.id),
+            ))),
             (A::NewMaterial, _) => self.modals.set_creation(Some(CreationDialog::material())),
-            (A::EditGrid, _) => {
-                self.modals.set_grid(Some(GridDialog::open(self.editor.project(), locale)))
-            }
-            (A::EditKerf, _) => {
-                self.modals.set_grid(Some(GridDialog::cutting_kerf(self.editor.project(), locale)))
-            }
+            (A::EditGrid, _) => self
+                .modals
+                .set_grid(Some(GridDialog::open(self.editor.project(), locale))),
+            (A::EditKerf, _) => self.modals.set_grid(Some(GridDialog::cutting_kerf(
+                self.editor.project(),
+                locale,
+            ))),
             (A::AddCatalog, _) => {
                 let result = hardware_catalog::add_builtin(&mut self.editor);
                 self.report_edit(result);
@@ -966,7 +973,8 @@ impl DesktopApp {
                     A::DuplicateAssembly => assembly_ui::Operation::Duplicate,
                     _ => assembly_ui::Operation::Transform,
                 };
-                self.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(self, operation)));
+                self.modals
+                    .set_assembly(Some(assembly_ui::AssemblyDialog::new(self, operation)));
             }
             (A::AssignMaterial, T::Board(id)) => {
                 let Some(board) = self.editor.project().board(id) else {
@@ -982,8 +990,12 @@ impl DesktopApp {
                     error: None,
                 }));
             }
-            (A::PositionBoard, T::Board(id)) => self.modals.set_placement(PlacementDialog::numeric(self, id)),
-            (A::PlaceFace, T::Board(id)) => self.modals.set_placement(PlacementDialog::face(self, id)),
+            (A::PositionBoard, T::Board(id)) => self
+                .modals
+                .set_placement(PlacementDialog::numeric(self, id)),
+            (A::PlaceFace, T::Board(id)) => {
+                self.modals.set_placement(PlacementDialog::face(self, id))
+            }
             (A::DuplicateBoard, T::Board(id)) => {
                 let Some(mut pose) = self.editor.project().board(id).map(|b| b.pose) else {
                     return Err(Unavailable::MissingTarget);
@@ -1023,20 +1035,22 @@ impl DesktopApp {
                 }
             }
             (A::NewStock, T::Material(id)) => {
-                self.modals.set_stock(Some(stock_ui::StockDialog::new_for_material(
-                    self.editor.project(),
-                    id,
-                )));
+                self.modals
+                    .set_stock(Some(stock_ui::StockDialog::new_for_material(
+                        self.editor.project(),
+                        id,
+                    )));
             }
             (A::AddIssueStock, T::Board(id)) => {
-                self.modals.set_stock(Some(stock_ui::StockDialog::new_for_issue(
-                    self.editor.project(),
-                    id,
-                )));
+                self.modals
+                    .set_stock(Some(stock_ui::StockDialog::new_for_issue(
+                        self.editor.project(),
+                        id,
+                    )));
             }
-            (A::NewStock | A::AddIssueStock, _) => {
-                self.modals.set_stock(Some(stock_ui::StockDialog::new(self.editor.project())))
-            }
+            (A::NewStock | A::AddIssueStock, _) => self
+                .modals
+                .set_stock(Some(stock_ui::StockDialog::new(self.editor.project()))),
             (A::DuplicateStock, T::Stock(id)) => {
                 if let Ok(new) = self.editor.duplicate_stock(id) {
                     self.session.stock_piece = Some(new);
@@ -1088,52 +1102,63 @@ impl DesktopApp {
                 let text = self.editor.project().cut_fee.map_or(String::new(), |fee| {
                     format!("{}.{:02}", fee.minor_units() / 100, fee.minor_units() % 100)
                 });
-                self.modals.set_cut_fee(Some(stock_ui::CutFeeDialog::new(text)));
+                self.modals
+                    .set_cut_fee(Some(stock_ui::CutFeeDialog::new(text)));
             }
             (A::EditCurrency, _) => {
-                self.modals.set_currency(Some(currency_ui::CurrencyDialog::new(self.editor.project())));
+                self.modals
+                    .set_currency(Some(currency_ui::CurrencyDialog::new(
+                        self.editor.project(),
+                    )));
             }
-            (A::NewHardware, _) => {
-                self.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(self, None)))
-            }
-            (A::EditHardware, T::Object(id)) => {
-                self.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(self, Some(id))))
-            }
+            (A::NewHardware, _) => self
+                .modals
+                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, None))),
+            (A::EditHardware, T::Object(id)) => self
+                .modals
+                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, Some(id)))),
             (A::DuplicateHardware, T::Object(id)) => {
                 if let Ok(copy) = self.editor.duplicate_placeholder(id) {
                     self.selection.choose(Some(copy), false);
                 }
             }
             (A::DeleteHardware, T::Object(id)) => {
-                self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
-                    self,
-                    door_joint_ui::DoorRemoval::Hardware(id),
-                )));
+                self.modals
+                    .set_removal(Some(door_joint_ui::RemovalDialog::new(
+                        self,
+                        door_joint_ui::DoorRemoval::Hardware(id),
+                    )));
             }
-            (A::NewHinge, _) => self.modals.set_hinge(Some(hinge_ui::HingeDialog::new(self, None))),
-            (A::EditHinge, T::Hinge(id)) => {
-                self.modals.set_hinge(Some(hinge_ui::HingeDialog::new(self, Some(id))))
-            }
+            (A::NewHinge, _) => self
+                .modals
+                .set_hinge(Some(hinge_ui::HingeDialog::new(self, None))),
+            (A::EditHinge, T::Hinge(id)) => self
+                .modals
+                .set_hinge(Some(hinge_ui::HingeDialog::new(self, Some(id)))),
             (A::DeleteHinge, T::Hinge(id)) => {
                 let result = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
                 self.report_edit(result);
             }
-            (A::NewDoor, _) => self.modals.set_door(Some(door_joint_ui::DoorDialog::new(self, None))),
-            (A::EditDoor, T::Door(id)) => {
-                self.modals.set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id))))
-            }
+            (A::NewDoor, _) => self
+                .modals
+                .set_door(Some(door_joint_ui::DoorDialog::new(self, None))),
+            (A::EditDoor, T::Door(id)) => self
+                .modals
+                .set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id)))),
             (A::DeleteDoor, T::Door(id)) => {
-                self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
-                    self,
-                    door_joint_ui::DoorRemoval::Joint(id),
-                )))
+                self.modals
+                    .set_removal(Some(door_joint_ui::RemovalDialog::new(
+                        self,
+                        door_joint_ui::DoorRemoval::Joint(id),
+                    )))
             }
             (A::DeleteObject, _) => {
                 if let Some(id) = self.selection.active {
-                    self.modals.set_removal(Some(door_joint_ui::RemovalDialog::new(
-                        self,
-                        door_joint_ui::DoorRemoval::Object(id),
-                    )));
+                    self.modals
+                        .set_removal(Some(door_joint_ui::RemovalDialog::new(
+                            self,
+                            door_joint_ui::DoorRemoval::Object(id),
+                        )));
                 }
             }
             (A::StartMotion, T::Door(id)) => {
@@ -1208,14 +1233,15 @@ impl DesktopApp {
                 self.selection.choose(Some(id), false);
                 self.selection.reveal(self.editor.project(), id);
                 if request.id == A::RepairIssue {
-                    self.cut_plan.repair
+                    self.cut_plan
+                        .repair
                         .begin(&mut self.editor, &self.selection, locale);
                 }
             }
             (A::ConfirmKerf, _) => {
-                self.modals.set_kerf_confirmation(Some(crate::kerf_confirmation_ui::KerfConfirmation::new(
-                    self.editor.project(),
-                )));
+                self.modals.set_kerf_confirmation(Some(
+                    crate::kerf_confirmation_ui::KerfConfirmation::new(self.editor.project()),
+                ));
             }
             (A::OpenHandoff, _) => {
                 if matches!(
@@ -1303,37 +1329,36 @@ impl DesktopApp {
     }
 
     fn update_catalog_action(&mut self, id: Uuid) {
-        self.hardware.catalog_update_notice = Some(match hardware_catalog::update_from_builtin_with_status(
-            &mut self.editor,
-            id,
-        ) {
-            Ok((_, statuses)) => {
-                let details = statuses
-                    .iter()
-                    .map(|status| {
-                        let warnings = if status.issues.is_empty() {
-                            self.localizer.text("catalog-verified")
-                        } else {
-                            status
-                                .issues
-                                .iter()
-                                .map(|issue| self.localizer.text(hinge_ui::issue_key(issue)))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        };
-                        format!("{}: {warnings}", status.id)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                format!(
-                    "{}: {} / {}. {details}",
-                    self.localizer.text("hinge-update-reviewed"),
-                    statuses.iter().filter(|s| s.issues.is_empty()).count(),
-                    statuses.len()
-                )
-            }
-            Err(_) => self.localizer.text("hinge-update-error"),
-        });
+        self.hardware.catalog_update_notice = Some(
+            match hardware_catalog::update_from_builtin_with_status(&mut self.editor, id) {
+                Ok((_, statuses)) => {
+                    let details = statuses
+                        .iter()
+                        .map(|status| {
+                            let warnings = if status.issues.is_empty() {
+                                self.localizer.text("catalog-verified")
+                            } else {
+                                status
+                                    .issues
+                                    .iter()
+                                    .map(|issue| self.localizer.text(hinge_ui::issue_key(issue)))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            };
+                            format!("{}: {warnings}", status.id)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    format!(
+                        "{}: {} / {}. {details}",
+                        self.localizer.text("hinge-update-reviewed"),
+                        statuses.iter().filter(|s| s.issues.is_empty()).count(),
+                        statuses.len()
+                    )
+                }
+                Err(_) => self.localizer.text("hinge-update-error"),
+            },
+        );
     }
 }
 

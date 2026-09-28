@@ -69,16 +69,86 @@ const fn preset(
 
 /// The Brazilian standard set seeded into new projects.
 pub const BR_STANDARD: &[MaterialPreset] = &[
-    preset("White MDF", "MDF Branco", 15, BoardGrain::Unrestricted, WHITE_MDF, [2750, 1840]),
-    preset("White MDF", "MDF Branco", 18, BoardGrain::Unrestricted, WHITE_MDF, [2750, 1840]),
-    preset("Raw MDF", "MDF Cru", 6, BoardGrain::Unrestricted, RAW_MDF, [2750, 1840]),
-    preset("Raw MDF", "MDF Cru", 15, BoardGrain::Unrestricted, RAW_MDF, [2750, 1840]),
-    preset("Raw MDF", "MDF Cru", 18, BoardGrain::Unrestricted, RAW_MDF, [2750, 1840]),
-    preset("White MDP", "MDP Branco", 15, BoardGrain::Unrestricted, WHITE_MDP, [2750, 1840]),
-    preset("White MDP", "MDP Branco", 18, BoardGrain::Unrestricted, WHITE_MDP, [2750, 1840]),
-    preset("Plywood", "Compensado", 6, BoardGrain::Length, PLYWOOD, [2200, 1600]),
-    preset("Plywood", "Compensado", 15, BoardGrain::Length, PLYWOOD, [2200, 1600]),
-    preset("Plywood", "Compensado", 18, BoardGrain::Length, PLYWOOD, [2200, 1600]),
+    preset(
+        "White MDF",
+        "MDF Branco",
+        15,
+        BoardGrain::Unrestricted,
+        WHITE_MDF,
+        [2750, 1840],
+    ),
+    preset(
+        "White MDF",
+        "MDF Branco",
+        18,
+        BoardGrain::Unrestricted,
+        WHITE_MDF,
+        [2750, 1840],
+    ),
+    preset(
+        "Raw MDF",
+        "MDF Cru",
+        6,
+        BoardGrain::Unrestricted,
+        RAW_MDF,
+        [2750, 1840],
+    ),
+    preset(
+        "Raw MDF",
+        "MDF Cru",
+        15,
+        BoardGrain::Unrestricted,
+        RAW_MDF,
+        [2750, 1840],
+    ),
+    preset(
+        "Raw MDF",
+        "MDF Cru",
+        18,
+        BoardGrain::Unrestricted,
+        RAW_MDF,
+        [2750, 1840],
+    ),
+    preset(
+        "White MDP",
+        "MDP Branco",
+        15,
+        BoardGrain::Unrestricted,
+        WHITE_MDP,
+        [2750, 1840],
+    ),
+    preset(
+        "White MDP",
+        "MDP Branco",
+        18,
+        BoardGrain::Unrestricted,
+        WHITE_MDP,
+        [2750, 1840],
+    ),
+    preset(
+        "Plywood",
+        "Compensado",
+        6,
+        BoardGrain::Length,
+        PLYWOOD,
+        [2200, 1600],
+    ),
+    preset(
+        "Plywood",
+        "Compensado",
+        15,
+        BoardGrain::Length,
+        PLYWOOD,
+        [2200, 1600],
+    ),
+    preset(
+        "Plywood",
+        "Compensado",
+        18,
+        BoardGrain::Length,
+        PLYWOOD,
+        [2200, 1600],
+    ),
     preset("HDF", "HDF", 3, BoardGrain::Unrestricted, HDF, [2750, 1830]),
 ];
 
@@ -132,7 +202,10 @@ mod tests {
     #[test]
     fn seeding_adds_valid_coloured_materials_once() {
         let mut project = Project::new("New", Currency::Brl);
-        assert_eq!(seed_defaults(&mut project, Language::PtBr), BR_STANDARD.len());
+        assert_eq!(
+            seed_defaults(&mut project, Language::PtBr),
+            BR_STANDARD.len()
+        );
         project.validate().unwrap();
         assert_eq!(project.material_colors.len(), BR_STANDARD.len());
         assert!(project.materials.iter().any(|m| m.name == "Compensado"));

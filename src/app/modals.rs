@@ -10,9 +10,14 @@
 //! form dialogs and keep their own state.
 use crate::{
     BatchDialog, BoardDimensionDialog, BoardMaterialDialog, CreationDialog, GridDialog,
-    MaterialEditDialog, assembly_ui::AssemblyDialog, currency_ui::CurrencyDialog,
-    door_joint_ui::{DoorDialog, RemovalDialog}, hardware_ui::HardwareDialog,
-    hinge_ui::HingeDialog, kerf_confirmation_ui::KerfConfirmation, placement_ui::PlacementDialog,
+    MaterialEditDialog,
+    assembly_ui::AssemblyDialog,
+    currency_ui::CurrencyDialog,
+    door_joint_ui::{DoorDialog, RemovalDialog},
+    hardware_ui::HardwareDialog,
+    hinge_ui::HingeDialog,
+    kerf_confirmation_ui::KerfConfirmation,
+    placement_ui::PlacementDialog,
     stock_ui::{CutFeeDialog, StockDialog},
 };
 
@@ -28,9 +33,9 @@ impl Modals {
 
     fn open(&mut self, modal: Modal) {
         debug_assert!(
-            self.active
-                .as_ref()
-                .is_none_or(|active| std::mem::discriminant(active) == std::mem::discriminant(&modal)),
+            self.active.as_ref().is_none_or(
+                |active| std::mem::discriminant(active) == std::mem::discriminant(&modal)
+            ),
             "opening a dialog while another one is open"
         );
         self.active = Some(modal);

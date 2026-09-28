@@ -196,8 +196,7 @@ fn canvas_motion_card_is_bilingual_bounded_and_closed_restores_without_edit() {
         )
         .unwrap();
         let ctx = egui::Context::default();
-        let canvas =
-            egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(580.0, 620.0));
+        let canvas = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(580.0, 620.0));
         let mut point = None;
         for _ in 0..3 {
             let output = ctx.run_ui(
@@ -315,7 +314,8 @@ fn select_confirm_duplicate_cancel_and_delete_are_atomic() {
             .door_joints,
         app.editor.project().door_joints
     );
-    app.modals.set_removal(Some(RemovalDialog::new(&app, DoorRemoval::Object(door))));
+    app.modals
+        .set_removal(Some(RemovalDialog::new(&app, DoorRemoval::Object(door))));
     ctx.run_ui(egui::RawInput::default(), |ui| {
         app.show_removal_dialog(ui.ctx())
     })

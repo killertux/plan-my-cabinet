@@ -1,8 +1,8 @@
 //! Keyboard-operable stock form and priority controls; drafts never enter the project.
-use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
+use crate::*;
 use plan_my_cabinet::cost_estimate::Feasibility;
 use plan_my_cabinet::domain::{Stock, StockGrain, StockSource};
 use plan_my_cabinet::money::{Money, MoneyLocale};
@@ -1609,7 +1609,8 @@ impl DesktopApp {
                 .ok()
                 .map(|model| (key, model));
         }
-        self.design.stock_snapshot
+        self.design
+            .stock_snapshot
             .as_ref()
             .map(|(_, model)| model.clone())
     }

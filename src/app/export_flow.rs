@@ -1,7 +1,6 @@
 //! Handoff logic: export review preparation, PDF writing and issue routing.
 use crate::*;
 
-
 pub(crate) fn export_completion_key(status: ExportStatus) -> &'static str {
     match status {
         ExportStatus::Current => "export-saved",
@@ -90,12 +89,15 @@ impl DesktopApp {
     }
 
     pub(crate) fn shop_ready_available(&self) -> bool {
-        self.handoff.candidate.as_ref().is_some_and(|(key, result)| {
-            key == &self.export_key()
-                && result
-                    .as_ref()
-                    .is_ok_and(|packet| packet.wood_issues().is_empty())
-        })
+        self.handoff
+            .candidate
+            .as_ref()
+            .is_some_and(|(key, result)| {
+                key == &self.export_key()
+                    && result
+                        .as_ref()
+                        .is_ok_and(|packet| packet.wood_issues().is_empty())
+            })
     }
 
     pub(crate) fn invalidate_export_review(&mut self) {
@@ -131,7 +133,9 @@ impl DesktopApp {
                             && picker_key.as_ref() == Some(packet.key())
                     });
                     match path {
-                        None => self.handoff.message = Some(self.localizer.text("export-cancelled")),
+                        None => {
+                            self.handoff.message = Some(self.localizer.text("export-cancelled"))
+                        }
                         Some(_) if reviewed.is_none() => {
                             self.invalidate_export_review();
                             self.handoff.message = Some(self.localizer.text("export-review-stale"));
@@ -221,7 +225,12 @@ impl DesktopApp {
         let valid = |cache: &ExportPreparationCache| {
             cache.0 == key
                 && cache.1.as_ref().map_or(true, |packet| {
-                    packet.matches_source(&source, self.handoff.mode, settings, self.handoff.sections)
+                    packet.matches_source(
+                        &source,
+                        self.handoff.mode,
+                        settings,
+                        self.handoff.sections,
+                    )
                 })
         };
         if self
@@ -786,7 +795,8 @@ impl DesktopApp {
                                     );
                             })
                             .selected_text(
-                                egui::RichText::new(language_text(self.handoff.language)).size(13.0),
+                                egui::RichText::new(language_text(self.handoff.language))
+                                    .size(13.0),
                             )
                             .show_ui(ui, |ui| {
                                 for language in [Language::En, Language::PtBr] {

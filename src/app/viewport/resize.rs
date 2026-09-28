@@ -33,11 +33,20 @@ impl ResizeHandle {
 
     /// The opposite face stays fixed.
     fn anchor(&self) -> Anchor {
-        if self.positive { Anchor::Start } else { Anchor::End }
+        if self.positive {
+            Anchor::Start
+        } else {
+            Anchor::End
+        }
     }
 
     fn cursor(&self) -> egui::CursorIcon {
-        let angle = self.per_mm.y.atan2(self.per_mm.x).to_degrees().rem_euclid(180.0);
+        let angle = self
+            .per_mm
+            .y
+            .atan2(self.per_mm.x)
+            .to_degrees()
+            .rem_euclid(180.0);
         match angle {
             a if !(22.5..157.5).contains(&a) => egui::CursorIcon::ResizeHorizontal,
             a if (67.5..112.5).contains(&a) => egui::CursorIcon::ResizeVertical,
@@ -236,12 +245,16 @@ pub(super) fn paint(ui: &egui::Ui, tool: &MoveTool, handles: &[ResizeHandle]) {
     for handle in handles {
         let hot = active == Some((handle.axis, handle.positive));
         let painter = ui.painter();
-        painter.circle_filled(handle.at, if hot { 6.5 } else { 5.5 }, if hot {
-            accent
-        } else {
-            egui::Color32::WHITE
-        });
-        painter.circle_stroke(handle.at, if hot { 6.5 } else { 5.5 }, egui::Stroke::new(1.5, accent));
+        painter.circle_filled(
+            handle.at,
+            if hot { 6.5 } else { 5.5 },
+            if hot { accent } else { egui::Color32::WHITE },
+        );
+        painter.circle_stroke(
+            handle.at,
+            if hot { 6.5 } else { 5.5 },
+            egui::Stroke::new(1.5, accent),
+        );
     }
 }
 
@@ -288,12 +301,25 @@ mod tests {
         assert!(handles(&project, &camera, rect, &selection, &tool).is_empty());
         tool.resize_enabled = true;
         let found = handles(&project, &camera, rect, &selection, &tool);
-        assert_eq!(found.len(), 4, "length and width faces; thickness stays with the material");
+        assert_eq!(
+            found.len(),
+            4,
+            "length and width faces; thickness stays with the material"
+        );
         for axis in 0..2 {
             let plus = found.iter().find(|h| h.axis == axis && h.positive).unwrap();
-            let minus = found.iter().find(|h| h.axis == axis && !h.positive).unwrap();
-            assert!(plus.per_mm.dot(plus.at - minus.at) > 0.0, "outward points away");
-            assert!(minus.per_mm.dot(minus.at - plus.at) > 0.0, "outward points away");
+            let minus = found
+                .iter()
+                .find(|h| h.axis == axis && !h.positive)
+                .unwrap();
+            assert!(
+                plus.per_mm.dot(plus.at - minus.at) > 0.0,
+                "outward points away"
+            );
+            assert!(
+                minus.per_mm.dot(minus.at - plus.at) > 0.0,
+                "outward points away"
+            );
         }
         tool.mode = ToolMode::Measure;
         assert!(handles(&project, &camera, rect, &selection, &tool).is_empty());
@@ -312,15 +338,27 @@ mod tests {
         };
         let start = egui::pos2(10.0, 10.0);
         // Only movement along the face normal counts: 20 points = 10 mm.
-        assert_eq!(proposed_value(&handle, 764.0, start, start + egui::vec2(20.0, 7.0), 1.0), mm(774));
-        assert_eq!(proposed_value(&handle, 764.0, start, start + egui::vec2(20.0, 0.0), 10.0), mm(770));
+        assert_eq!(
+            proposed_value(&handle, 764.0, start, start + egui::vec2(20.0, 7.0), 1.0),
+            mm(774)
+        );
+        assert_eq!(
+            proposed_value(&handle, 764.0, start, start + egui::vec2(20.0, 0.0), 10.0),
+            mm(770)
+        );
         assert_eq!(
             proposed_value(&handle, 764.0, start, start + egui::vec2(1.0, 0.0), 0.1),
             Length::from_micrometres(764_500)
         );
-        assert_eq!(proposed_value(&handle, 764.0, start, start - egui::vec2(4000.0, 0.0), 1.0), mm(1));
+        assert_eq!(
+            proposed_value(&handle, 764.0, start, start - egui::vec2(4000.0, 0.0), 1.0),
+            mm(1)
+        );
         assert_eq!(handle.anchor(), Anchor::Start);
-        let opposite = ResizeHandle { positive: false, ..handle };
+        let opposite = ResizeHandle {
+            positive: false,
+            ..handle
+        };
         assert_eq!(opposite.anchor(), Anchor::End);
     }
 
@@ -352,7 +390,14 @@ mod tests {
                 },
                 |ui| {
                     out = canvas::interact_with_selection(
-                        ui, camera, &project, &mut selection, tool, false, false, false,
+                        ui,
+                        camera,
+                        &project,
+                        &mut selection,
+                        tool,
+                        false,
+                        false,
+                        false,
                     );
                 },
             )

@@ -54,7 +54,12 @@ fn untitled_snapshots(dir: &Path) -> usize {
         .unwrap()
         .discover()
         .iter()
-        .filter(|row| matches!(row.status, plan_my_cabinet::recovery::DiscoveryStatus::Untitled))
+        .filter(|row| {
+            matches!(
+                row.status,
+                plan_my_cabinet::recovery::DiscoveryStatus::Untitled
+            )
+        })
         .count()
 }
 
@@ -73,9 +78,14 @@ fn untitled_projects_autosave_after_inactivity_and_saving_discards_the_snapshot(
     let revision = app.editor.project().revision;
     let ctx = egui::Context::default();
     app.tick_untitled_recovery(&ctx, revision);
-    assert!(!dir.join("user").exists(), "nothing is written before the delay");
-    app.project_files.untitled_pending =
-        Some((revision, Instant::now() - AUTOSAVE_DELAY - Duration::from_secs(1)));
+    assert!(
+        !dir.join("user").exists(),
+        "nothing is written before the delay"
+    );
+    app.project_files.untitled_pending = Some((
+        revision,
+        Instant::now() - AUTOSAVE_DELAY - Duration::from_secs(1),
+    ));
     app.tick_untitled_recovery(&ctx, revision);
     assert_eq!(untitled_snapshots(&dir.join("user")), 1);
 
@@ -93,7 +103,10 @@ fn a_panic_flush_writes_recovery_without_waiting_and_discarding_removes_it() {
     let mut app = DesktopApp::default();
     app.project_files.user_data_dir = Some(dir.join("user"));
     app.flush_recovery_after_panic();
-    assert!(!dir.join("user").exists(), "a clean project has nothing to recover");
+    assert!(
+        !dir.join("user").exists(),
+        "a clean project has nothing to recover"
+    );
     app.editor
         .transact(|p| {
             p.name = "Wardrobe".into();
@@ -143,9 +156,7 @@ fn click_unsaved_footer(app: &mut DesktopApp, ctx: &egui::Context, label: &str) 
             egui::Shape::Text(text) if text.galley.text() == label => {
                 Some(text.pos + text.galley.size() * 0.5)
             }
-            egui::Shape::Vec(shapes) => {
-                shapes.iter().find_map(|shape| text_center(shape, label))
-            }
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| text_center(shape, label)),
             _ => None,
         }
     }
@@ -489,13 +500,11 @@ fn recovery_dialog_defers_without_deleting_and_recovers_only_on_confirmation() {
     let mut app = directory.app();
     app.save_to(&path, false, None);
     let saved = app.editor.project().clone();
-    let mut recovering =
-        ProjectEditor::new(saved.clone()).expect("saved project remains valid");
+    let mut recovering = ProjectEditor::new(saved.clone()).expect("saved project remains valid");
     recovering
         .set_grid_spacing(Length::from_micrometres(20_000))
         .unwrap();
-    let mut store =
-        RecoveryStore::new(&directory.0.join("user-data"), &path, saved.id).unwrap();
+    let mut store = RecoveryStore::new(&directory.0.join("user-data"), &path, saved.id).unwrap();
     let now = Instant::now();
     store
         .note_committed_edit(&recovering, now - Duration::from_secs(31))

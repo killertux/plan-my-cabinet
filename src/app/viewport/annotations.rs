@@ -45,7 +45,11 @@ fn dimension_badge_origin(
     origin
 }
 
-fn trim_mm(value: plan_my_cabinet::units::Length, unit: plan_my_cabinet::units::Unit, locale: Locale) -> String {
+fn trim_mm(
+    value: plan_my_cabinet::units::Length,
+    unit: plan_my_cabinet::units::Unit,
+    locale: Locale,
+) -> String {
     let text = format_length(value, unit, locale, 2);
     let number = text.split_whitespace().next().unwrap_or("").to_owned();
     if number.contains(['.', ',']) {
@@ -116,12 +120,14 @@ fn paint_selected_dimensions(
     );
     let size = galley.size() + egui::vec2(16.0, 9.0);
     let mut origin = anchor + egui::vec2(46.0, 18.0);
-    origin.x = origin
-        .x
-        .clamp(rect.left() + 60.0, (rect.right() - size.x - 8.0).max(rect.left() + 60.0));
-    origin.y = origin
-        .y
-        .clamp(rect.top() + 56.0, (rect.bottom() - size.y - 80.0).max(rect.top() + 56.0));
+    origin.x = origin.x.clamp(
+        rect.left() + 60.0,
+        (rect.right() - size.x - 8.0).max(rect.left() + 60.0),
+    );
+    origin.y = origin.y.clamp(
+        rect.top() + 56.0,
+        (rect.bottom() - size.y - 80.0).max(rect.top() + 56.0),
+    );
     let pill = egui::Rect::from_min_size(origin, size);
     painter.line_segment(
         [anchor, pill.left_center()],

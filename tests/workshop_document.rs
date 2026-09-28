@@ -128,10 +128,16 @@ fn grouping_keeps_material_dimensions_grain_and_every_allocation_identity() {
             assert!(all.contains(&format!("#{n} ")), "missing part #{n}");
         }
         for n in 0..5 {
-            assert!(!all.contains(&id(100 + n).to_string()), "board UUID {n} printed");
+            assert!(
+                !all.contains(&id(100 + n).to_string()),
+                "board UUID {n} printed"
+            );
         }
         for n in 0..2 {
-            assert!(!all.contains(&id(1000 + n).to_string()), "allocation UUID {n} printed");
+            assert!(
+                !all.contains(&id(1000 + n).to_string()),
+                "allocation UUID {n} printed"
+            );
         }
         assert!(all.contains("S1"));
         assert!(!all.contains(&id(4).to_string()));
@@ -166,7 +172,10 @@ fn all_off_keeps_scope_hidden_board_price_fee_hardware_and_draft_safety() {
             all.contains("#8 ") && all.contains("Peça número 007"),
             "hidden/unallocated board lost"
         );
-        assert!(all.contains("Dobradiça não verificada"), "hardware issue lost");
+        assert!(
+            all.contains("Dobradiça não verificada"),
+            "hardware issue lost"
+        );
         assert!(!all.contains(&id(5).to_string()));
         for phrase in if language == Language::PtBr {
             [
@@ -235,7 +244,10 @@ fn dense_bilingual_document_preserves_every_label_with_bounded_geometry() {
             "cover title moved past notices"
         );
         for n in 0..76 {
-            assert!(all.contains(&format!("#{} ", n + 1)), "missing part number {n}");
+            assert!(
+                all.contains(&format!("#{} ", n + 1)),
+                "missing part number {n}"
+            );
             assert!(!all.contains(&id(100 + n).to_string()), "UUID {n} printed");
             if n >= 5 {
                 assert!(

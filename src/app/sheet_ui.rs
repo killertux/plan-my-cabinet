@@ -489,11 +489,19 @@ fn kerf_geometry(
     origin: egui::Pos2,
     scale: f32,
 ) -> egui::Rect {
-    let input = tree_rect(origin, scale, tree.node(operation.input).expect("operations reference their own tree").rectangle);
+    let input = tree_rect(
+        origin,
+        scale,
+        tree.node(operation.input)
+            .expect("operations reference their own tree")
+            .rectangle,
+    );
     let first = tree_rect(
         origin,
         scale,
-        tree.node(operation.outputs.first).expect("operations reference their own tree").rectangle,
+        tree.node(operation.outputs.first)
+            .expect("operations reference their own tree")
+            .rectangle,
     );
     let width = (tree.kerf().micrometres() as f64 / 1000.0 * f64::from(scale)) as f32;
     match operation.axis {
@@ -3133,12 +3141,8 @@ fn show_repair_strip(
                         .clicked()
                             && let Some((stock, origin)) = staged
                         {
-                            action = Some(RepairAction::Place(
-                                id,
-                                stock,
-                                origin,
-                                repair.quarter_turn,
-                            ));
+                            action =
+                                Some(RepairAction::Place(id, stock, origin, repair.quarter_turn));
                         }
                         if let Some(a) = allocated {
                             if small_button(
@@ -3345,9 +3349,21 @@ pub fn show_with_layout(
             let Some(stock) = ordered.iter().find(|s| Some(s.id) == canvas_sheet).copied() else {
                 // Offer the missing prerequisite: boards to cut, then sheets to cut them from.
                 let (icon, title, detail, label, next) = if project.boards.is_empty() {
-                    (Icon::Board, "empty-cut-title", "empty-cut-detail", "board-new", A::NewBoard)
+                    (
+                        Icon::Board,
+                        "empty-cut-title",
+                        "empty-cut-detail",
+                        "board-new",
+                        A::NewBoard,
+                    )
                 } else {
-                    (Icon::Sheet, "empty-sheets-title", "empty-sheets-detail", "stock-new", A::NewStock)
+                    (
+                        Icon::Sheet,
+                        "empty-sheets-title",
+                        "empty-sheets-detail",
+                        "stock-new",
+                        A::NewStock,
+                    )
                 };
                 ui.set_min_height(ui.clip_rect().height() - 40.0);
                 if tw::empty_state(

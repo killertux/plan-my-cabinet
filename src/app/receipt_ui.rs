@@ -527,11 +527,12 @@ mod tests {
     use std::path::PathBuf;
 
     fn project() -> Project {
-        let mut project =
-            prepare_bytes(include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab"))
-                .unwrap()
-                .project()
-                .clone();
+        let mut project = prepare_bytes(include_bytes!(
+            "../../tests/fixtures/schema-v1-cabinet.pmcab"
+        ))
+        .unwrap()
+        .project()
+        .clone();
         project.export_records.clear();
         project
     }
@@ -593,11 +594,12 @@ mod tests {
 
     #[test]
     fn legacy_missing_values_and_unavailable_evidence_are_not_inferred() {
-        let mut project =
-            prepare_bytes(include_bytes!("../../tests/fixtures/schema-v1-cabinet.pmcab"))
-                .unwrap()
-                .project()
-                .clone();
+        let mut project = prepare_bytes(include_bytes!(
+            "../../tests/fixtures/schema-v1-cabinet.pmcab"
+        ))
+        .unwrap()
+        .project()
+        .clone();
         project.export_records[0].completed_unix_ms = 0;
         let card = &receipt_cards(&project)[0];
         let l = Localizer::new(Language::En);

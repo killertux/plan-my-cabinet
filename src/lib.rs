@@ -7,26 +7,34 @@
 /// Application title shared by desktop integration and core metadata.
 pub const APPLICATION_NAME: &str = "Plan My Cabinet";
 
-pub mod i18n;
-pub mod reference_fixture;
-pub mod model;
-pub mod editing;
-pub mod optimize;
-pub mod read_models;
-pub mod output;
-pub mod storage;
 pub mod catalog;
+pub mod editing;
+pub mod i18n;
+pub mod model;
+pub mod optimize;
+pub mod output;
+pub mod read_models;
+pub mod reference_fixture;
+pub mod storage;
 pub mod ui;
 
 // Flat paths (`plan_my_cabinet::commands`, `crate::domain`) stay valid.
-pub use model::{domain, units, money, measurements, kerf_date, dimension_input, material_presets};
-pub use editing::{commands, board_commands, color_commands, stock_commands, assembly_edit, sheet_edit, edit_drafts, material_changes, board_dimensions, placement};
-pub use optimize::{candidate_generation, candidate_ranking, cut_tree, first_fit, optimization_worker, allocation_diagnostics};
-pub use read_models::{design_read_models, stock_read_models, receipt_read_models, cost_estimate};
-pub use output::{export, pdf_export, document_layout, workshop_document};
-pub use storage::{persistence, recovery, recent_projects, local_preferences};
-pub use catalog::{hardware_catalog, hinge_installation, door_joint, template_recipes, template_setup};
-pub use ui::{theme, theme_widgets, icons, settings_ui, welcome_ui};
+pub use catalog::{
+    door_joint, hardware_catalog, hinge_installation, template_recipes, template_setup,
+};
+pub use editing::{
+    assembly_edit, board_commands, board_dimensions, color_commands, commands, edit_drafts,
+    material_changes, placement, sheet_edit, stock_commands,
+};
+pub use model::{dimension_input, domain, kerf_date, material_presets, measurements, money, units};
+pub use optimize::{
+    allocation_diagnostics, candidate_generation, candidate_ranking, cut_tree, first_fit,
+    optimization_worker,
+};
+pub use output::{document_layout, export, pdf_export, workshop_document};
+pub use read_models::{cost_estimate, design_read_models, receipt_read_models, stock_read_models};
+pub use storage::{local_preferences, persistence, recent_projects, recovery};
+pub use ui::{icons, settings_ui, theme, theme_widgets, welcome_ui};
 
 #[cfg(test)]
 mod tests {

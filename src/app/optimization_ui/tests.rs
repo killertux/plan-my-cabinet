@@ -287,7 +287,8 @@ fn palette_optimizer_actions_start_cancel_and_route_to_review_without_auto_apply
         std::thread::sleep(Duration::from_millis(1));
     }
     assert!(
-        app.cut_plan.optimizer
+        app.cut_plan
+            .optimizer
             .acceptance_availability(app.editor.project())
             .is_ok()
     );
@@ -440,8 +441,7 @@ fn comparison_is_wide_at_reference_and_compact_sizes_and_blocks_stale_acceptance
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(state.worker.is_none());
-        state.comparison =
-            Some(ModalChrome::new(egui::Id::new("optimize-comparison")).width(800.));
+        state.comparison = Some(ModalChrome::new(egui::Id::new("optimize-comparison")).width(800.));
         let output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
@@ -633,12 +633,18 @@ fn visible_cut_plan_searches_once_per_revision_after_a_quiet_moment() {
     settle(&mut state, &editor, true, true);
     assert!(!state.running(), "an open dialog blocks the search");
     state.auto_run(&ctx, &editor, true, false);
-    assert!(!state.running(), "the first sighting only starts the quiet timer");
+    assert!(
+        !state.running(),
+        "the first sighting only starts the quiet timer"
+    );
     settle(&mut state, &editor, true, false);
     assert!(state.running());
     state.cancel();
     settle(&mut state, &editor, true, false);
-    assert!(!state.running(), "a cancelled revision is not searched again");
+    assert!(
+        !state.running(),
+        "a cancelled revision is not searched again"
+    );
     editor
         .transact(|p| -> Result<(), ()> {
             p.name = "edited".into();
@@ -648,5 +654,9 @@ fn visible_cut_plan_searches_once_per_revision_after_a_quiet_moment() {
     settle(&mut state, &editor, true, false);
     assert!(state.running(), "a new revision searches again");
     state.cancel();
-    assert_eq!(editor.project().name, "edited", "searching never edits the project");
+    assert_eq!(
+        editor.project().name,
+        "edited",
+        "searching never edits the project"
+    );
 }

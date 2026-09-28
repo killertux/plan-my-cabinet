@@ -304,7 +304,9 @@ impl TemplateSetup {
                 box_material: mat(MaterialRole::Box),
                 box_bottom: mat(MaterialRole::BoxBottom),
                 external_front: mat(MaterialRole::ExternalFront),
-                count: self.drawer_count.ok_or_else(|| vec![SetupError::MissingCount])?,
+                count: self
+                    .drawer_count
+                    .ok_or_else(|| vec![SetupError::MissingCount])?,
                 box_depth: get(TemplateField::BoxDepth),
                 side_clearance: get(TemplateField::SideClearance),
                 rear_clearance: get(TemplateField::RearClearance),

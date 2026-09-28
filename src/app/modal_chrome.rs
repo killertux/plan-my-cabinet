@@ -117,11 +117,15 @@ fn primary_width(ui: &egui::Ui, text: &str, hint: &str) -> f32 {
 pub fn footer_secondary(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let width = secondary_width(ui, text);
     ui.add(
-        egui::Button::new(RichText::new(text).font(button_font(ui)).color(colors::TEXT))
-            .fill(colors::VIEWPORT)
-            .stroke(Stroke::new(1.0, colors::BORDER))
-            .corner_radius(7)
-            .min_size(egui::vec2(width, BUTTON_HEIGHT)),
+        egui::Button::new(
+            RichText::new(text)
+                .font(button_font(ui))
+                .color(colors::TEXT),
+        )
+        .fill(colors::VIEWPORT)
+        .stroke(Stroke::new(1.0, colors::BORDER))
+        .corner_radius(7)
+        .min_size(egui::vec2(width, BUTTON_HEIGHT)),
     )
 }
 
@@ -129,12 +133,15 @@ pub fn footer_secondary(ui: &mut egui::Ui, text: &str) -> egui::Response {
 /// `⌘S`, `Esc`). The accessible name is the action text only.
 pub fn footer_primary(ui: &mut egui::Ui, text: &str, hint: &str, enabled: bool) -> egui::Response {
     let width = primary_width(ui, text, hint);
-    let mut button =
-        egui::Button::new(RichText::new(text).font(button_font(ui)).color(colors::PANEL))
-            .fill(colors::TEXT)
-            .stroke(Stroke::NONE)
-            .corner_radius(7)
-            .min_size(egui::vec2(width, BUTTON_HEIGHT));
+    let mut button = egui::Button::new(
+        RichText::new(text)
+            .font(button_font(ui))
+            .color(colors::PANEL),
+    )
+    .fill(colors::TEXT)
+    .stroke(Stroke::NONE)
+    .corner_radius(7)
+    .min_size(egui::vec2(width, BUTTON_HEIGHT));
     if !hint.is_empty() {
         button = button.right_text(
             RichText::new(hint)
@@ -150,10 +157,14 @@ pub fn footer_primary(ui: &mut egui::Ui, text: &str, hint: &str, enabled: bool) 
 /// Destructive text action (e.g. "Discard") on the left of a footer.
 pub fn footer_danger(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(text).font(button_font(ui)).color(colors::DANGER))
-            .frame_when_inactive(false)
-            .corner_radius(7)
-            .min_size(egui::vec2(0.0, BUTTON_HEIGHT)),
+        egui::Button::new(
+            RichText::new(text)
+                .font(button_font(ui))
+                .color(colors::DANGER),
+        )
+        .frame_when_inactive(false)
+        .corner_radius(7)
+        .min_size(egui::vec2(0.0, BUTTON_HEIGHT)),
     )
 }
 
@@ -174,11 +185,8 @@ fn esc_keycap(ui: &mut egui::Ui) {
         Stroke::new(1.0, colors::BORDER_SOFT),
         egui::StrokeKind::Inside,
     );
-    ui.painter().galley(
-        rect.center() - galley.size() / 2.0,
-        galley,
-        colors::FAINT,
-    );
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, colors::FAINT);
 }
 
 /// 34×34 (or `size`) rounded `accent_bg` tile with the dialog icon.
@@ -936,7 +944,10 @@ pub mod form {
                 colors::FAINT,
             );
             painter.galley(
-                egui::pos2(right - galley.size().x, rect.center().y - galley.size().y / 2.0),
+                egui::pos2(
+                    right - galley.size().x,
+                    rect.center().y - galley.size().y / 2.0,
+                ),
                 galley.clone(),
                 colors::FAINT,
             );
@@ -1047,7 +1058,11 @@ pub mod form {
                 );
                 painter.rect_filled(segment, 5.0, colors::PANEL);
             } else if response.hovered() {
-                painter.rect_filled(segment, 5.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90));
+                painter.rect_filled(
+                    segment,
+                    5.0,
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 90),
+                );
             }
             if response.has_focus() {
                 painter.rect_stroke(
@@ -1057,18 +1072,18 @@ pub mod form {
                     egui::StrokeKind::Inside,
                 );
             }
-            let color = if selected { colors::TEXT } else { colors::SECONDARY };
+            let color = if selected {
+                colors::TEXT
+            } else {
+                colors::SECONDARY
+            };
             let galley = painter.layout(
                 (*label).to_owned(),
                 font(ui, selected),
                 color,
                 segment_width - 6.0,
             );
-            painter.galley(
-                segment.center() - galley.size() / 2.0,
-                galley,
-                color,
-            );
+            painter.galley(segment.center() - galley.size() / 2.0, galley, color);
             union = union.union(response);
         }
         union
@@ -1076,15 +1091,28 @@ pub mod form {
 
     /// 34-high read-only derived value with a dashed `border_strong` outline.
     pub fn derived(ui: &mut egui::Ui, value: &str, suffix: &str, width: f32) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::hover());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::hover());
         let painter = ui.painter();
         let r = rect.shrink(0.5);
         let stroke = Stroke::new(1.0, colors::BORDER_STRONG);
         for (a, b) in [
-            (r.left_top() + egui::vec2(6.0, 0.0), r.right_top() - egui::vec2(6.0, 0.0)),
-            (r.left_bottom() + egui::vec2(6.0, 0.0), r.right_bottom() - egui::vec2(6.0, 0.0)),
-            (r.left_top() + egui::vec2(0.0, 6.0), r.left_bottom() - egui::vec2(0.0, 6.0)),
-            (r.right_top() + egui::vec2(0.0, 6.0), r.right_bottom() - egui::vec2(0.0, 6.0)),
+            (
+                r.left_top() + egui::vec2(6.0, 0.0),
+                r.right_top() - egui::vec2(6.0, 0.0),
+            ),
+            (
+                r.left_bottom() + egui::vec2(6.0, 0.0),
+                r.right_bottom() - egui::vec2(6.0, 0.0),
+            ),
+            (
+                r.left_top() + egui::vec2(0.0, 6.0),
+                r.left_bottom() - egui::vec2(0.0, 6.0),
+            ),
+            (
+                r.right_top() + egui::vec2(0.0, 6.0),
+                r.right_bottom() - egui::vec2(0.0, 6.0),
+            ),
         ] {
             painter.extend(egui::Shape::dashed_line(&[a, b], stroke, 3.0, 2.5));
         }
@@ -1164,7 +1192,14 @@ pub mod form {
                         center,
                         7.5,
                         colors::CARD,
-                        Stroke::new(1.0, if selected { colors::TEXT } else { colors::BORDER_STRONG }),
+                        Stroke::new(
+                            1.0,
+                            if selected {
+                                colors::TEXT
+                            } else {
+                                colors::BORDER_STRONG
+                            },
+                        ),
                     );
                     if selected {
                         ui.painter().circle_filled(center, 4.0, colors::TEXT);
@@ -1280,7 +1315,8 @@ pub mod form {
         content: impl FnOnce(&mut egui::Ui),
     ) -> egui::Response {
         let width = ui.available_width().max(120.0);
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
         let name = label.to_owned();
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, &name)

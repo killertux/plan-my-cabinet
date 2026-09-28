@@ -15,17 +15,15 @@ fn template_replacement_waits_for_dirty_decision_and_commits_one_undo() {
         })
         .unwrap();
     let old = app.editor.project().clone();
-    let mut setup =
-        TemplateSetupUi::new(TemplateKind::Base, "New base", Currency::Brl, Unit::Mm);
+    let mut setup = TemplateSetupUi::new(TemplateKind::Base, "New base", Currency::Brl, Unit::Mm);
     let proposed = |mm: i64| {
         plan_my_cabinet::template_setup::ProposedLength::new(Conversion::Exact(
             Length::from_micrometres(mm * 1_000),
         ))
     };
-    let carcass =
-        setup
-            .setup
-            .add_material("Cabinet", proposed(18), BoardGrain::Unrestricted, None);
+    let carcass = setup
+        .setup
+        .add_material("Cabinet", proposed(18), BoardGrain::Unrestricted, None);
     let back = setup
         .setup
         .add_material("Back", proposed(6), BoardGrain::Unrestricted, None);
@@ -76,8 +74,7 @@ fn first_run_drawers_tile_generates_editable_unsaved_project_and_stock_route() {
     use plan_my_cabinet::template_setup::{MaterialRole, TemplateKind};
     use plan_my_cabinet::units::{Conversion, Length};
     let mut app = DesktopApp::default();
-    let local_dir =
-        std::env::temp_dir().join(format!("pmcab-template-recents-{}", Uuid::new_v4()));
+    let local_dir = std::env::temp_dir().join(format!("pmcab-template-recents-{}", Uuid::new_v4()));
     app.project_files.user_data_dir = Some(local_dir.clone());
     assert!(app.project_files.welcome.visible);
     app.handle_welcome_intent(plan_my_cabinet::welcome_ui::WelcomeIntent::Template(
@@ -272,8 +269,7 @@ fn cut_plan_inspector_wraps_optimizer_heading_inside_scroll_viewport() {
             let mut app = navigation_app();
             app.localizer.set_language(language);
             app.session.active = Workspace::CutPlan;
-            app.session.focused_sheet =
-                Some(plan_my_cabinet::reference_fixture::WHITE_STOCK_ID);
+            app.session.focused_sheet = Some(plan_my_cabinet::reference_fixture::WHITE_STOCK_ID);
             let before = app.editor.project().clone();
             ctx.run_ui(
                 RawInput {
@@ -332,7 +328,8 @@ fn settings_recovery_cleanup_opens_unselected_review_without_editing_project() {
     );
     assert!(!app.settings.open);
     assert_eq!(
-        app.settings.cleanup
+        app.settings
+            .cleanup
             .as_ref()
             .unwrap()
             .review()
@@ -954,7 +951,8 @@ fn repair_navigation_requires_a_valid_accept_or_explicit_cancel() {
     app.selection.choose(Some(board), false);
     let original = app.editor.project().clone();
     assert!(
-        app.cut_plan.repair
+        app.cut_plan
+            .repair
             .begin(&mut app.editor, &app.selection, Locale::En)
     );
     app.cut_plan.repair.stage_placement(
@@ -1149,7 +1147,8 @@ fn valid_repair_navigation_accepts_transfer_once_and_undo_restores_allocation() 
         .choose(Some(original_allocation.board_id), false);
     let before = app.editor.project().clone();
     assert!(
-        app.cut_plan.repair
+        app.cut_plan
+            .repair
             .begin(&mut app.editor, &app.selection, Locale::En)
     );
     assert!(app.cut_plan.repair.stage_placement(
@@ -1196,7 +1195,8 @@ fn placement_preview_stay_and_cancel_preserve_selection_and_project() {
     let board = app.editor.project().boards[0].id;
     let sheet = app.editor.project().stock[0].id;
     app.selection.choose(Some(board), false);
-    app.modals.set_placement(PlacementDialog::numeric(&app, board));
+    app.modals
+        .set_placement(PlacementDialog::numeric(&app, board));
     let original = app.editor.project().clone();
     assert_eq!(
         app.request_navigation(NavigationRoute::Entity(Destination::Sheet(sheet))),
@@ -1271,8 +1271,14 @@ fn save_stays_available_during_door_motion_but_project_replacement_waits() {
     let mut app = navigation_app();
     app.hardware.door_motion = Some((Uuid::new_v4(), 30.0));
     assert!(app.door_motion_only());
-    assert_eq!(app.action_availability(Request::new(A::SaveProject)), Ok(()));
-    assert_eq!(app.action_availability(Request::new(A::SaveProjectAs)), Ok(()));
+    assert_eq!(
+        app.action_availability(Request::new(A::SaveProject)),
+        Ok(())
+    );
+    assert_eq!(
+        app.action_availability(Request::new(A::SaveProjectAs)),
+        Ok(())
+    );
     assert_eq!(
         app.action_availability(Request::new(A::NewProject)),
         Err(actions::Unavailable::Busy)
@@ -1280,7 +1286,10 @@ fn save_stays_available_during_door_motion_but_project_replacement_waits() {
     assert!(!app.busy_for_save());
     assert!(app.busy_for_project());
     app.palette.open = true;
-    assert!(!app.door_motion_only(), "another surface on top still blocks");
+    assert!(
+        !app.door_motion_only(),
+        "another surface on top still blocks"
+    );
 }
 
 #[test]
@@ -1514,12 +1523,7 @@ fn responsive_frame(
     buttons
 }
 
-fn responsive_click(
-    app: &mut DesktopApp,
-    ctx: &egui::Context,
-    size: egui::Vec2,
-    pos: egui::Pos2,
-) {
+fn responsive_click(app: &mut DesktopApp, ctx: &egui::Context, size: egui::Vec2, pos: egui::Pos2) {
     responsive_frame(
         app,
         ctx,
@@ -1588,7 +1592,8 @@ fn responsive_shell_drawers_menus_and_invalid_draft_survive_all_scales_and_local
                     assert!(header.1.right() <= size.x && header.1.left() >= 0.0);
                 }
                 if let Some(status) = buttons.iter().find(|(label, rect)| {
-                    label == header_more && rect.center().y > size.y - workspace_shell::STATUS_HEIGHT
+                    label == header_more
+                        && rect.center().y > size.y - workspace_shell::STATUS_HEIGHT
                 }) {
                     responsive_click(&mut app, &ctx, size, status.1.center());
                     assert!(egui::Popup::is_any_open(&ctx), "status popup did not open");
@@ -1619,9 +1624,8 @@ fn responsive_shell_drawers_menus_and_invalid_draft_survive_all_scales_and_local
                     assert_eq!(app.open_drawer, Some(workspace_shell::Drawer::Inspector));
                     let open = responsive_frame(&mut app, &ctx, size, vec![]);
                     assert!(
-                        open.iter().any(
-                            |(label, _)| label == &app.localizer.text("navigation-discard")
-                        ),
+                        open.iter()
+                            .any(|(label, _)| label == &app.localizer.text("navigation-discard")),
                         "drawer fields not accessible: {open:?}"
                     );
                     responsive_click(&mut app, &ctx, size, inspector.1.center());
@@ -1635,9 +1639,7 @@ fn responsive_shell_drawers_menus_and_invalid_draft_survive_all_scales_and_local
                         .find(|(name, rect)| {
                             name == &label && rect.center().y < workspace_shell::HEADER_HEIGHT
                         })
-                        .unwrap_or_else(|| {
-                            panic!("controls drawer entry missing: {buttons:?}")
-                        });
+                        .unwrap_or_else(|| panic!("controls drawer entry missing: {buttons:?}"));
                     responsive_click(&mut app, &ctx, size, controls.1.center());
                     assert_eq!(app.open_drawer, Some(workspace_shell::Drawer::Controls));
                     let open = responsive_frame(&mut app, &ctx, size, vec![]);
@@ -1656,7 +1658,10 @@ fn responsive_shell_drawers_menus_and_invalid_draft_survive_all_scales_and_local
                     rect.center().y > workspace_shell::HEADER_HEIGHT
                         && rect.center().y < size.y - workspace_shell::STATUS_HEIGHT
                 };
-                if !buttons.iter().any(|(label, rect)| label == &iso && in_canvas(rect)) {
+                if !buttons
+                    .iter()
+                    .any(|(label, rect)| label == &iso && in_canvas(rect))
+                {
                     let viewport = buttons
                         .iter()
                         .find(|(label, rect)| label == &viewport_more && in_canvas(rect))
@@ -1820,7 +1825,10 @@ fn overwrite_modal_cancel_and_stale_confirmation_never_drop_a_running_write() {
 
     app.handoff.activity = Some(ExportActivity::Writing);
     render(&mut app, vec![]);
-    assert!(matches!(app.handoff.activity, Some(ExportActivity::Writing)));
+    assert!(matches!(
+        app.handoff.activity,
+        Some(ExportActivity::Writing)
+    ));
     assert!(!app.handoff.overwrite_chrome.is_active());
 }
 
@@ -1933,9 +1941,7 @@ fn reference_cut_plan_host_places_sequence_beside_full_width_sheet() {
         .collect::<Vec<_>>();
     let sequence = labels
         .iter()
-        .find(|(label, _)| {
-            label == &app.localizer.text("sheet-sequence-heading").to_uppercase()
-        })
+        .find(|(label, _)| label == &app.localizer.text("sheet-sequence-heading").to_uppercase())
         .unwrap_or_else(|| panic!("Cut sequence not in host inspector: {labels:?}"));
     assert!(sequence.1.x > 1100.0, "{sequence:?}");
     let sheet = output
@@ -1957,9 +1963,11 @@ fn reference_cut_plan_host_places_sequence_beside_full_width_sheet() {
         "sheet clips under status: {sheet:?}"
     );
     assert!(sheet.height() > 300.0, "sheet is too small: {sheet:?}");
-    assert!(labels.iter().any(|(label, pos)| label
-        == &app.localizer.text("sheet-needs-stock")
-        && pos.x < 340.0));
+    assert!(
+        labels
+            .iter()
+            .any(|(label, pos)| label == &app.localizer.text("sheet-needs-stock") && pos.x < 340.0)
+    );
     assert!(
         labels
             .iter()
@@ -1983,7 +1991,8 @@ fn handoff_refresh_requires_explicit_review_after_controls_change() {
     await_handoff_packet(&mut app);
     assert!(app.current_reviewed_packet().is_none());
     assert_eq!(
-        app.handoff.candidate
+        app.handoff
+            .candidate
             .as_ref()
             .unwrap()
             .1
@@ -2045,7 +2054,8 @@ fn hidden_wood_issue_blocks_shop_card_even_with_all_optional_sections_off() {
     await_handoff_packet(&mut app);
     assert!(!app.shop_ready_available());
     assert!(
-        app.handoff.candidate
+        app.handoff
+            .candidate
             .as_ref()
             .unwrap()
             .1
@@ -2057,8 +2067,7 @@ fn hidden_wood_issue_blocks_shop_card_even_with_all_optional_sections_off() {
     );
     assert_eq!(
         app.invoke(
-            Request::new(A::SetExportMode)
-                .argument(Argument::ExportMode(ExportMode::ShopReady))
+            Request::new(A::SetExportMode).argument(Argument::ExportMode(ExportMode::ShopReady))
         ),
         Err(actions::Unavailable::ExportNotReady)
     );
@@ -2243,8 +2252,7 @@ fn handoff_overwrite_refusal_and_failed_write_leave_receipts_and_files_untouched
     assert!(app.editor.project().export_records.is_empty());
     std::fs::remove_file(path).unwrap();
 
-    let absent_parent =
-        std::env::temp_dir().join(format!("handoff-missing-{}", Uuid::new_v4()));
+    let absent_parent = std::env::temp_dir().join(format!("handoff-missing-{}", Uuid::new_v4()));
     let target = absent_parent.join("workshop.pdf");
     app.start_pdf_write(target.clone(), packet, Overwrite::Decline);
     for _ in 0..5000 {
@@ -2660,8 +2668,7 @@ fn recovery_dialog_defer_and_recover_keep_explicit_file_intact() {
     app.project_files.user_data_dir = Some(root.join("user"));
     app.save_to(&path, false, None);
     let saved = std::fs::read(&path).unwrap();
-    let mut store =
-        RecoveryStore::new(&root.join("user"), &path, app.editor.project().id).unwrap();
+    let mut store = RecoveryStore::new(&root.join("user"), &path, app.editor.project().id).unwrap();
     app.editor
         .set_grid_spacing(Length::from_micrometres(20_000))
         .unwrap();
@@ -2801,7 +2808,8 @@ fn mac_failed_export_worker_leaves_existing_pdf_and_receipts_intact() {
     }
     assert!(app.handoff.events.is_none(), "export worker timed out");
     assert!(
-        app.handoff.message
+        app.handoff
+            .message
             .as_ref()
             .is_some_and(|m| m.contains("Could not export PDF"))
     );
@@ -2858,7 +2866,8 @@ fn sheet_repair_excludes_other_edits_and_other_modal_excludes_repair() {
     app.selection.choose(Some(board), false);
     app.session.switch(Workspace::CutPlan);
     let before = app.editor.project().clone();
-    app.modals.set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
+    app.modals
+        .set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
     let buttons = repair_frame(&mut app, &ctx, vec![]);
     let (_, disabled, position) = buttons
         .iter()
@@ -2991,7 +3000,8 @@ fn creation_preview_repeated_edits_and_cancel_do_not_touch_stock_or_history() {
     let (mut app, material, stock) = creation_fixture();
     let before = app.editor.project().clone();
     let undo = app.editor.can_undo();
-    app.modals.set_creation(Some(CreationDialog::board(Some(material))));
+    app.modals
+        .set_creation(Some(CreationDialog::board(Some(material))));
     for size in ["100 mm", "75 mm", "120 mm", "100 mm"] {
         let draft = app.modals.creation_mut().unwrap();
         draft.length.text = size.into();
@@ -3020,7 +3030,8 @@ fn creation_preview_repeated_edits_and_cancel_do_not_touch_stock_or_history() {
 fn creation_requires_fresh_rounding_consent_and_popup_keys_stay_inside() {
     let ctx = egui::Context::default();
     let (mut app, material, _) = creation_fixture();
-    app.modals.set_creation(Some(CreationDialog::board(Some(material))));
+    app.modals
+        .set_creation(Some(CreationDialog::board(Some(material))));
     app.modals.creation_mut().unwrap().length.text = "1/64 in".into();
     app.modals.creation_mut().unwrap().width.text = "50 mm".into();
     creation_frame(&mut app, &ctx, None);
@@ -3201,7 +3212,8 @@ fn grid_dialog_focus_invalid_input_and_escape_leave_setting_unchanged() {
     let ctx = egui::Context::default();
     let mut app = DesktopApp::default();
     let initial = app.editor.project().clone();
-    app.modals.set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
+    app.modals
+        .set_grid(Some(GridDialog::open(app.editor.project(), Locale::En)));
     let draw = |app: &mut DesktopApp, events| {
         ctx.run_ui(
             egui::RawInput {
@@ -3265,7 +3277,8 @@ fn numeric_modal_preview_cancel_and_accept_are_single_transaction() {
         ctx.run_ui(input, |ui| app.show_placement(ui.ctx()))
             .drop_without_applying_deltas();
     };
-    app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+    app.modals
+        .set_placement(PlacementDialog::numeric(&app, board_id));
     if let placement_ui::PlacementDraft::Numeric { position, .. } =
         &mut app.modals.placement_mut().unwrap().draft
     {
@@ -3302,7 +3315,8 @@ fn numeric_modal_preview_cancel_and_accept_are_single_transaction() {
     assert_eq!(app.editor.project(), &initial);
     assert!(app.editor.preview().is_none());
     assert_eq!(app.selection.active, Some(board_id));
-    app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+    app.modals
+        .set_placement(PlacementDialog::numeric(&app, board_id));
     if let placement_ui::PlacementDraft::Numeric { position, .. } =
         &mut app.modals.placement_mut().unwrap().draft
     {
@@ -3356,7 +3370,8 @@ fn numeric_dialog_unedited_frame_switch_and_restored_fields_do_not_commit() {
         })
         .unwrap();
     let before = app.editor.project().clone();
-    app.modals.set_placement(PlacementDialog::numeric(&app, board_id));
+    app.modals
+        .set_placement(PlacementDialog::numeric(&app, board_id));
     let draw = |app: &mut DesktopApp| {
         ctx.run_ui(RawInput::default(), |ui| app.show_placement(ui.ctx()))
             .drop_without_applying_deltas();
@@ -3419,7 +3434,8 @@ fn face_modal_previews_orientation_and_offset_without_committing_relation() {
     let source = make_board(&mut app, "Source", 0.0);
     let target = make_board(&mut app, "Target", 200.0);
     let before = app.editor.project().clone();
-    app.modals.set_placement(PlacementDialog::face(&app, source));
+    app.modals
+        .set_placement(PlacementDialog::face(&app, source));
     if let placement_ui::PlacementDraft::Face {
         target: chosen,
         source_face,
@@ -3526,10 +3542,11 @@ fn delete_in_text_field_has_no_scene_delete_action_and_modal_blocks_hierarchy_ed
     assert_eq!(app.editor.project(), &before);
     assert!(app.selection.ids.contains(&board));
     // There is currently no Delete scene action, including with viewport focus.
-    app.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(
-        &app,
-        assembly_ui::Operation::Transform,
-    )));
+    app.modals
+        .set_assembly(Some(assembly_ui::AssemblyDialog::new(
+            &app,
+            assembly_ui::Operation::Transform,
+        )));
     assert!(app.modal_open());
     ctx.run_ui(
         RawInput {
@@ -3622,7 +3639,9 @@ fn dialogs_take_and_keep_keyboard_focus_until_closed() {
         }
         let project = app.editor.project();
         match kind {
-            "board" => app.modals.set_creation(Some(CreationDialog::board(Some(material_id)))),
+            "board" => app
+                .modals
+                .set_creation(Some(CreationDialog::board(Some(material_id)))),
             "material" => app.modals.set_creation(Some(CreationDialog::material())),
             "edit" => {
                 app.modals.set_material_edit(Some(MaterialEditDialog {
@@ -3677,23 +3696,34 @@ fn dialogs_take_and_keep_keyboard_focus_until_closed() {
                     error: None,
                 }));
             }
-            "numeric" => app.modals.set_placement(PlacementDialog::numeric(&app, board_id)),
-            "face" => app.modals.set_placement(PlacementDialog::face(&app, board_id)),
-            "stock" => app.modals.set_stock(Some(stock_ui::StockDialog::new(project))),
-            "currency" => app.modals.set_currency(Some(currency_ui::CurrencyDialog::new(project))),
-            "hardware" => {
-                app.modals.set_hardware(Some(hardware_ui::HardwareDialog::new(&app, None)))
-            }
-            "hinge" => app.modals.set_hinge(Some(hinge_ui::HingeDialog::new(&app, None))),
-            "relationship" => {
-                app.modals.set_door(Some(door_joint_ui::DoorDialog::new(&app, None)))
-            }
+            "numeric" => app
+                .modals
+                .set_placement(PlacementDialog::numeric(&app, board_id)),
+            "face" => app
+                .modals
+                .set_placement(PlacementDialog::face(&app, board_id)),
+            "stock" => app
+                .modals
+                .set_stock(Some(stock_ui::StockDialog::new(project))),
+            "currency" => app
+                .modals
+                .set_currency(Some(currency_ui::CurrencyDialog::new(project))),
+            "hardware" => app
+                .modals
+                .set_hardware(Some(hardware_ui::HardwareDialog::new(&app, None))),
+            "hinge" => app
+                .modals
+                .set_hinge(Some(hinge_ui::HingeDialog::new(&app, None))),
+            "relationship" => app
+                .modals
+                .set_door(Some(door_joint_ui::DoorDialog::new(&app, None))),
             "transform" => {
                 app.selection.choose(Some(board_id), false);
-                app.modals.set_assembly(Some(assembly_ui::AssemblyDialog::new(
-                    &app,
-                    assembly_ui::Operation::Transform,
-                )));
+                app.modals
+                    .set_assembly(Some(assembly_ui::AssemblyDialog::new(
+                        &app,
+                        assembly_ui::Operation::Transform,
+                    )));
             }
             "fee" | "grid" | "kerf" => {
                 app.invoke(Request::new(match kind {
@@ -3767,9 +3797,11 @@ fn hardware_choosers_close_on_keyboard_selection_without_submitting_parent() {
     for relationship in [false, true] {
         let mut app = navigation_app();
         if relationship {
-            app.modals.set_door(Some(door_joint_ui::DoorDialog::new(&app, None)));
+            app.modals
+                .set_door(Some(door_joint_ui::DoorDialog::new(&app, None)));
         } else {
-            app.modals.set_hinge(Some(hinge_ui::HingeDialog::new(&app, None)));
+            app.modals
+                .set_hinge(Some(hinge_ui::HingeDialog::new(&app, None)));
         }
         let before = app.editor.project().clone();
         let ctx = egui::Context::default();
@@ -4369,13 +4401,23 @@ fn dragging_a_face_handle_previews_live_and_commits_one_undoable_resize() {
     let shown = app.editor.preview().unwrap().board(board.id).unwrap();
     assert_eq!(shown.length, longer, "the viewport shows the new size");
     assert_eq!(shown.pose, board.pose, "the start face stays put");
-    assert_eq!(app.editor.project().board(board.id).unwrap().length, board.length);
-    assert_eq!(app.editor.project().revision, revision, "previews never commit");
+    assert_eq!(
+        app.editor.project().board(board.id).unwrap().length,
+        board.length
+    );
+    assert_eq!(
+        app.editor.project().revision,
+        revision,
+        "previews never commit"
+    );
 
     app.accept_resize(request);
     assert!(app.editor.preview().is_none());
     assert_eq!(app.editor.project().board(board.id).unwrap().length, longer);
     assert_eq!(app.editor.project().revision, revision + 1, "one edit");
     app.invoke(Request::new(A::Undo)).unwrap();
-    assert_eq!(app.editor.project().board(board.id).unwrap().length, board.length);
+    assert_eq!(
+        app.editor.project().board(board.id).unwrap().length,
+        board.length
+    );
 }

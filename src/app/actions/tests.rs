@@ -18,8 +18,7 @@ fn measure_scope_and_frame_survive_guarded_tool_switches_without_project_edits()
     )
     .unwrap();
     app.invoke(
-        Request::new(ActionId::SetMeasurementFrame)
-            .argument(Argument::Frame(Frame::Object(root))),
+        Request::new(ActionId::SetMeasurementFrame).argument(Argument::Frame(Frame::Object(root))),
     )
     .unwrap();
     for (action, expected) in [
@@ -448,9 +447,7 @@ fn stock_move_requires_a_valid_rank_before_invocation() {
         },
     ] {
         assert_eq!(
-            app.invoke(
-                Request::with(ActionId::StockMove, Target::Stock(stock)).argument(argument)
-            ),
+            app.invoke(Request::with(ActionId::StockMove, Target::Stock(stock)).argument(argument)),
             Err(Unavailable::MissingTarget)
         );
     }

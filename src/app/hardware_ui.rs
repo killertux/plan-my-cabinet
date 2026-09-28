@@ -1,8 +1,8 @@
 //! Dimensioned reference hardware editor. Draft fields never mutate the project.
-use crate::*;
 use crate::actions::{ActionId as A, Argument, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
+use crate::*;
 use plan_my_cabinet::assembly_edit::world_pose;
 use plan_my_cabinet::domain::HardwareKind;
 
@@ -555,7 +555,8 @@ mod tests {
     fn invalid_draft_and_escape_do_not_create_hardware() {
         let mut app = DesktopApp::default();
         let before = app.editor.project().clone();
-        app.modals.set_hardware(Some(HardwareDialog::new(&app, None)));
+        app.modals
+            .set_hardware(Some(HardwareDialog::new(&app, None)));
         let ctx = egui::Context::default();
         let draw = |app: &mut DesktopApp, events| {
             ctx.run_ui(

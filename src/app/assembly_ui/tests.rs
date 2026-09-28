@@ -276,7 +276,13 @@ fn board_hud_only_renders_for_one_active_board_and_preserves_invalid_draft() {
     let output = ctx.run_ui(egui::RawInput::default(), |ui| {
         app.show_design_hud(ui.ctx(), canvas)
     });
-    assert!(!output.shapes.iter().any(|shape| shape.clip_rect.intersects(rect) && matches!(&shape.shape, egui::Shape::Rect(r) if r.fill == theme_widgets::PANEL)));
+    assert!(
+        !output
+            .shapes
+            .iter()
+            .any(|shape| shape.clip_rect.intersects(rect)
+                && matches!(&shape.shape, egui::Shape::Rect(r) if r.fill == theme_widgets::PANEL))
+    );
     output.drop_without_applying_deltas();
 }
 
@@ -416,7 +422,8 @@ fn modal_focus_invalid_and_escape_leave_project_untouched() {
     let (mut app, board) = app_with_board();
     app.selection.choose(Some(board), false);
     let initial = app.editor.project().clone();
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
     let ctx = egui::Context::default();
     let draw = |app: &mut DesktopApp, events| {
         ctx.run_ui(
@@ -477,7 +484,8 @@ fn hierarchy_modal_keys_validate_cancel_and_commit_one_undo() {
     let initial = app.editor.project().clone();
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
     dialog_frame(&mut app, &ctx, vec![]);
     assert_eq!(
         ctx.memory(|m| m.focused()),
@@ -551,7 +559,8 @@ fn reparent_modal_popup_key_stays_in_draft_then_commits_with_undo() {
         .group_objects(&[board], None, "Cabinet", [0.0; 3])
         .unwrap();
     app.selection.choose(Some(board), false);
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Reparent)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Reparent)));
     let original = app.editor.project().clone();
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);
@@ -597,7 +606,8 @@ fn duplicate_and_ungroup_modals_cancel_or_accept_atomically() {
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);
     let initial = app.editor.project().clone();
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
     dialog_frame(&mut app, &ctx, vec![]);
     assert_eq!(
         ctx.memory(|m| m.focused()),
@@ -612,7 +622,8 @@ fn duplicate_and_ungroup_modals_cancel_or_accept_atomically() {
     assert_eq!(app.editor.project(), &initial);
     dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Escape));
     assert_eq!(app.editor.project(), &initial);
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Duplicate)));
     dialog_frame(&mut app, &ctx, vec![]);
     dialog_frame(&mut app, &ctx, dialog_key(egui::Key::Enter));
     assert_eq!(app.editor.project().assemblies.len(), 2);
@@ -621,7 +632,8 @@ fn duplicate_and_ungroup_modals_cancel_or_accept_atomically() {
     assert_eq!(app.editor.project().boards, initial.boards);
     app.editor.redo().unwrap();
     app.selection.choose(Some(group), false);
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Ungroup)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Ungroup)));
     assert_eq!(app.modals.assembly().unwrap().active, Some(group));
     dialog_frame(&mut app, &ctx, vec![]);
     dialog_frame(&mut app, &ctx, vec![]);
@@ -661,7 +673,8 @@ fn duplicate_and_ungroup_modals_cancel_or_accept_atomically() {
 fn hierarchy_modal_blocks_background_pointer_and_cancel_preserves_selection() {
     let (mut app, board) = app_with_board();
     app.selection.choose(Some(board), false);
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Group)));
     let initial = app.editor.project().clone();
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);
@@ -883,7 +896,8 @@ fn inspector_routes_obey_selection_and_modal_guards() {
         app.action_availability(Request::new(A::DuplicateAssembly))
             .is_ok()
     );
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
     assert!(
         app.action_availability(Request::new(A::DeleteObject))
             .is_err()
@@ -938,7 +952,12 @@ fn fixture_compact_sidebar_fits_stock_and_preserves_warning_selection_and_source
     );
     assert_ne!(model.materials[0].color, model.materials[1].color);
     assert_eq!(model.stock.len(), 4);
-    assert!(model.stock.iter().any(|s| s.alias == "O1" && s.source == plan_my_cabinet::domain::StockSource::Owned));
+    assert!(
+        model
+            .stock
+            .iter()
+            .any(|s| s.alias == "O1" && s.source == plan_my_cabinet::domain::StockSource::Owned)
+    );
     assert!(
         model
             .stock
@@ -1006,7 +1025,8 @@ fn hardware_placeholder_actions_require_matching_target_and_respect_modal_guard(
             .is_err()
         );
     }
-    app.modals.set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
+    app.modals
+        .set_assembly(Some(AssemblyDialog::new(&app, Operation::Transform)));
     assert!(
         app.action_availability(Request::with(A::EditHardware, Target::Object(hardware)))
             .is_err()

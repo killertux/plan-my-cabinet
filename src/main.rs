@@ -56,12 +56,16 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell, workspace_state,
+    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui,
+    hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
+    pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, state,
+    stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
+    workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
+use actions::{ActionId as A, Argument, Request, Target};
 use app::board_dialogs::*;
 use app::export_flow::*;
-use actions::{ActionId as A, Argument, Request, Target};
 use modal_chrome::{ModalAction, ModalActions, ModalChrome, ModalThreeAction, ModalThreeActions};
 use pending_navigation::{
     Decision as NavigationDecision, EditBlock, EditKind, NavigationGuard, NavigationIntent,
@@ -215,7 +219,6 @@ impl Default for DesktopApp {
 }
 
 impl DesktopApp {
-
     fn sync_scene_inspector(&mut self) {
         if !self.session.belongs_to(self.editor.project()) {
             self.navigation.clear();
@@ -457,12 +460,9 @@ impl DesktopApp {
     fn design_hud_available(&self) -> bool {
         self.session.active == Workspace::Design && self.open_drawer.is_none() && !self.modal_open()
     }
-
 }
 
-impl DesktopApp {
-
-}
+impl DesktopApp {}
 
 impl eframe::App for DesktopApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
