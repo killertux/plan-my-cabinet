@@ -2619,7 +2619,7 @@ pub fn show_sheet_list(
     let diagnostics = repair.board_diagnostics();
     let mut request = None;
     let mut chosen = None;
-    egui::Frame::new()
+    let open = egui::Frame::new()
         .inner_margin(Margin {
             left: 14,
             right: 10,
@@ -2627,65 +2627,75 @@ pub fn show_sheet_list(
             bottom: 0,
         })
         .show(ui, |ui| {
-            tw::section_bar(ui, &localizer.text("sheet-priority-cards"), |ui| {
-                if tw::ghost_icon_sized(
-                    ui,
-                    Icon::Plus,
-                    &localizer.text("stock-new"),
-                    tw::SECONDARY,
-                    15.0,
-                    26.0,
-                    !modal && !repairing,
-                    false,
-                )
-                .clicked()
-                {
-                    request = Some(Request::new(A::NewStock));
+            let (open, ()) = tw::collapsible_section_bar(
+                ui,
+                egui::Id::new("cut-plan-sheets-section"),
+                &localizer.text("sheet-priority-cards"),
+                ordered.len(),
+                |ui| {
+                    if tw::ghost_icon_sized(
+                        ui,
+                        Icon::Plus,
+                        &localizer.text("stock-new"),
+                        tw::SECONDARY,
+                        15.0,
+                        26.0,
+                        !modal && !repairing,
+                        false,
+                    )
+                    .clicked()
+                    {
+                        request = Some(Request::new(A::NewStock));
+                    }
+                },
+            );
+            open
+        })
+        .inner;
+    if open {
+        egui::Frame::new()
+            .inner_margin(Margin::symmetric(8, 0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                if ordered.is_empty() {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(localizer.text("design-no-stock"))
+                                .size(12.0)
+                                .color(tw::MUTED),
+                        )
+                        .wrap(),
+                    );
+                }
+                for stock in &ordered {
+                    let piece = model.and_then(|model| model.miniature(stock.id));
+                    let response = sheet_card(
+                        ui,
+                        project,
+                        stock,
+                        piece,
+                        focused_sheet == Some(stock.id),
+                        !modal,
+                        localizer,
+                    );
+                    if response.clicked() {
+                        chosen = Some(stock.id);
+                    }
+                    response.context_menu(|ui| {
+                        if ui
+                            .add_enabled(
+                                !modal && !repairing,
+                                egui::Button::new(localizer.text("sheet-edit-stock")),
+                            )
+                            .clicked()
+                        {
+                            request = Some(Request::with(A::EditStock, Target::Stock(stock.id)));
+                            ui.close();
+                        }
+                    });
                 }
             });
-        });
-    egui::Frame::new()
-        .inner_margin(Margin::symmetric(8, 0))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 4.0;
-            if ordered.is_empty() {
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(localizer.text("design-no-stock"))
-                            .size(12.0)
-                            .color(tw::MUTED),
-                    )
-                    .wrap(),
-                );
-            }
-            for stock in &ordered {
-                let piece = model.and_then(|model| model.miniature(stock.id));
-                let response = sheet_card(
-                    ui,
-                    project,
-                    stock,
-                    piece,
-                    focused_sheet == Some(stock.id),
-                    !modal,
-                    localizer,
-                );
-                if response.clicked() {
-                    chosen = Some(stock.id);
-                }
-                response.context_menu(|ui| {
-                    if ui
-                        .add_enabled(
-                            !modal && !repairing,
-                            egui::Button::new(localizer.text("sheet-edit-stock")),
-                        )
-                        .clicked()
-                    {
-                        request = Some(Request::with(A::EditStock, Target::Stock(stock.id)));
-                        ui.close();
-                    }
-                });
-            }
-        });
+    }
     ui.add_space(10.0);
     tw::divider(ui);
     let issues: Vec<_> = needs_stock(diagnostics).collect();

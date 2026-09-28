@@ -348,6 +348,80 @@ pub fn section_bar<R>(ui: &mut Ui, label: &str, actions: impl FnOnce(&mut Ui) ->
     .inner
 }
 
+/// A [`section_bar`] whose label hides or shows the list below it.
+///
+/// Returns whether the section is open and the actions' result. The open
+/// state is kept per `id` in egui memory, so it survives workspace switches.
+/// While closed, `count` (the number of hidden rows) follows the label.
+pub fn collapsible_section_bar<R>(
+    ui: &mut Ui,
+    id: egui::Id,
+    label: &str,
+    count: usize,
+    actions: impl FnOnce(&mut Ui) -> R,
+) -> (bool, R) {
+    let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(id, true));
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &label.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: weighted_font(
+                ui,
+                super::theme::SECTION.size,
+                super::theme::Typeface::SansSemibold,
+            ),
+            color: MUTED,
+            extra_letter_spacing: super::theme::SECTION.size * super::theme::SECTION_TRACKING_EM,
+            ..Default::default()
+        },
+    );
+    let inner = ui
+        .allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), 36.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let toggle = ui
+                    .scope(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.add(crate::icons::icon(
+                            if open {
+                                crate::icons::Icon::ChevDown
+                            } else {
+                                crate::icons::Icon::ChevRight
+                            },
+                            FAINT,
+                            12.0,
+                        ));
+                        ui.add(egui::Label::new(job).selectable(false));
+                        if !open && count > 0 {
+                            ui.label(mono(count.to_string(), 11.0).color(FAINT));
+                        }
+                    })
+                    .response;
+                let toggle = ui
+                    .interact(toggle.rect, id.with("toggle"), egui::Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                toggle.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::WidgetType::CollapsingHeader,
+                        true,
+                        open,
+                        label,
+                    )
+                });
+                if toggle.clicked() {
+                    open = !open;
+                    ui.data_mut(|d| d.insert_persisted(id, open));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), actions)
+                    .inner
+            },
+        )
+        .inner;
+    (open, inner)
+}
+
 /// A 1px full-width divider in `border`, used between panel sections.
 pub fn divider(ui: &mut Ui) {
     let (rect, _) =

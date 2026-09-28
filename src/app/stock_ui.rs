@@ -1679,7 +1679,7 @@ impl DesktopApp {
             ui.label(self.localizer.text("cost-invalid"));
             return;
         };
-        egui::Frame::new()
+        let open = egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 6,
                 right: 0,
@@ -1687,194 +1687,204 @@ impl DesktopApp {
                 bottom: 0,
             })
             .show(ui, |ui| {
-                tw::section_bar(ui, &self.localizer.text("stock-materials-heading"), |ui| {
-                    let request = Request::new(A::NewMaterial);
-                    if tw::ghost_icon_sized(
-                        ui,
-                        Icon::Plus,
-                        &A::NewMaterial.label(&self.localizer),
-                        tw::MUTED,
-                        15.0,
-                        24.0,
-                        self.action_availability(request).is_ok(),
-                        false,
-                    )
-                    .clicked()
-                    {
-                        self.invoke_or_report(request);
-                    }
-                });
-            });
-        if model.materials.len() > MATERIAL_FILTER_THRESHOLD
-            || !self.session.stock.filter.is_empty()
-        {
-            egui::Frame::new()
-                .fill(tw::APP)
-                .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
-                .corner_radius(6)
-                .inner_margin(egui::Margin::symmetric(8, 3))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.add(icons::icon(Icon::Search, tw::FAINT, 13.0));
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.session.stock.filter)
-                                .frame(egui::Frame::NONE)
-                                .hint_text(self.localizer.text("shell-filter-materials"))
-                                .desired_width(ui.available_width()),
-                        );
+                let (open, ()) = tw::collapsible_section_bar(
+                    ui,
+                    egui::Id::new("stock-materials-section"),
+                    &self.localizer.text("stock-materials-heading"),
+                    model.materials.len(),
+                    |ui| {
+                        let request = Request::new(A::NewMaterial);
+                        if tw::ghost_icon_sized(
+                            ui,
+                            Icon::Plus,
+                            &A::NewMaterial.label(&self.localizer),
+                            tw::MUTED,
+                            15.0,
+                            24.0,
+                            self.action_availability(request).is_ok(),
+                            false,
+                        )
+                        .clicked()
+                        {
+                            self.invoke_or_report(request);
+                        }
+                    },
+                );
+                open
+            })
+            .inner;
+        if open {
+            if model.materials.len() > MATERIAL_FILTER_THRESHOLD
+                || !self.session.stock.filter.is_empty()
+            {
+                egui::Frame::new()
+                    .fill(tw::APP)
+                    .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
+                    .corner_radius(6)
+                    .inner_margin(egui::Margin::symmetric(8, 3))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(icons::icon(Icon::Search, tw::FAINT, 13.0));
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.session.stock.filter)
+                                    .frame(egui::Frame::NONE)
+                                    .hint_text(self.localizer.text("shell-filter-materials"))
+                                    .desired_width(ui.available_width()),
+                            );
+                        });
                     });
-                });
-            ui.add_space(4.0);
-        }
-        ui.spacing_mut().item_spacing.y = 2.0;
-        let all_selected = self.session.stock_material_filter.is_none();
-        let all_label = self.localizer.text("stock-all-materials");
-        let mut args = FluentArgs::new();
-        args.set("pieces", model.pieces.len());
-        args.set("materials", model.materials.len());
-        let all_detail = self.localizer.format("stock-all-line", Some(&args));
-        let (all, ()) = tw::list_row(
-            ui,
-            egui::Id::new("stock-material-all"),
-            44.0,
-            if all_selected {
-                tw::RowState::Active
-            } else {
-                tw::RowState::Normal
-            },
-            !modal,
-            &all_label,
-            |ui| {
-                tw::swatch(ui, ALL_STOCK_SWATCH, egui::vec2(10.0, 28.0));
                 ui.add_space(4.0);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    ui.label(tw::medium(ui, &all_label, 13.0).color(if all_selected {
-                        tw::ACCENT_INK
-                    } else {
-                        tw::TEXT
-                    }));
-                    ui.label(egui::RichText::new(&all_detail).size(11.0).color(tw::FAINT));
-                });
-            },
-        );
-        if all.clicked() {
-            self.session.stock_material_filter = None;
-            self.session.inspector = None;
-        }
-        let query = self.session.stock.filter.to_lowercase();
-        let mut pending = None;
-        for material in model
-            .materials
-            .iter()
-            .filter(|material| material.name.to_lowercase().contains(&query))
-        {
-            let selected = self.session.stock_material_filter == Some(material.id);
-            let needs_stock = material.board_count > 0 && material.stock_piece_count == 0;
-            let color = self.editor.project().material_color(material.id);
-            let swatch = egui::Color32::from_rgb(color.0[0], color.0[1], color.0[2]);
-            let line = self.material_line(material);
-            let (row, ()) = tw::list_row(
+            }
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let all_selected = self.session.stock_material_filter.is_none();
+            let all_label = self.localizer.text("stock-all-materials");
+            let mut args = FluentArgs::new();
+            args.set("pieces", model.pieces.len());
+            args.set("materials", model.materials.len());
+            let all_detail = self.localizer.format("stock-all-line", Some(&args));
+            let (all, ()) = tw::list_row(
                 ui,
-                egui::Id::new(("stock-material-row", material.id)),
+                egui::Id::new("stock-material-all"),
                 44.0,
-                if selected {
+                if all_selected {
                     tw::RowState::Active
                 } else {
                     tw::RowState::Normal
                 },
                 !modal,
-                &material.name,
+                &all_label,
                 |ui| {
-                    tw::swatch(ui, swatch, egui::vec2(10.0, 28.0));
+                    tw::swatch(ui, ALL_STOCK_SWATCH, egui::vec2(10.0, 28.0));
                     ui.add_space(4.0);
-                    let text_width =
-                        (ui.available_width() - if needs_stock { 22.0 } else { 0.0 }).max(40.0);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(text_width, 34.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            ui.set_width(text_width);
-                            ui.add(
-                                egui::Label::new(
-                                    tw::medium(ui, &material.name, 13.0).color(if selected {
-                                        tw::ACCENT_INK
-                                    } else {
-                                        tw::TEXT
-                                    }),
-                                )
-                                .truncate()
-                                .selectable(false),
-                            );
-                            ui.add(
-                                egui::Label::new(tw::mono(&line, 11.0).color(if selected {
-                                    SELECTED_SOFT_INK
-                                } else {
-                                    tw::FAINT
-                                }))
-                                .truncate()
-                                .selectable(false),
-                            );
-                        },
-                    );
-                    if needs_stock {
-                        ui.add(icons::icon(Icon::Warning, tw::WARN, 14.0))
-                            .on_hover_text(self.localizer.text("stock-material-without-stock"));
-                    }
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(tw::medium(ui, &all_label, 13.0).color(if all_selected {
+                            tw::ACCENT_INK
+                        } else {
+                            tw::TEXT
+                        }));
+                        ui.label(egui::RichText::new(&all_detail).size(11.0).color(tw::FAINT));
+                    });
                 },
             );
-            if row.clicked() {
-                self.session.stock_material_filter = Some(material.id);
-                self.session.stock_global_order = false;
-                self.session.inspector = Some(InspectorTarget::Material(material.id));
-                if self.session.stock_piece.is_some_and(|id| {
-                    model
-                        .pieces
-                        .iter()
-                        .any(|piece| piece.id == id && piece.material_id != material.id)
-                }) {
-                    self.session.stock_piece = None;
-                }
+            if all.clicked() {
+                self.session.stock_material_filter = None;
+                self.session.inspector = None;
             }
-            row.context_menu(|ui| {
-                if ui
-                    .add_enabled(
-                        !modal,
-                        egui::Button::new(self.localizer.text("material-edit-ellipsis")),
-                    )
-                    .clicked()
-                {
-                    pending = Some(Request::with(
-                        A::EditMaterial,
-                        Target::Material(material.id),
-                    ));
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(!modal, egui::Button::new(self.localizer.text("stock-new")))
-                    .clicked()
-                {
-                    pending = Some(Request::with(A::NewStock, Target::Material(material.id)));
-                    ui.close();
-                }
-            });
-        }
-        if let Some(request) = pending {
-            self.invoke_or_report(request);
-        }
-        if !model.materials.is_empty()
-            && !model
+            let query = self.session.stock.filter.to_lowercase();
+            let mut pending = None;
+            for material in model
                 .materials
                 .iter()
-                .any(|material| material.name.to_lowercase().contains(&query))
-        {
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new(self.localizer.text("stock-filter-no-materials"))
-                    .size(12.0)
-                    .color(tw::FAINT),
-            );
+                .filter(|material| material.name.to_lowercase().contains(&query))
+            {
+                let selected = self.session.stock_material_filter == Some(material.id);
+                let needs_stock = material.board_count > 0 && material.stock_piece_count == 0;
+                let color = self.editor.project().material_color(material.id);
+                let swatch = egui::Color32::from_rgb(color.0[0], color.0[1], color.0[2]);
+                let line = self.material_line(material);
+                let (row, ()) = tw::list_row(
+                    ui,
+                    egui::Id::new(("stock-material-row", material.id)),
+                    44.0,
+                    if selected {
+                        tw::RowState::Active
+                    } else {
+                        tw::RowState::Normal
+                    },
+                    !modal,
+                    &material.name,
+                    |ui| {
+                        tw::swatch(ui, swatch, egui::vec2(10.0, 28.0));
+                        ui.add_space(4.0);
+                        let text_width =
+                            (ui.available_width() - if needs_stock { 22.0 } else { 0.0 }).max(40.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(text_width, 34.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.y = 1.0;
+                                ui.set_width(text_width);
+                                ui.add(
+                                    egui::Label::new(
+                                        tw::medium(ui, &material.name, 13.0).color(if selected {
+                                            tw::ACCENT_INK
+                                        } else {
+                                            tw::TEXT
+                                        }),
+                                    )
+                                    .truncate()
+                                    .selectable(false),
+                                );
+                                ui.add(
+                                    egui::Label::new(tw::mono(&line, 11.0).color(if selected {
+                                        SELECTED_SOFT_INK
+                                    } else {
+                                        tw::FAINT
+                                    }))
+                                    .truncate()
+                                    .selectable(false),
+                                );
+                            },
+                        );
+                        if needs_stock {
+                            ui.add(icons::icon(Icon::Warning, tw::WARN, 14.0))
+                                .on_hover_text(self.localizer.text("stock-material-without-stock"));
+                        }
+                    },
+                );
+                if row.clicked() {
+                    self.session.stock_material_filter = Some(material.id);
+                    self.session.stock_global_order = false;
+                    self.session.inspector = Some(InspectorTarget::Material(material.id));
+                    if self.session.stock_piece.is_some_and(|id| {
+                        model
+                            .pieces
+                            .iter()
+                            .any(|piece| piece.id == id && piece.material_id != material.id)
+                    }) {
+                        self.session.stock_piece = None;
+                    }
+                }
+                row.context_menu(|ui| {
+                    if ui
+                        .add_enabled(
+                            !modal,
+                            egui::Button::new(self.localizer.text("material-edit-ellipsis")),
+                        )
+                        .clicked()
+                    {
+                        pending = Some(Request::with(
+                            A::EditMaterial,
+                            Target::Material(material.id),
+                        ));
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(!modal, egui::Button::new(self.localizer.text("stock-new")))
+                        .clicked()
+                    {
+                        pending = Some(Request::with(A::NewStock, Target::Material(material.id)));
+                        ui.close();
+                    }
+                });
+            }
+            if let Some(request) = pending {
+                self.invoke_or_report(request);
+            }
+            if !model.materials.is_empty()
+                && !model
+                    .materials
+                    .iter()
+                    .any(|material| material.name.to_lowercase().contains(&query))
+            {
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(self.localizer.text("stock-filter-no-materials"))
+                        .size(12.0)
+                        .color(tw::FAINT),
+                );
+            }
         }
         ui.add_space(12.0);
         tw::divider(ui);

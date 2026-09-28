@@ -1427,7 +1427,8 @@ impl DesktopApp {
 
     pub(crate) fn show_hinge_list(&mut self, ui: &mut egui::Ui) {
         let modal = self.modal_open();
-        egui::Frame::new()
+        let (doors, standalone) = installation_groups(self.editor.project());
+        let open = egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 14,
                 right: 10,
@@ -1435,69 +1436,78 @@ impl DesktopApp {
                 bottom: 0,
             })
             .show(ui, |ui| {
-                tw::section_bar(ui, &self.localizer.text("hardware-doors"), |ui| {
-                    let plus = tw::ghost_icon_sized(
-                        ui,
-                        Icon::Plus,
-                        &self.localizer.text("hardware-add-menu"),
-                        tw::MUTED,
-                        15.0,
-                        24.0,
-                        !modal,
-                        false,
-                    );
-                    egui::Popup::menu(&plus)
-                        .align(egui::RectAlign::BOTTOM_END)
-                        .show(|ui| {
-                            ui.set_min_width(220.0);
-                            self.hardware_add_menu(ui);
-                        });
-                });
-            });
-        let (doors, standalone) = installation_groups(self.editor.project());
-        egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(6, 0))
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
-                if doors.is_empty() && standalone.is_empty() {
-                    egui::Frame::new()
-                        .inner_margin(egui::Margin::symmetric(8, 4))
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(self.localizer.text("hardware-no-hinges"))
-                                    .size(12.0)
-                                    .color(tw::FAINT),
-                            );
-                        });
-                }
-                for (id, children) in doors {
-                    let expanded = self.show_door_group_row(ui, id, children.first().copied());
-                    if expanded {
-                        for child in children {
-                            self.show_hinge_tree_row(ui, child, 16.0);
+                let (open, ()) = tw::collapsible_section_bar(
+                    ui,
+                    egui::Id::new("hardware-doors-section"),
+                    &self.localizer.text("hardware-doors"),
+                    doors.len() + standalone.len(),
+                    |ui| {
+                        let plus = tw::ghost_icon_sized(
+                            ui,
+                            Icon::Plus,
+                            &self.localizer.text("hardware-add-menu"),
+                            tw::MUTED,
+                            15.0,
+                            24.0,
+                            !modal,
+                            false,
+                        );
+                        egui::Popup::menu(&plus)
+                            .align(egui::RectAlign::BOTTOM_END)
+                            .show(|ui| {
+                                ui.set_min_width(220.0);
+                                self.hardware_add_menu(ui);
+                            });
+                    },
+                );
+                open
+            })
+            .inner;
+        if open {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(6, 0))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    if doors.is_empty() && standalone.is_empty() {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(self.localizer.text("hardware-no-hinges"))
+                                        .size(12.0)
+                                        .color(tw::FAINT),
+                                );
+                            });
+                    }
+                    for (id, children) in doors {
+                        let expanded = self.show_door_group_row(ui, id, children.first().copied());
+                        if expanded {
+                            for child in children {
+                                self.show_hinge_tree_row(ui, child, 16.0);
+                            }
                         }
                     }
-                }
-                if !standalone.is_empty() {
-                    egui::Frame::new()
-                        .inner_margin(egui::Margin {
-                            left: 8,
-                            right: 8,
-                            top: 8,
-                            bottom: 2,
-                        })
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(self.localizer.text("hardware-unassigned"))
-                                    .size(11.0)
-                                    .color(tw::FAINT),
-                            );
-                        });
-                    for id in standalone {
-                        self.show_hinge_tree_row(ui, id, 2.0);
+                    if !standalone.is_empty() {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin {
+                                left: 8,
+                                right: 8,
+                                top: 8,
+                                bottom: 2,
+                            })
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(self.localizer.text("hardware-unassigned"))
+                                        .size(11.0)
+                                        .color(tw::FAINT),
+                                );
+                            });
+                        for id in standalone {
+                            self.show_hinge_tree_row(ui, id, 2.0);
+                        }
                     }
-                }
-            });
+                });
+        }
         let project = self.editor.project();
         let mut warnings: Vec<String> = project
             .door_joints

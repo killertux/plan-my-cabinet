@@ -1084,38 +1084,47 @@ impl DesktopApp {
             bottom: 8,
         };
         egui::Frame::new().inner_margin(pad).show(ui, |ui| {
-            theme_widgets::section_bar(ui, &self.localizer.text("design-outliner-title"), |ui| {
-                let plus = theme_widgets::ghost_icon_sized(
-                    ui,
-                    icons::Icon::Plus,
-                    &self.localizer.text("design-add"),
-                    theme_widgets::MUTED,
-                    15.0,
-                    24.0,
-                    !modal,
-                    false,
-                );
-                egui::Popup::menu(&plus)
-                    .align(egui::RectAlign::BOTTOM_END)
-                    .show(|ui| {
-                        ui.set_min_width(200.0);
-                        self.hierarchy_menu(ui, true);
-                    });
-                if theme_widgets::ghost_icon_sized(
-                    ui,
-                    icons::Icon::Search,
-                    &self.localizer.text("palette-title"),
-                    theme_widgets::MUTED,
-                    14.0,
-                    24.0,
-                    !modal,
-                    false,
-                )
-                .clicked()
-                {
-                    self.palette.open(ui.ctx());
-                }
-            });
+            let (open, ()) = theme_widgets::collapsible_section_bar(
+                ui,
+                egui::Id::new("design-outliner-section"),
+                &self.localizer.text("design-outliner-title"),
+                model.outliner.len(),
+                |ui| {
+                    let plus = theme_widgets::ghost_icon_sized(
+                        ui,
+                        icons::Icon::Plus,
+                        &self.localizer.text("design-add"),
+                        theme_widgets::MUTED,
+                        15.0,
+                        24.0,
+                        !modal,
+                        false,
+                    );
+                    egui::Popup::menu(&plus)
+                        .align(egui::RectAlign::BOTTOM_END)
+                        .show(|ui| {
+                            ui.set_min_width(200.0);
+                            self.hierarchy_menu(ui, true);
+                        });
+                    if theme_widgets::ghost_icon_sized(
+                        ui,
+                        icons::Icon::Search,
+                        &self.localizer.text("palette-title"),
+                        theme_widgets::MUTED,
+                        14.0,
+                        24.0,
+                        !modal,
+                        false,
+                    )
+                    .clicked()
+                    {
+                        self.palette.open(ui.ctx());
+                    }
+                },
+            );
+            if !open {
+                return;
+            }
             if model.outliner.is_empty() {
                 ui.label(
                     egui::RichText::new(self.localizer.text("design-empty"))
@@ -1336,23 +1345,32 @@ impl DesktopApp {
         };
         theme_widgets::divider(ui);
         egui::Frame::new().inner_margin(pad).show(ui, |ui| {
-            theme_widgets::section_bar(ui, &self.localizer.text("design-materials-title"), |ui| {
-                if theme_widgets::ghost_icon_sized(
-                    ui,
-                    icons::Icon::Plus,
-                    &A::NewMaterial.label(&self.localizer),
-                    theme_widgets::MUTED,
-                    15.0,
-                    24.0,
-                    self.action_availability(Request::new(A::NewMaterial))
-                        .is_ok(),
-                    false,
-                )
-                .clicked()
-                {
-                    self.invoke_or_report(Request::new(A::NewMaterial));
-                }
-            });
+            let (open, ()) = theme_widgets::collapsible_section_bar(
+                ui,
+                egui::Id::new("design-materials-section"),
+                &self.localizer.text("design-materials-title"),
+                model.materials.len(),
+                |ui| {
+                    if theme_widgets::ghost_icon_sized(
+                        ui,
+                        icons::Icon::Plus,
+                        &A::NewMaterial.label(&self.localizer),
+                        theme_widgets::MUTED,
+                        15.0,
+                        24.0,
+                        self.action_availability(Request::new(A::NewMaterial))
+                            .is_ok(),
+                        false,
+                    )
+                    .clicked()
+                    {
+                        self.invoke_or_report(Request::new(A::NewMaterial));
+                    }
+                },
+            );
+            if !open {
+                return;
+            }
             ui.spacing_mut().item_spacing.y = 0.0;
             for material in &model.materials {
                 let warning = material.unallocated_board_count;
@@ -1434,22 +1452,31 @@ impl DesktopApp {
             .map(|a| a.stock_id)
             .collect();
         egui::Frame::new().inner_margin(pad).show(ui, |ui| {
-            theme_widgets::section_bar(ui, &self.localizer.text("design-stock-title"), |ui| {
-                if theme_widgets::ghost_icon_sized(
-                    ui,
-                    icons::Icon::Plus,
-                    &self.localizer.text("stock-new"),
-                    theme_widgets::MUTED,
-                    15.0,
-                    24.0,
-                    !modal,
-                    false,
-                )
-                .clicked()
-                {
-                    self.invoke_or_report(Request::new(A::NewStock));
-                }
-            });
+            let (open, ()) = theme_widgets::collapsible_section_bar(
+                ui,
+                egui::Id::new("design-stock-section"),
+                &self.localizer.text("design-stock-title"),
+                model.stock.len(),
+                |ui| {
+                    if theme_widgets::ghost_icon_sized(
+                        ui,
+                        icons::Icon::Plus,
+                        &self.localizer.text("stock-new"),
+                        theme_widgets::MUTED,
+                        15.0,
+                        24.0,
+                        !modal,
+                        false,
+                    )
+                    .clicked()
+                    {
+                        self.invoke_or_report(Request::new(A::NewStock));
+                    }
+                },
+            );
+            if !open {
+                return;
+            }
             ui.spacing_mut().item_spacing.y = 0.0;
             if model.stock.is_empty() {
                 ui.label(

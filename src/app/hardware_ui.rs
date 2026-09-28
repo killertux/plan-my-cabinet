@@ -213,7 +213,7 @@ impl DesktopApp {
         let modal = self.modal_open();
         let mut run = None;
         tw::divider(ui);
-        egui::Frame::new()
+        let open = egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 14,
                 right: 10,
@@ -221,183 +221,197 @@ impl DesktopApp {
                 bottom: 0,
             })
             .show(ui, |ui| {
-                tw::section_bar(ui, &self.localizer.text("hardware-list"), |ui| {
-                    let request = Request::new(A::NewHardware);
-                    if tw::ghost_icon_sized(
-                        ui,
-                        Icon::Plus,
-                        &A::NewHardware.label(&self.localizer),
-                        tw::MUTED,
-                        15.0,
-                        24.0,
-                        self.action_availability(request).is_ok(),
-                        false,
-                    )
-                    .clicked()
-                    {
-                        run = Some(request);
-                    }
-                });
-            });
+                let (open, ()) = tw::collapsible_section_bar(
+                    ui,
+                    egui::Id::new("design-hardware-section"),
+                    &self.localizer.text("hardware-list"),
+                    items.len(),
+                    |ui| {
+                        let request = Request::new(A::NewHardware);
+                        if tw::ghost_icon_sized(
+                            ui,
+                            Icon::Plus,
+                            &A::NewHardware.label(&self.localizer),
+                            tw::MUTED,
+                            15.0,
+                            24.0,
+                            self.action_availability(request).is_ok(),
+                            false,
+                        )
+                        .clicked()
+                        {
+                            run = Some(request);
+                        }
+                    },
+                );
+                open
+            })
+            .inner;
         let locale = if self.localizer.language() == Language::En {
             Locale::En
         } else {
             Locale::PtBr
         };
-        egui::Frame::new()
-            .inner_margin(egui::Margin {
-                left: 6,
-                right: 6,
-                top: 0,
-                bottom: 12,
-            })
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
-                for (id, name, dims, catalog_id) in items {
-                    let selected = self.selection.ids.contains(&id);
-                    let active = self.selection.active == Some(id);
-                    let catalog = catalog_id.map(|catalog_id| {
-                        self.editor
-                            .project()
-                            .catalog
-                            .iter()
-                            .find(|entry| entry.id == catalog_id)
-                            .map(|entry| entry.product_id.clone())
-                    });
-                    let detail = match (dims, &catalog) {
-                        (Some(dims), _) => dims
-                            .map(|d| assembly_ui::short_length(d, locale))
-                            .join(" × "),
-                        (None, Some(Some(product))) => product.clone(),
-                        _ => String::new(),
-                    };
-                    let edit = Request::with(A::EditHardware, Target::Object(id));
-                    let duplicate = Request::with(A::DuplicateHardware, Target::Object(id));
-                    let delete = Request::with(A::DeleteHardware, Target::Object(id));
-                    let (response, ()) = tw::list_row(
-                        ui,
-                        egui::Id::new(("hardware-reference-row", id)),
-                        28.0,
-                        if active {
-                            tw::RowState::Active
-                        } else if selected {
-                            tw::RowState::Selected
-                        } else {
-                            tw::RowState::Normal
-                        },
-                        !modal,
-                        &name,
-                        |ui| {
-                            let hovered = ui.rect_contains_pointer(ui.max_rect());
-                            ui.spacing_mut().item_spacing.x = 7.0;
-                            ui.add_space(2.0);
-                            ui.add(crate::icons::icon(
-                                if dims.is_some() {
-                                    Icon::Cube
-                                } else {
-                                    Icon::Hinge
-                                },
-                                if active { tw::ACCENT } else { tw::MUTED },
-                                14.0,
-                            ));
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.spacing_mut().item_spacing.x = 2.0;
-                                    if matches!(catalog, Some(None)) {
-                                        ui.add(crate::icons::icon(Icon::Warning, tw::WARN, 13.0))
+        if open {
+            egui::Frame::new()
+                .inner_margin(egui::Margin {
+                    left: 6,
+                    right: 6,
+                    top: 0,
+                    bottom: 12,
+                })
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for (id, name, dims, catalog_id) in items {
+                        let selected = self.selection.ids.contains(&id);
+                        let active = self.selection.active == Some(id);
+                        let catalog = catalog_id.map(|catalog_id| {
+                            self.editor
+                                .project()
+                                .catalog
+                                .iter()
+                                .find(|entry| entry.id == catalog_id)
+                                .map(|entry| entry.product_id.clone())
+                        });
+                        let detail = match (dims, &catalog) {
+                            (Some(dims), _) => dims
+                                .map(|d| assembly_ui::short_length(d, locale))
+                                .join(" × "),
+                            (None, Some(Some(product))) => product.clone(),
+                            _ => String::new(),
+                        };
+                        let edit = Request::with(A::EditHardware, Target::Object(id));
+                        let duplicate = Request::with(A::DuplicateHardware, Target::Object(id));
+                        let delete = Request::with(A::DeleteHardware, Target::Object(id));
+                        let (response, ()) = tw::list_row(
+                            ui,
+                            egui::Id::new(("hardware-reference-row", id)),
+                            28.0,
+                            if active {
+                                tw::RowState::Active
+                            } else if selected {
+                                tw::RowState::Selected
+                            } else {
+                                tw::RowState::Normal
+                            },
+                            !modal,
+                            &name,
+                            |ui| {
+                                let hovered = ui.rect_contains_pointer(ui.max_rect());
+                                ui.spacing_mut().item_spacing.x = 7.0;
+                                ui.add_space(2.0);
+                                ui.add(crate::icons::icon(
+                                    if dims.is_some() {
+                                        Icon::Cube
+                                    } else {
+                                        Icon::Hinge
+                                    },
+                                    if active { tw::ACCENT } else { tw::MUTED },
+                                    14.0,
+                                ));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.spacing_mut().item_spacing.x = 2.0;
+                                        if matches!(catalog, Some(None)) {
+                                            ui.add(crate::icons::icon(
+                                                Icon::Warning,
+                                                tw::WARN,
+                                                13.0,
+                                            ))
                                             .on_hover_text(
                                                 self.localizer.text("hinge-missing-catalog"),
                                             );
-                                    }
-                                    if hovered && !modal && dims.is_some() {
-                                        for (request, icon, color) in [
-                                            (delete, Icon::Trash, tw::DANGER),
-                                            (duplicate, Icon::Duplicate, tw::SECONDARY),
-                                            (edit, Icon::Sliders, tw::SECONDARY),
-                                        ] {
-                                            if tw::ghost_icon_sized(
-                                                ui,
-                                                icon,
-                                                &request.id.label(&self.localizer),
-                                                color,
-                                                13.0,
-                                                22.0,
-                                                self.action_availability(request).is_ok(),
-                                                false,
-                                            )
-                                            .clicked()
-                                            {
-                                                run = Some(request);
-                                            }
                                         }
-                                    } else if !detail.is_empty() {
-                                        ui.label(tw::mono(&detail, 11.0).color(tw::FAINT));
-                                    }
-                                    ui.with_layout(
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            ui.add(
-                                                egui::Label::new(
-                                                    egui::RichText::new(&name).size(13.0).color(
-                                                        if active {
-                                                            tw::ACCENT_INK
-                                                        } else {
-                                                            tw::TEXT_2
-                                                        },
-                                                    ),
+                                        if hovered && !modal && dims.is_some() {
+                                            for (request, icon, color) in [
+                                                (delete, Icon::Trash, tw::DANGER),
+                                                (duplicate, Icon::Duplicate, tw::SECONDARY),
+                                                (edit, Icon::Sliders, tw::SECONDARY),
+                                            ] {
+                                                if tw::ghost_icon_sized(
+                                                    ui,
+                                                    icon,
+                                                    &request.id.label(&self.localizer),
+                                                    color,
+                                                    13.0,
+                                                    22.0,
+                                                    self.action_availability(request).is_ok(),
+                                                    false,
                                                 )
-                                                .truncate()
-                                                .selectable(false),
-                                            );
-                                        },
-                                    );
-                                },
-                            );
-                        },
-                    );
-                    let response = response.on_hover_text(if detail.is_empty() {
-                        name.clone()
-                    } else {
-                        format!("{name} · {detail}")
-                    });
-                    response.context_menu(|ui| {
-                        let has_selection = !self.selection.ids.is_empty();
-                        for (request, enabled) in [
-                            (edit, dims.is_some()),
-                            (duplicate, dims.is_some()),
-                            (Request::new(A::Group), has_selection),
-                            (Request::new(A::Reparent), has_selection),
-                            (delete, dims.is_some()),
-                        ] {
-                            let label = match request.id {
-                                A::Group => self.localizer.text("assembly-group"),
-                                A::Reparent => self.localizer.text("assembly-parent"),
-                                _ => request.id.label(&self.localizer),
-                            };
-                            if ui
-                                .add_enabled(
-                                    enabled && self.action_availability(request).is_ok(),
-                                    egui::Button::new(label),
-                                )
-                                .clicked()
-                            {
-                                run = Some(request);
-                                ui.close();
-                            }
-                        }
-                    });
-                    if run.is_none() && response.clicked() {
-                        let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-                        run = Some(
-                            Request::with(A::SelectObject, Target::Object(id))
-                                .argument(Argument::Additive(additive)),
+                                                .clicked()
+                                                {
+                                                    run = Some(request);
+                                                }
+                                            }
+                                        } else if !detail.is_empty() {
+                                            ui.label(tw::mono(&detail, 11.0).color(tw::FAINT));
+                                        }
+                                        ui.with_layout(
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        egui::RichText::new(&name)
+                                                            .size(13.0)
+                                                            .color(if active {
+                                                                tw::ACCENT_INK
+                                                            } else {
+                                                                tw::TEXT_2
+                                                            }),
+                                                    )
+                                                    .truncate()
+                                                    .selectable(false),
+                                                );
+                                            },
+                                        );
+                                    },
+                                );
+                            },
                         );
-                    } else if run.is_none() && response.double_clicked() && dims.is_some() {
-                        run = Some(edit);
+                        let response = response.on_hover_text(if detail.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{name} · {detail}")
+                        });
+                        response.context_menu(|ui| {
+                            let has_selection = !self.selection.ids.is_empty();
+                            for (request, enabled) in [
+                                (edit, dims.is_some()),
+                                (duplicate, dims.is_some()),
+                                (Request::new(A::Group), has_selection),
+                                (Request::new(A::Reparent), has_selection),
+                                (delete, dims.is_some()),
+                            ] {
+                                let label = match request.id {
+                                    A::Group => self.localizer.text("assembly-group"),
+                                    A::Reparent => self.localizer.text("assembly-parent"),
+                                    _ => request.id.label(&self.localizer),
+                                };
+                                if ui
+                                    .add_enabled(
+                                        enabled && self.action_availability(request).is_ok(),
+                                        egui::Button::new(label),
+                                    )
+                                    .clicked()
+                                {
+                                    run = Some(request);
+                                    ui.close();
+                                }
+                            }
+                        });
+                        if run.is_none() && response.clicked() {
+                            let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+                            run = Some(
+                                Request::with(A::SelectObject, Target::Object(id))
+                                    .argument(Argument::Additive(additive)),
+                            );
+                        } else if run.is_none() && response.double_clicked() && dims.is_some() {
+                            run = Some(edit);
+                        }
                     }
-                }
-            });
+                });
+        }
         if let Some(request) = run {
             self.invoke_or_report(request);
         }
