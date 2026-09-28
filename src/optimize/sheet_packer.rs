@@ -470,7 +470,7 @@ fn pack_group(
     }
 }
 
-fn material<'a>(project: &'a Project, id: Uuid) -> Option<&'a Material> {
+fn material(project: &Project, id: Uuid) -> Option<&Material> {
     project.materials.iter().find(|m| m.id == id)
 }
 

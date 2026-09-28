@@ -15,26 +15,35 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import time
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
 NAME = "plan-my-cabinet"
 APP = "Plan My Cabinet"
 APP_ID = "org.planmycabinet.PlanMyCabinet"
-TARGETS = {"macos-arm64": "aarch64-apple-darwin", "linux-x86_64": "x86_64-unknown-linux-gnu"}
+TARGETS = {"macos-arm64": "aarch64-apple-darwin", "macos-x86_64": "x86_64-apple-darwin",
+           "linux-x86_64": "x86_64-unknown-linux-gnu", "windows-x86_64": "x86_64-pc-windows-msvc"}
+HOSTS = {"macos-arm64": ("Darwin", "arm64"), "macos-x86_64": ("Darwin", "x86_64"),
+         "linux-x86_64": ("Linux", "x86_64"), "windows-x86_64": ("Windows", "AMD64")}
 RUNTIME = """Plan My Cabinet desktop runtime prerequisites
 
-macOS arm64: a Metal-capable GPU/driver and an interactive desktop session.
+macOS (arm64 or x86_64): a Metal-capable GPU/driver and an interactive desktop
+session.
 Linux x86_64: a working Vulkan GPU/driver, X11 or Wayland desktop session,
 window-system libraries (including X11/Wayland/XKB) and a working XDG Desktop
 Portal backend for native file dialogs. Distribution-specific dynamic libraries
 must be present; inspect the executable with ldd on the target distribution.
+Windows x86_64: a Direct3D 12 or Vulkan capable GPU/driver. The C runtime is
+linked statically when built with the release workflow.
 No account or network connection is needed for core use.
 
 The macOS bundle has only an ad-hoc signature, with no Developer ID signature
 or notarization. Gatekeeper may block launch;
 installers should review the source and artifact before granting an exception.
 Linux archives are not signed or integrated with a package manager.
+The Windows executable is not Authenticode signed; SmartScreen may warn.
 No minimum OS release, GPU model, driver version or Linux distribution has
 been certified by these build steps. See docs/release-checklist.md in source.
 """
@@ -159,11 +168,18 @@ def notices(directory, target):
     write(directory / "CATALOG.txt", "Reviewed factual catalog data compiled into the program:\nFGVTN Click 3D Slow Reta / Calço 0 kit 51MX153DRV00100; plate 52MX15FG11003D.\nSource: FGVTN General Catalog, May 2025, printed page 23 (PDF page 14), modified 2026-09-16.\nSource URL: https://www.fgvtn.com.br/site/novopdf/Catalogo_Geral.pdf\nSource SHA-256: e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2\nSee the bundled hinge-source-review.md for the field-to-source mapping. Manufacturer artwork and PDF are not included. Projects pin their own catalog snapshots.\n")
 
 
+MACHO_CPU = {"aarch64-apple-darwin": 0x0100000C, "x86_64-apple-darwin": 0x01000007}
+
+
 def check_binary(binary, target):
-    data = binary.read_bytes()[:64]
-    if target == "aarch64-apple-darwin":
-        if len(data) < 12 or data[:4] != b"\xcf\xfa\xed\xfe" or struct.unpack_from("<I", data, 4)[0] != 0x0100000C:
-            raise RuntimeError(f"expected arm64 Mach-O: {binary}")
+    data = binary.read_bytes()[:4096]
+    if target in MACHO_CPU:
+        if len(data) < 12 or data[:4] != b"\xcf\xfa\xed\xfe" or struct.unpack_from("<I", data, 4)[0] != MACHO_CPU[target]:
+            raise RuntimeError(f"expected {target} Mach-O: {binary}")
+    elif target == "x86_64-pc-windows-msvc":
+        pe = struct.unpack_from("<I", data, 0x3C)[0] if len(data) >= 0x40 and data[:2] == b"MZ" else None
+        if pe is None or len(data) < pe + 6 or data[pe:pe + 4] != b"PE\0\0" or struct.unpack_from("<H", data, pe + 4)[0] != 0x8664:
+            raise RuntimeError(f"expected x86_64 PE executable: {binary}")
     elif len(data) < 20 or data[:4] != b"\x7fELF" or data[5] != 1 or struct.unpack_from("<H", data, 18)[0] != 62:
         raise RuntimeError(f"expected little-endian x86_64 ELF: {binary}")
 
@@ -184,6 +200,40 @@ def mac_app(stage, binary, version, target):
     # The Rust linker ad-hoc signs the Mach-O alone. Seal the full bundle after
     # adding resources, without implying Developer ID signing/notarization.
     subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)], check=True)
+
+
+def mac_archive(stage, bundle, output, epoch):
+    """The signed bundle in a tarball, for release downloads and install.sh."""
+    with output.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=epoch, compresslevel=9) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as tar:
+                for path in [bundle, *sorted(bundle.rglob("*"))]:
+                    info = tar.gettarinfo(str(path), arcname=path.relative_to(stage).as_posix())
+                    info.mtime = epoch
+                    info.uid = info.gid = 0
+                    info.uname = info.gname = ""
+                    if path.is_file() and not path.is_symlink():
+                        with path.open("rb") as data:
+                            tar.addfile(info, data)
+                    else:
+                        tar.addfile(info)
+
+
+def windows_archive(stage, binary, version, target, output, epoch):
+    folder = stage / f"{NAME}-{version}-windows-x86_64"
+    folder.mkdir()
+    shutil.copyfile(binary, folder / f"{NAME}.exe")
+    notices(folder / "Licenses", target)
+    write(folder / "README.txt", "Extract the archive and run plan-my-cabinet.exe. install.ps1 from the source repository installs it under %LOCALAPPDATA% with a Start menu shortcut. Read Licenses/RUNTIME.txt for prerequisites and unsigned-build limitations.\n")
+    # Zip timestamps start in 1980; clamp the reproducible epoch there.
+    stamp = time.gmtime(max(epoch, 315532800))[:6]
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for path in sorted(folder.rglob("*")):
+            if path.is_file():
+                info = zipfile.ZipInfo(path.relative_to(stage).as_posix(), stamp)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                archive.writestr(info, path.read_bytes())
 
 
 def linux_archive(stage, binary, version, target, output, epoch):
@@ -216,30 +266,42 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("platform", choices=TARGETS)
     parser.add_argument("--out-dir", type=Path, default=ROOT / "dist")
+    parser.add_argument("--archive", action="store_true",
+                        help="macOS: also write the bundle as a versioned .tar.gz for release downloads")
     args = parser.parse_args()
     target = TARGETS[args.platform]
     host = platform.system(), platform.machine()
-    expected = ("Darwin", "arm64") if args.platform == "macos-arm64" else ("Linux", "x86_64")
-    if host != expected:
+    if host != HOSTS[args.platform]:
         installed = run("rustup", "target", "list", "--installed").splitlines()
         if target not in installed:
             parser.error(f"{target} is not installed (host: {host}); no cross-build artifact assembled")
     manifest = json.loads(run("cargo", "metadata", "--locked", "--offline", "--format-version", "1", "--no-deps"))
     version = next(p["version"] for p in manifest["packages"] if p["name"] == NAME)
     subprocess.run(["cargo", "build", "--locked", "--offline", "--release", "--target", target, "--bin", NAME], cwd=ROOT, check=True)
-    binary = Path(manifest["target_directory"]) / target / "release" / NAME
+    binary = Path(manifest["target_directory"]) / target / "release" / (NAME + (".exe" if args.platform.startswith("windows") else ""))
     check_binary(binary, target)
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
     output_dir = args.out_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="package-", dir=output_dir) as temp:
         stage = Path(temp)
-        if args.platform == "macos-arm64":
+        if args.platform.startswith("macos"):
             mac_app(stage, binary, version, target)
+            if args.archive:
+                archive = output_dir / f"{NAME}-{version}-{args.platform}.tar.gz"
+                assembled = stage / archive.name
+                mac_archive(stage, stage / f"{APP}.app", assembled, epoch)
+                os.replace(assembled, archive)
+                print(archive)
             destination = output_dir / f"{APP}.app"
             if destination.exists():
                 shutil.rmtree(destination)
             shutil.move(str(stage / f"{APP}.app"), destination)
+        elif args.platform.startswith("windows"):
+            destination = output_dir / f"{NAME}-{version}-windows-x86_64.zip"
+            assembled = stage / destination.name
+            windows_archive(stage, binary, version, target, assembled, epoch)
+            os.replace(assembled, destination)
         else:
             destination = output_dir / f"{NAME}-{version}-linux-x86_64.tar.gz"
             assembled = stage / destination.name

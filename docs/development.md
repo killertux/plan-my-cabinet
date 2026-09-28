@@ -43,6 +43,13 @@ python3 scripts/package-release.py macos-arm64
 python3 scripts/package-release.py linux-x86_64
 ```
 
+`macos-x86_64` and `windows-x86_64` are also accepted. `--archive` additionally
+writes the macOS bundle as `plan-my-cabinet-<version>-macos-<arch>.tar.gz`; the
+Windows target writes a `.zip` with `plan-my-cabinet.exe` and `Licenses/`.
+Pushing a `v<version>` tag runs `.github/workflows/release.yml`, which builds
+all four packages (Windows with a static C runtime), and publishes them with
+`SHA256SUMS` as a GitHub release for `install.sh` / `install.ps1`.
+
 The script uses `cargo build --locked --offline --release --target` and refuses
 to package a binary whose format/architecture does not match the requested
 artifact. It requires dependencies already cached; cross-builds require the

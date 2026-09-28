@@ -3,8 +3,10 @@
 import importlib.util
 import hashlib
 from pathlib import Path
+import struct
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 
@@ -113,6 +115,49 @@ class DependencyNoticesTest(unittest.TestCase):
             with patch.object(release, "dependency_packages", return_value=packages):
                 with self.assertRaisesRegex(RuntimeError, "conflicting"):
                     release.dependency_notices(base / "conflict", "target")
+
+
+class ReleaseTargetsTest(unittest.TestCase):
+    def test_binary_formats_must_match_the_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "binary"
+            pe = bytearray(512)
+            pe[:2] = b"MZ"
+            struct.pack_into("<I", pe, 0x3C, 0x80)
+            pe[0x80:0x84] = b"PE\0\0"
+            struct.pack_into("<H", pe, 0x84, 0x8664)
+            path.write_bytes(bytes(pe))
+            release.check_binary(path, "x86_64-pc-windows-msvc")
+            with self.assertRaisesRegex(RuntimeError, "ELF"):
+                release.check_binary(path, "x86_64-unknown-linux-gnu")
+            macho = b"\xcf\xfa\xed\xfe" + struct.pack("<I", 0x01000007) + bytes(56)
+            path.write_bytes(macho)
+            release.check_binary(path, "x86_64-apple-darwin")
+            with self.assertRaisesRegex(RuntimeError, "aarch64-apple-darwin"):
+                release.check_binary(path, "aarch64-apple-darwin")
+            with self.assertRaisesRegex(RuntimeError, "PE"):
+                release.check_binary(path, "x86_64-pc-windows-msvc")
+
+    def test_windows_zip_is_repeatable_and_holds_exe_and_notices(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            binary = base / "app.exe"
+            binary.write_bytes(b"MZ executable")
+            outputs = []
+            for name in ("a", "b"):
+                stage = base / name
+                stage.mkdir()
+                output = base / f"{name}.zip"
+                with patch.object(release, "dependency_notices"):
+                    release.windows_archive(stage, binary, "1.2.3", "x86_64-pc-windows-msvc", output, 0)
+                outputs.append(output)
+            self.assertEqual(outputs[0].read_bytes(), outputs[1].read_bytes())
+            with zipfile.ZipFile(outputs[0]) as archive:
+                names = archive.namelist()
+                folder = "plan-my-cabinet-1.2.3-windows-x86_64/"
+                self.assertEqual(archive.read(folder + "plan-my-cabinet.exe"), b"MZ executable")
+                self.assertIn(folder + "Licenses/RUNTIME.txt", names)
+                self.assertIn(folder + "README.txt", names)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 // Production code states its invariants with `expect("why")` or handles the
 // failure; a bare `unwrap` is reserved for tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
+// A release build on Windows is a GUI app: no console window behind it.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use eframe::{egui, egui_wgpu::WgpuSetup, wgpu};
 use fluent_bundle::FluentArgs;

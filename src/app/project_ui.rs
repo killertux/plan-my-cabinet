@@ -95,7 +95,13 @@ pub(crate) fn user_data_dir() -> Option<PathBuf> {
         std::env::var_os("HOME")
             .map(|home| PathBuf::from(home).join("Library/Application Support/Plan My Cabinet"))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .filter(|s| !s.is_empty())
+            .map(|base| PathBuf::from(base).join("PlanMyCabinet"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         std::env::var_os("XDG_DATA_HOME")
             .filter(|s| !s.is_empty())
