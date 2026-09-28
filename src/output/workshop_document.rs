@@ -813,6 +813,8 @@ fn hardware_pages(
         let edge_name = |e: BoardEdge| match e {
             BoardEdge::MinX => "X-",
             BoardEdge::MaxX => "X+",
+            BoardEdge::MinY => "Y-",
+            BoardEdge::MaxY => "Y+",
         };
         builder.paragraph(&format!(
             "{}: {} {} · {} {}: {} ({})",

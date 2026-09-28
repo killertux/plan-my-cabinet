@@ -3,7 +3,9 @@
 use uuid::Uuid;
 
 use crate::commands::{EditError, ProjectEditor};
-use crate::domain::{BoardEdge, BoardFace, HingeArm, HingeInstallation, Project};
+use crate::domain::{
+    BoardEdge, BoardFace, HingeArm, HingeInstallation, HingeMountingSide, Project,
+};
 use crate::hardware_catalog;
 use crate::units::Length;
 
@@ -136,11 +138,41 @@ impl InstallationReferences {
     }
 }
 
-fn along_x(edge: BoardEdge, length: Length, offset: i128) -> i128 {
+/// Board-local XY (micrometres) of a point `offset` in from `edge` and
+/// `along` the edge from its minimum end.
+pub fn edge_point(
+    edge: BoardEdge,
+    length: Length,
+    width: Length,
+    offset: i128,
+    along: i128,
+) -> [i128; 2] {
+    let (l, w) = (
+        i128::from(length.micrometres()),
+        i128::from(width.micrometres()),
+    );
     match edge {
-        BoardEdge::MinX => offset,
-        BoardEdge::MaxX => i128::from(length.micrometres()) - offset,
+        BoardEdge::MinX => [offset, along],
+        BoardEdge::MaxX => [l - offset, along],
+        BoardEdge::MinY => [along, offset],
+        BoardEdge::MaxY => [along, w - offset],
     }
+}
+
+/// Length of the board along `edge`: the room available for hinge positions.
+pub fn edge_length(edge: BoardEdge, length: Length, width: Length) -> Length {
+    if edge.along_axis() == 1 {
+        width
+    } else {
+        length
+    }
+}
+
+fn inside(point: [i128; 2], length: Length, width: Length, margin: [i128; 2]) -> bool {
+    point[0] - margin[0] >= 0
+        && point[0] + margin[0] <= i128::from(length.micrometres())
+        && point[1] - margin[1] >= 0
+        && point[1] + margin[1] <= i128::from(width.micrometres())
 }
 
 fn face_z(face: BoardFace, thickness: Length) -> i128 {
@@ -199,12 +231,14 @@ pub fn diagnose(project: &Project, installation: &HingeInstallation) -> Installa
         // not emit a numeric reference for an unverified K/R combination.
         let radius = i128::from(facts.cup_diameter.micrometres()) / 2;
         let k = i128::from(installation.cup_edge_setback.micrometres());
-        let cup_x = along_x(installation.side.door_edge, door.length, k + radius);
-        let cup_y = i128::from(installation.door_y.micrometres());
-        if cup_x - radius < 0
-            || cup_x + radius > i128::from(door.length.micrometres())
-            || cup_y - radius < 0
-            || cup_y + radius > i128::from(door.width.micrometres())
+        let [cup_x, cup_y] = edge_point(
+            installation.side.door_edge,
+            door.length,
+            door.width,
+            k + radius,
+            i128::from(installation.door_y.micrometres()),
+        );
+        if !inside([cup_x, cup_y], door.length, door.width, [radius, radius])
             || i128::from(facts.cup_depth.micrometres()) > i128::from(door.thickness.micrometres())
         {
             issues.push(InstallationIssue::CupOutsideDoor);
@@ -217,21 +251,31 @@ pub fn diagnose(project: &Project, installation: &HingeInstallation) -> Installa
         } else {
             Length::ZERO
         };
-        let plate_x = along_x(
-            installation.side.mount_front_edge,
+        let front = installation.side.mount_front_edge;
+        let [plate_x, plate_y] = edge_point(
+            front,
             mount.length,
+            mount.width,
             i128::from(facts.plate_front_offset.micrometres())
                 + i128::from(inset_depth.micrometres()),
+            i128::from(installation.mount_y.micrometres()),
         );
-        let plate_y = i128::from(installation.mount_y.micrometres());
+        // The two plate holes sit either side of the centre, along the hinge line.
         let half_pitch = i128::from(facts.plate_hole_pitch.micrometres()) / 2;
-        if plate_x < 0
-            || plate_x > i128::from(mount.length.micrometres())
-            || plate_y - half_pitch < 0
-            || plate_y + half_pitch > i128::from(mount.width.micrometres())
-        {
+        let mut margin = [0, 0];
+        margin[front.along_axis()] = half_pitch;
+        if !inside([plate_x, plate_y], mount.length, mount.width, margin) {
             issues.push(InstallationIssue::PlateOutsideMount);
         }
+        let hole = |sign: i128| {
+            let mut point = [plate_x, plate_y];
+            point[front.along_axis()] += sign * half_pitch;
+            [
+                point[0],
+                point[1],
+                face_z(installation.side.mount_face, mount.thickness),
+            ]
+        };
         if supported {
             references = Some(InstallationReferences {
                 cup_center_um: [
@@ -242,18 +286,7 @@ pub fn diagnose(project: &Project, installation: &HingeInstallation) -> Installa
                 cup_face: installation.side.door_face,
                 cup_diameter: facts.cup_diameter,
                 cup_depth: facts.cup_depth,
-                plate_hole_centers_um: [
-                    [
-                        plate_x,
-                        plate_y - half_pitch,
-                        face_z(installation.side.mount_face, mount.thickness),
-                    ],
-                    [
-                        plate_x,
-                        plate_y + half_pitch,
-                        face_z(installation.side.mount_face, mount.thickness),
-                    ],
-                ],
+                plate_hole_centers_um: [hole(-1), hole(1)],
                 plate_face: installation.side.mount_face,
                 plate_height: facts.plate_height,
                 plate_hole_pitch: facts.plate_hole_pitch,
@@ -361,6 +394,245 @@ pub enum InstallationEditError {
     IncompatibleJoint,
 }
 
+/// Why the door and cabinet side could not be matched automatically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FitError {
+    MissingPart,
+    /// No door edge lies parallel to the side's face, e.g. the side is
+    /// turned 90° to the door.
+    NotParallel,
+    /// The cup's height falls beyond the ends of the side.
+    OutsideMount,
+}
+
+/// A board as a world-space box: origin, local axes and extents in mm.
+struct BoardFrame {
+    origin: [f64; 3],
+    axes: [[f64; 3]; 3],
+    size: [f64; 3],
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+impl BoardFrame {
+    fn new(project: &Project, id: Uuid) -> Option<Self> {
+        let board = project.boards.iter().find(|b| b.id == id)?;
+        let pose = crate::assembly_edit::world_pose(project, id).ok()?;
+        let origin = pose.transform_point([0.0; 3]).ok()?;
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+            .map(|axis| pose.rotation.rotate(axis));
+        let size =
+            [board.length, board.width, board.thickness].map(|v| v.micrometres() as f64 / 1000.0);
+        Some(Self { origin, axes, size })
+    }
+
+    fn world(&self, local: [f64; 3]) -> [f64; 3] {
+        std::array::from_fn(|i| {
+            self.origin[i] + (0..3).map(|a| self.axes[a][i] * local[a]).sum::<f64>()
+        })
+    }
+
+    fn local(&self, world: [f64; 3]) -> [f64; 3] {
+        let d = std::array::from_fn(|i| world[i] - self.origin[i]);
+        self.axes.map(|axis| dot(d, axis))
+    }
+
+    fn centre(&self) -> [f64; 3] {
+        self.world(self.size.map(|v| v / 2.0))
+    }
+
+    /// Distance from a world point to the nearest point of the board.
+    fn distance(&self, world: [f64; 3]) -> f64 {
+        let local = self.local(world);
+        (0..3)
+            .map(|i| (local[i] - local[i].clamp(0.0, self.size[i])).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
+
+    /// World midpoint of an edge, on the mid-thickness plane.
+    fn edge_mid(&self, edge: BoardEdge) -> [f64; 3] {
+        let [l, w, t] = self.size;
+        self.world(match edge {
+            BoardEdge::MinX => [0.0, w / 2.0, t / 2.0],
+            BoardEdge::MaxX => [l, w / 2.0, t / 2.0],
+            BoardEdge::MinY => [l / 2.0, 0.0, t / 2.0],
+            BoardEdge::MaxY => [l / 2.0, w, t / 2.0],
+        })
+    }
+}
+
+/// Mounting sides and plate position that line the plate up with a cup
+/// `door_y` along the door's hinge edge, found from where the two boards sit
+/// in the model: the hinge edge is the door edge nearest the side, the cup
+/// goes on the door face toward the side, the plate on the side face toward
+/// the door, measured from the side's edge nearest the door.
+pub fn fit(
+    project: &Project,
+    door_id: Uuid,
+    mount_id: Uuid,
+    door_y: Length,
+) -> Result<(HingeMountingSide, Length), FitError> {
+    let door = BoardFrame::new(project, door_id).ok_or(FitError::MissingPart)?;
+    let mount = BoardFrame::new(project, mount_id).ok_or(FitError::MissingPart)?;
+    let door_edge = BoardEdge::ALL
+        .into_iter()
+        .filter(|edge| {
+            let along = door.axes[edge.along_axis()];
+            dot(along, mount.axes[2]).abs() < 0.02
+                && (0..2).any(|a| dot(along, mount.axes[a]).abs() > 0.999)
+        })
+        .min_by(|a, b| {
+            mount
+                .distance(door.edge_mid(*a))
+                .total_cmp(&mount.distance(door.edge_mid(*b)))
+        })
+        .ok_or(FitError::NotParallel)?;
+    let hinge_line = door.axes[door_edge.along_axis()];
+    let mount_along = if dot(hinge_line, mount.axes[1]).abs() > 0.999 {
+        1
+    } else {
+        0
+    };
+    let front_candidates = if mount_along == 1 {
+        [BoardEdge::MinX, BoardEdge::MaxX]
+    } else {
+        [BoardEdge::MinY, BoardEdge::MaxY]
+    };
+    let [a, b] = front_candidates.map(|edge| door.distance(mount.edge_mid(edge)));
+    let mount_front_edge = if a <= b {
+        front_candidates[0]
+    } else {
+        front_candidates[1]
+    };
+    let (door_centre, mount_centre) = (door.centre(), mount.centre());
+    let towards = |from: [f64; 3], to: [f64; 3]| std::array::from_fn(|i| to[i] - from[i]);
+    let face = |positive: bool| {
+        if positive {
+            BoardFace::MaxZ
+        } else {
+            BoardFace::MinZ
+        }
+    };
+    let side = HingeMountingSide {
+        door_edge,
+        door_face: face(dot(door.axes[2], towards(door_centre, mount_centre)) >= 0.0),
+        mount_front_edge,
+        mount_face: face(dot(mount.axes[2], towards(mount_centre, door_centre)) >= 0.0),
+    };
+    let [x, y] = edge_point(
+        door_edge,
+        Length::from_micrometres((door.size[0] * 1000.0).round() as i64),
+        Length::from_micrometres((door.size[1] * 1000.0).round() as i64),
+        0,
+        i128::from(door_y.micrometres()),
+    )
+    .map(|v| v as f64 / 1000.0);
+    let along = mount.local(door.world([x, y, 0.0]))[mount_along];
+    if along < -0.0005 || along > mount.size[mount_along] + 0.0005 {
+        return Err(FitError::OutsideMount);
+    }
+    let mount_y = Length::from_micrometres((along.max(0.0) * 1000.0).round() as i64);
+    Ok((side, mount_y))
+}
+
+/// The board a door most likely hangs from: the nearest board standing at
+/// right angles to it that a hinge can be fitted to, preferring the door's
+/// long edges (a neighbouring door in the same plane never qualifies).
+pub fn likely_mount(project: &Project, door_id: Uuid) -> Option<Uuid> {
+    let door = BoardFrame::new(project, door_id)?;
+    project
+        .boards
+        .iter()
+        .filter(|b| b.id != door_id)
+        .filter_map(|b| {
+            let mount = BoardFrame::new(project, b.id)?;
+            if dot(door.axes[2], mount.axes[2]).abs() > 0.02 {
+                return None;
+            }
+            // Probe halfway along either door axis: one is the hinge edge.
+            let (side, _) = door.size[..2].iter().find_map(|half| {
+                let y = Length::from_micrometres((half * 500.0).round() as i64);
+                fit(project, door_id, b.id, y).ok()
+            })?;
+            // Doors normally hang from a long edge; top-hung flaps are rarer.
+            let along = side.door_edge.along_axis();
+            let short_edge = door.size[along] < door.size[1 - along];
+            Some((
+                short_edge,
+                mount.distance(door.edge_mid(side.door_edge)),
+                b.id,
+            ))
+        })
+        .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
+        .map(|(_, _, id)| id)
+}
+
+/// The same hinge with its sides and plate refitted for its door position.
+pub fn fitted(
+    project: &Project,
+    installation: &HingeInstallation,
+) -> Result<HingeInstallation, FitError> {
+    let (side, mount_y) = fit(
+        project,
+        installation.door_board_id,
+        installation.mounting_board_id,
+        installation.door_y,
+    )?;
+    Ok(HingeInstallation {
+        side,
+        mount_y,
+        ..installation.clone()
+    })
+}
+
+/// Usual number of hinges for a door edge of this length.
+pub fn recommended_count(edge: Length) -> usize {
+    match edge.micrometres() {
+        ..=900_000 => 2,
+        900_001..=1_500_000 => 3,
+        1_500_001..=2_000_000 => 4,
+        _ => 5,
+    }
+}
+
+/// `count` hinge positions along an edge: 100 mm in from each end (less on
+/// short doors), the rest evenly between, rounded to whole millimetres.
+pub fn standard_positions(edge: Length, count: usize) -> Vec<Length> {
+    let edge = edge.micrometres();
+    let end = 100_000.min(edge / 4);
+    let mm = |um: i64| Length::from_micrometres((um + 500).div_euclid(1000) * 1000);
+    match count {
+        0 => Vec::new(),
+        1 => vec![mm(edge / 2)],
+        n => (0..n)
+            .map(|i| mm(end + (edge - 2 * end) * i as i64 / (n as i64 - 1)))
+            .collect(),
+    }
+}
+
+/// A free spot for one more hinge on the door: of the standard positions
+/// for one more hinge (at least two), the first that lies farthest from the
+/// existing ones.
+pub fn next_position(edge: Length, taken: &[Length]) -> Length {
+    let gap = |candidate: Length| {
+        taken
+            .iter()
+            .map(|t| (t.micrometres() - candidate.micrometres()).abs())
+            .min()
+            .unwrap_or(i64::MAX)
+    };
+    standard_positions(edge, (taken.len() + 1).max(2))
+        .into_iter()
+        .fold(None, |best: Option<Length>, candidate| match best {
+            Some(best) if gap(best) >= gap(candidate) => Some(best),
+            _ => Some(candidate),
+        })
+        .unwrap_or(Length::ZERO)
+}
+
 fn check_inputs(i: &HingeInstallation) -> Result<(), InstallationEditError> {
     if [
         i.door_y,
@@ -434,6 +706,86 @@ pub fn update(
             .find(|i| i.id == id)
             .expect("committed installation"),
     ))
+}
+
+/// Move a hinge to `door_y` on its door and bring its plate along. The plate
+/// and sides are refitted from the model when possible; otherwise the plate
+/// moves by the same distance as the cup.
+pub fn move_to(
+    editor: &mut ProjectEditor,
+    id: Uuid,
+    door_y: Length,
+) -> Result<InstallationStatus, EditError<InstallationEditError>> {
+    let current = editor
+        .project()
+        .hinge_installations
+        .iter()
+        .find(|i| i.id == id)
+        .cloned()
+        .ok_or(EditError::Command(
+            InstallationEditError::MissingInstallation,
+        ))?;
+    update(editor, placed(editor.project(), &current, door_y))
+}
+
+fn placed(project: &Project, current: &HingeInstallation, door_y: Length) -> HingeInstallation {
+    let moved = HingeInstallation {
+        door_y,
+        ..current.clone()
+    };
+    fitted(project, &moved).unwrap_or_else(|_| HingeInstallation {
+        mount_y: Length::from_micrometres(
+            (current.mount_y.micrometres() + door_y.micrometres() - current.door_y.micrometres())
+                .max(0),
+        ),
+        ..moved
+    })
+}
+
+/// Spread every hinge on a door evenly along its hinge edge, in their
+/// current order, and line each plate up. One undo step.
+pub fn space_evenly(
+    editor: &mut ProjectEditor,
+    door_board_id: Uuid,
+) -> Result<bool, EditError<InstallationEditError>> {
+    let project = editor.project();
+    let mut hinges: Vec<_> = project
+        .hinge_installations
+        .iter()
+        .filter(|i| i.door_board_id == door_board_id)
+        .cloned()
+        .collect();
+    let door = project
+        .boards
+        .iter()
+        .find(|b| b.id == door_board_id)
+        .ok_or(EditError::Command(
+            InstallationEditError::MissingInstallation,
+        ))?;
+    let Some(first) = hinges.first() else {
+        return Err(EditError::Command(
+            InstallationEditError::MissingInstallation,
+        ));
+    };
+    let edge = edge_length(first.side.door_edge, door.length, door.width);
+    hinges.sort_by_key(|h| h.door_y);
+    let positions = standard_positions(edge, hinges.len());
+    let moved: Vec<_> = hinges
+        .iter()
+        .zip(positions)
+        .map(|(hinge, y)| placed(project, hinge, y))
+        .collect();
+    for hinge in &moved {
+        check_inputs(hinge).map_err(EditError::Command)?;
+    }
+    editor.transact(|p| {
+        for hinge in moved {
+            if let Some(slot) = p.hinge_installations.iter_mut().find(|i| i.id == hinge.id) {
+                *slot = hinge;
+            }
+        }
+        crate::door_joint::validate_joints(p).map_err(|_| InstallationEditError::IncompatibleJoint)
+    })
 }
 
 pub fn remove(
@@ -513,6 +865,138 @@ mod tests {
         };
         p.catalog.push(catalog);
         (p, i)
+    }
+
+    /// World cup centre and plate centre of a fitted hinge.
+    fn world_points(p: &Project, i: &HingeInstallation) -> ([f64; 3], [f64; 3]) {
+        let status = diagnose(p, i);
+        assert!(status.issues.is_empty(), "{:?}", status.issues);
+        let r = status.references.unwrap();
+        let door = BoardFrame::new(p, i.door_board_id).unwrap();
+        let mount = BoardFrame::new(p, i.mounting_board_id).unwrap();
+        let w = |frame: &BoardFrame, v: [i128; 3]| frame.world(v.map(|n| n as f64 / 1000.0));
+        let [a, b] = r.plate_hole_centers_um.map(|h| w(&mount, h));
+        (
+            w(&door, r.cup_center_um),
+            std::array::from_fn(|k| (a[k] + b[k]) / 2.0),
+        )
+    }
+
+    #[test]
+    fn fit_reproduces_the_reference_cabinet_hinges() {
+        let p = crate::reference_fixture::project();
+        for original in &p.hinge_installations {
+            let refit = fitted(&p, original).unwrap();
+            assert_eq!(refit.side.door_edge, original.side.door_edge);
+            assert_eq!(refit.side.door_face, original.side.door_face);
+            assert_eq!(refit.side.mount_face, original.side.mount_face);
+            // Doors start 2 mm above the sides.
+            assert_eq!(refit.mount_y, mm(original.door_y.micrometres() / 1000 + 2));
+        }
+    }
+
+    #[test]
+    fn fit_lines_up_plate_on_a_side_whose_height_runs_along_x() {
+        // Template sides: local X is height, Y is depth (front at Y = 0), Z
+        // points out of the cabinet. The door stands in front, grain upright.
+        let (mut p, mut i) = fixture();
+        let side = Quaternion::normalized(1.0, 0.0, -1.0, 0.0).unwrap();
+        let upright = Quaternion::normalized(1.0, 1.0, 0.0, 0.0).unwrap();
+        p.boards[1].length = mm(720);
+        p.boards[1].width = mm(560);
+        p.boards[1].pose = Pose::new([18.0, 0.0, 0.0], side).unwrap();
+        p.boards[0].length = mm(400);
+        p.boards[0].width = mm(716);
+        p.boards[0].pose = Pose::new([0.0, 0.0, 2.0], upright).unwrap();
+        i.door_y = mm(100);
+        let fit = fitted(&p, &i).unwrap();
+        assert_eq!(fit.side.door_edge, BoardEdge::MinX);
+        assert_eq!(fit.side.mount_front_edge, BoardEdge::MinY);
+        assert_eq!(fit.mount_y, mm(102));
+        let (cup, plate) = world_points(&p, &fit);
+        // Same height, plate inside the cabinet behind the door's hinge edge.
+        assert!((cup[2] - plate[2]).abs() < 1e-6, "{cup:?} {plate:?}");
+        assert!(plate[0] > 0.0 && plate[0] < 18.0 + 1e-6 && plate[1] > 0.0);
+    }
+
+    #[test]
+    fn fit_refuses_a_side_turned_across_the_door() {
+        let (mut p, i) = fixture();
+        // Turned 45° about Z: no door edge runs along the side.
+        let turn = std::f64::consts::FRAC_PI_8;
+        p.boards[1].pose = Pose::new(
+            [0.0, 0.0, 0.0],
+            Quaternion::normalized(turn.cos(), 0.0, 0.0, turn.sin()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            fit(&p, i.door_board_id, i.mounting_board_id, i.door_y),
+            Err(FitError::NotParallel)
+        );
+    }
+
+    #[test]
+    fn likely_mount_is_the_side_not_the_neighbouring_door() {
+        let p = crate::reference_fixture::project();
+        use crate::reference_fixture::{LEFT_DOOR_ID, RIGHT_DOOR_ID};
+        let side = |door| {
+            p.hinge_installations
+                .iter()
+                .find(|h| h.door_board_id == door)
+                .unwrap()
+                .mounting_board_id
+        };
+        assert_eq!(likely_mount(&p, LEFT_DOOR_ID), Some(side(LEFT_DOOR_ID)));
+        assert_eq!(likely_mount(&p, RIGHT_DOOR_ID), Some(side(RIGHT_DOOR_ID)));
+    }
+
+    #[test]
+    fn standard_positions_keep_100_mm_ends_and_even_gaps() {
+        assert_eq!(standard_positions(mm(716), 2), vec![mm(100), mm(616)]);
+        assert_eq!(
+            standard_positions(mm(1400), 3),
+            vec![mm(100), mm(700), mm(1300)]
+        );
+        assert_eq!(standard_positions(mm(200), 2), vec![mm(50), mm(150)]);
+        assert_eq!(recommended_count(mm(716)), 2);
+        assert_eq!(recommended_count(mm(1800)), 4);
+        assert_eq!(next_position(mm(716), &[]), mm(100));
+        assert_eq!(next_position(mm(716), &[mm(100)]), mm(616));
+        assert_eq!(next_position(mm(716), &[mm(100), mm(616)]), mm(358));
+    }
+
+    #[test]
+    fn moving_a_hinge_brings_its_plate_and_spacing_is_one_undo() {
+        let p = crate::reference_fixture::project();
+        let mut editor = ProjectEditor::new(p).unwrap();
+        let first = editor.project().hinge_installations[0].id;
+        let left = &editor.project().door_joints[0];
+        assert!(!crate::door_joint::needs_review(editor.project(), left));
+        move_to(&mut editor, first, mm(150)).unwrap();
+        let moved = &editor.project().hinge_installations[0];
+        assert_eq!((moved.door_y, moved.mount_y), (mm(150), mm(152)));
+        let door = moved.door_board_id;
+        let revision = editor.project().revision;
+        assert!(space_evenly(&mut editor, door).unwrap());
+        assert_eq!(editor.project().revision, revision + 1);
+        let ys: Vec<_> = editor
+            .project()
+            .hinge_installations
+            .iter()
+            .filter(|h| h.door_board_id == door)
+            .map(|h| (h.door_y, h.mount_y))
+            .collect();
+        assert_eq!(ys, vec![(mm(100), mm(102)), (mm(616), mm(618))]);
+        // Sliding hinges along the hinge line leaves the door confirmed.
+        let joint = editor
+            .project()
+            .door_joints
+            .iter()
+            .find(|j| j.moving_root_id == door)
+            .unwrap();
+        assert!(!crate::door_joint::needs_review(editor.project(), joint));
+        editor.undo().unwrap();
+        assert_eq!(editor.project().hinge_installations[0].door_y, mm(150));
     }
 
     #[test]

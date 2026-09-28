@@ -294,10 +294,25 @@ pub struct DoorJoint {
     pub axis_direction: [f64; 3],
 }
 
+/// A board edge. MinX/MaxX run along local Y; MinY/MaxY run along local X.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BoardEdge {
     MinX,
     MaxX,
+    MinY,
+    MaxY,
+}
+
+impl BoardEdge {
+    pub const ALL: [Self; 4] = [Self::MinX, Self::MaxX, Self::MinY, Self::MaxY];
+
+    /// Local axis the edge runs along (0 = X, 1 = Y).
+    pub const fn along_axis(self) -> usize {
+        match self {
+            Self::MinX | Self::MaxX => 1,
+            Self::MinY | Self::MaxY => 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

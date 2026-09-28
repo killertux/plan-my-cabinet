@@ -1,6 +1,6 @@
 //! Paint-only hardware references. No cutting or drilling primitives enter the scene mesh.
 use super::*;
-use plan_my_cabinet::domain::{BoardEdge, BoardFace, HingeInstallation};
+use plan_my_cabinet::domain::{BoardFace, HingeInstallation};
 use plan_my_cabinet::hinge_installation::{self, InstallationIssue};
 use plan_my_cabinet::units::Pose;
 
@@ -52,18 +52,18 @@ fn guide(
     let mount_visible = selection.visible(project, installation.mounting_board_id);
     let axis = if relationship && door_visible {
         door.zip(door_pose).and_then(|(board, pose)| {
-            let x = match installation.side.door_edge {
-                BoardEdge::MinX => 0,
-                BoardEdge::MaxX => i128::from(board.length.micrometres()),
-            };
             let z = match installation.side.door_face {
                 BoardFace::MinZ => 0,
                 BoardFace::MaxZ => i128::from(board.thickness.micrometres()),
             };
-            Some([
-                world(pose, [x, 0, z])?,
-                world(pose, [x, i128::from(board.width.micrometres()), z])?,
-            ])
+            let edge = installation.side.door_edge;
+            let end = |along: i128| {
+                let [x, y] =
+                    hinge_installation::edge_point(edge, board.length, board.width, 0, along);
+                world(pose, [x, y, z])
+            };
+            let span = hinge_installation::edge_length(edge, board.length, board.width);
+            Some([end(0)?, end(i128::from(span.micrometres()))?])
         })
     } else {
         None

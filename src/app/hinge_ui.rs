@@ -5,7 +5,7 @@ use crate::*;
 use plan_my_cabinet::domain::{
     BoardEdge, BoardFace, CatalogReference, HingeInstallation, HingeMountingSide, Project,
 };
-use plan_my_cabinet::hinge_installation::{self, InstallationIssue, InstallationStatus};
+use plan_my_cabinet::hinge_installation::{self, FitError, InstallationIssue, InstallationStatus};
 
 pub(crate) struct HingeDialog {
     id: Option<Uuid>,
@@ -19,6 +19,13 @@ pub(crate) struct HingeDialog {
     values: [String; 4],
     /// E for inset arms: side front edge to the door's inside face.
     inset_depth: String,
+    /// Derive the edges, faces and plate Y from the model.
+    auto: bool,
+    /// Suggest the door position until it is typed (new hinges only).
+    door_y_auto: bool,
+    /// Suggest the cabinet side from the door until one is picked.
+    mount_auto: bool,
+    fit_error: Option<FitError>,
     error: bool,
     chrome: ModalChrome,
 }
@@ -57,6 +64,8 @@ fn edge_label(localizer: &Localizer, edge: BoardEdge) -> String {
     localizer.text(match edge {
         BoardEdge::MinX => "hinge-min-x",
         BoardEdge::MaxX => "hinge-max-x",
+        BoardEdge::MinY => "hinge-min-y",
+        BoardEdge::MaxY => "hinge-max-y",
     })
 }
 
@@ -71,6 +80,8 @@ fn short_edge(localizer: &Localizer, edge: BoardEdge) -> String {
     localizer.text(match edge {
         BoardEdge::MinX => "hardware-edge-min-x",
         BoardEdge::MaxX => "hardware-edge-max-x",
+        BoardEdge::MinY => "hardware-edge-min-y",
+        BoardEdge::MaxY => "hardware-edge-max-y",
     })
 }
 
@@ -582,17 +593,28 @@ impl HingeDialog {
             .filter(|c| hardware_catalog::is_verified(c))
             .and_then(|c| c.verified_hinge.as_ref())
             .and_then(|facts| facts.overlay_by_cup_edge.first());
-        Self {
+        // A new hinge starts on the selected board, hung from its likely side.
+        let door = old.map(|i| i.door_board_id).or_else(|| {
+            app.selection
+                .active
+                .filter(|id| boards.iter().any(|b| b.id == *id))
+                .or_else(|| boards.first().map(|b| b.id))
+        });
+        let mount = old.map(|i| i.mounting_board_id).or_else(|| {
+            door.and_then(|door| hinge_installation::likely_mount(project, door))
+                .or_else(|| boards.iter().find(|b| Some(b.id) != door).map(|b| b.id))
+        });
+        let auto = old.is_none_or(|old| {
+            hinge_installation::fitted(project, old)
+                .is_ok_and(|fit| fit.side == old.side && fit.mount_y == old.mount_y)
+        });
+        let mut dialog = Self {
             id,
             new_id: Uuid::new_v4(),
             project_id: project.id,
             revision: project.revision,
-            door: old
-                .map(|i| i.door_board_id)
-                .or_else(|| boards.first().map(|b| b.id)),
-            mount: old
-                .map(|i| i.mounting_board_id)
-                .or_else(|| boards.get(1).map(|b| b.id)),
+            door,
+            mount,
             catalog,
             side: old.map_or(
                 HingeMountingSide {
@@ -630,10 +652,60 @@ impl HingeDialog {
                 },
                 |i| mm(i.inset_depth),
             ),
+            auto,
+            door_y_auto: old.is_none(),
+            mount_auto: old.is_none(),
+            fit_error: None,
             error: false,
             chrome: ModalChrome::new(egui::Id::new("hinge-dialog"))
                 .first_focus(egui::Id::new(("hinge-value-field", 0)))
                 .width(560.0),
+        };
+        dialog.refit(project);
+        dialog
+    }
+
+    /// Re-derive what is automatic: the side for a new door, the door
+    /// position, then the edges, faces and plate Y from the model.
+    fn refit(&mut self, project: &Project) {
+        self.fit_error = None;
+        if !self.auto {
+            return;
+        }
+        let (Some(door), Some(mount)) = (self.door, self.mount) else {
+            self.fit_error = Some(FitError::MissingPart);
+            return;
+        };
+        let Some(board) = project.boards.iter().find(|b| b.id == door) else {
+            self.fit_error = Some(FitError::MissingPart);
+            return;
+        };
+        if self.door_y_auto {
+            let probe = |y: Length| hinge_installation::fit(project, door, mount, y).ok();
+            let side = [board.width, board.length]
+                .iter()
+                .find_map(|half| probe(Length::from_micrometres(half.micrometres() / 2)));
+            if let Some((side, _)) = side {
+                let taken: Vec<_> = project
+                    .hinge_installations
+                    .iter()
+                    .filter(|h| h.door_board_id == door && Some(h.id) != self.id)
+                    .map(|h| h.door_y)
+                    .collect();
+                let edge =
+                    hinge_installation::edge_length(side.door_edge, board.length, board.width);
+                self.values[0] = mm(hinge_installation::next_position(edge, &taken));
+            }
+        }
+        let Some(door_y) = distance(&self.values[0]) else {
+            return;
+        };
+        match hinge_installation::fit(project, door, mount, door_y) {
+            Ok((side, mount_y)) => {
+                self.side = side;
+                self.values[1] = mm(mount_y);
+            }
+            Err(error) => self.fit_error = Some(error),
         }
     }
 
@@ -1687,6 +1759,44 @@ impl DesktopApp {
         let mut run = None;
         let mut commit_y: [Option<Length>; 2] = [None, None];
         let mut commit_pair = None;
+        let refit = hinge_installation::fitted(project, &installation).ok();
+        let lined_up = refit
+            .as_ref()
+            .map_or(installation.mount_y == installation.door_y, |f| {
+                f.side == installation.side && f.mount_y == installation.mount_y
+            });
+        // Spacing: offered once the door has two hinges off the standard spots.
+        let door_hinges: Vec<_> = project
+            .hinge_installations
+            .iter()
+            .filter(|h| h.door_board_id == installation.door_board_id)
+            .map(|h| h.door_y)
+            .collect();
+        let edge = project
+            .boards
+            .iter()
+            .find(|b| b.id == installation.door_board_id)
+            .map(|door| {
+                hinge_installation::edge_length(
+                    installation.side.door_edge,
+                    door.length,
+                    door.width,
+                )
+            });
+        let spacing = edge.filter(|&edge| {
+            let mut current = door_hinges.clone();
+            current.sort();
+            current.len() >= 2
+                && current != hinge_installation::standard_positions(edge, current.len())
+        });
+        let recommended = edge
+            .map(hinge_installation::recommended_count)
+            .filter(|&count| door_hinges.len() < count);
+        enum Placement {
+            LineUp,
+            Space,
+        }
+        let mut placement = None;
 
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -1799,11 +1909,15 @@ impl DesktopApp {
                     0,
                     &localizer.text("hardware-position-y"),
                     installation.door_y,
-                    &localizer.text("hardware-from-y-edge"),
+                    &localizer.text(if installation.side.door_edge.along_axis() == 1 {
+                        "hardware-from-y-edge"
+                    } else {
+                        "hardware-from-x-edge"
+                    }),
                     editable,
                 );
-                let plate_differs = installation.mount_y != installation.door_y
-                    || ui.data(|d| d.get_temp::<String>(y_draft_id(id, 1)).is_some());
+                let plate_differs =
+                    !lined_up || ui.data(|d| d.get_temp::<String>(y_draft_id(id, 1)).is_some());
                 if plate_differs {
                     commit_y[1] = self.inspector_y_field(
                         ui,
@@ -1814,6 +1928,46 @@ impl DesktopApp {
                         "mm",
                         editable,
                     );
+                }
+                let line_up = !lined_up && refit.is_some();
+                if line_up || spacing.is_some() || recommended.is_some() {
+                    ui.add_space(2.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                        if line_up
+                            && tw::secondary_button_enabled(
+                                ui,
+                                &localizer.text("hardware-line-up"),
+                                editable,
+                            )
+                            .on_hover_text(localizer.text("hardware-line-up-hint"))
+                            .clicked()
+                        {
+                            placement = Some(Placement::LineUp);
+                        }
+                        if spacing.is_some()
+                            && tw::secondary_button_enabled(
+                                ui,
+                                &localizer.text("hardware-space-evenly"),
+                                editable,
+                            )
+                            .on_hover_text(localizer.text("hardware-space-evenly-hint"))
+                            .clicked()
+                        {
+                            placement = Some(Placement::Space);
+                        }
+                    });
+                    if let Some(count) = recommended {
+                        let mut args = FluentArgs::new();
+                        args.set("count", count);
+                        ui.label(
+                            egui::RichText::new(
+                                localizer.format("hardware-recommended-count", Some(&args)),
+                            )
+                            .size(11.5)
+                            .color(tw::MUTED),
+                        );
+                    }
                 }
 
                 ui.add_space(4.0);
@@ -2072,7 +2226,17 @@ impl DesktopApp {
                 i.overlay = r;
             });
         } else if let Some(value) = commit_y[0] {
-            self.apply_installation_edit(id, |i| i.door_y = value);
+            // The plate follows the cup.
+            let _ = hinge_installation::move_to(&mut self.editor, id, value);
+        } else if let Some(placement) = placement {
+            let _ = match placement {
+                Placement::LineUp => refit
+                    .map(|refit| hinge_installation::update(&mut self.editor, refit).map(|_| true))
+                    .unwrap_or(Ok(false)),
+                Placement::Space => {
+                    hinge_installation::space_evenly(&mut self.editor, installation.door_board_id)
+                }
+            };
         } else if let Some(value) = commit_y[1] {
             self.apply_installation_edit(id, |i| i.mount_y = value);
         }
@@ -2105,6 +2269,7 @@ impl DesktopApp {
                 let half = ((ui.available_width() - gap) / 2.0).max(80.0);
                 let project = self.editor.project();
                 let localizer = &self.localizer;
+                let (door_before, mount_before) = (draft.door, draft.mount);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     for (key, selected) in [
@@ -2139,6 +2304,15 @@ impl DesktopApp {
                         );
                     }
                 });
+                if draft.mount != mount_before {
+                    draft.mount_auto = false;
+                }
+                if draft.door != door_before && draft.mount_auto {
+                    draft.mount = draft
+                        .door
+                        .and_then(|door| hinge_installation::likely_mount(project, door));
+                }
+                draft.refit(project);
                 ui.add_space(8.0);
                 field_label(ui, &localizer.text("hinge-kit"));
                 let name = draft
@@ -2171,7 +2345,7 @@ impl DesktopApp {
                                 .width(half)
                                 .selected_text(edge_label(localizer, *edge))
                                 .show_ui(ui, |ui| {
-                                    for value in [BoardEdge::MinX, BoardEdge::MaxX] {
+                                    for value in BoardEdge::ALL {
                                         crate::combo_option(
                                             ui,
                                             edge,
@@ -2205,15 +2379,36 @@ impl DesktopApp {
                         },
                     );
                 };
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    edge_combo(ui, "hinge-door-edge", &mut draft.side.door_edge);
-                    face_combo(ui, "hinge-door-face", &mut draft.side.door_face);
-                });
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    edge_combo(ui, "hinge-front-edge", &mut draft.side.mount_front_edge);
-                    face_combo(ui, "hinge-mount-face", &mut draft.side.mount_face);
+                if ui
+                    .checkbox(&mut draft.auto, localizer.text("hinge-auto-fit"))
+                    .on_hover_text(localizer.text("hinge-auto-fit-hint"))
+                    .changed()
+                {
+                    draft.refit(project);
+                }
+                if let Some(error) = draft.fit_error.filter(|_| draft.auto) {
+                    warn_text(
+                        ui,
+                        localizer.text(match error {
+                            FitError::MissingPart => "hinge-fit-missing",
+                            FitError::NotParallel => "hinge-fit-not-parallel",
+                            FitError::OutsideMount => "hinge-fit-outside",
+                        }),
+                    );
+                }
+                let fitted = draft.auto && draft.fit_error.is_none();
+                ui.add_space(4.0);
+                ui.add_enabled_ui(!fitted, |ui| {
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = gap;
+                        edge_combo(ui, "hinge-door-edge", &mut draft.side.door_edge);
+                        face_combo(ui, "hinge-door-face", &mut draft.side.door_face);
+                    });
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = gap;
+                        edge_combo(ui, "hinge-front-edge", &mut draft.side.mount_front_edge);
+                        face_combo(ui, "hinge-mount-face", &mut draft.side.mount_face);
+                    });
                 });
                 if let Some(entry) = draft
                     .catalog
@@ -2273,7 +2468,7 @@ impl DesktopApp {
                                 if invalid {
                                     invalid_key = Some(*key);
                                 }
-                                tw::value_field(
+                                let response = tw::value_field(
                                     ui,
                                     egui::Id::new(("hinge-value-field", index)),
                                     &localizer.text(key),
@@ -2281,10 +2476,13 @@ impl DesktopApp {
                                     quarter,
                                     Some("mm"),
                                     None,
-                                    true,
+                                    !(index == 1 && fitted),
                                     invalid,
                                 )
                                 .on_hover_text(localizer.text(key));
+                                if index == 0 && response.changed() {
+                                    draft.door_y_auto = false;
+                                }
                             },
                         );
                     }
@@ -2326,6 +2524,8 @@ impl DesktopApp {
                         .color(tw::DANGER),
                     );
                 }
+                // A door position typed this frame moves the plate before preview.
+                draft.refit(project);
                 ui.add_space(8.0);
                 let proposed = current.then(|| draft.proposed(self)).flatten();
                 if let Some(ref proposed) = proposed {

@@ -86,6 +86,7 @@ fn valid_and_unsupported_preview_and_refresh() {
     );
     assert!(unsupported.references.is_none());
     let id = proposed.catalog_id;
+    let door_y = proposed.door_y;
     hinge_installation::create(&mut app.editor, proposed).unwrap();
     let (_, statuses) =
         hardware_catalog::update_from_builtin_with_status(&mut app.editor, id).unwrap();
@@ -109,10 +110,8 @@ fn valid_and_unsupported_preview_and_refresh() {
             .issues
             .contains(&InstallationIssue::CupOutsideDoor)
     );
-    assert_eq!(
-        app.editor.project().hinge_installations[0].door_y,
-        Length::from_micrometres(50_000)
-    );
+    // Refreshing the catalog never moves the hinge.
+    assert_eq!(app.editor.project().hinge_installations[0].door_y, door_y);
 }
 
 fn inspector_text(app: &mut DesktopApp, id: Uuid) -> String {
@@ -402,4 +401,35 @@ fn independent_draft_coordinates_and_pairs_never_commit_on_preview() {
     draft.values[0] = "1/64 in".into();
     assert!(draft.proposed(&app).is_none());
     assert_eq!(app.editor.project(), &before);
+}
+
+#[test]
+fn new_hinge_finds_the_side_a_free_spot_and_lines_up() {
+    use plan_my_cabinet::reference_fixture::{LEFT_DOOR_ID, LEFT_SIDE_ID};
+    let mut app = DesktopApp {
+        editor: ProjectEditor::new(plan_my_cabinet::reference_fixture::project()).unwrap(),
+        ..Default::default()
+    };
+    app.selection.active = Some(LEFT_DOOR_ID);
+    let draft = HingeDialog::new(&app, None);
+    assert_eq!(
+        (draft.door, draft.mount),
+        (Some(LEFT_DOOR_ID), Some(LEFT_SIDE_ID))
+    );
+    assert!(draft.auto && draft.fit_error.is_none());
+    let proposed = draft.proposed(&app).unwrap();
+    // The door already has hinges at 100 and 616 mm; the plate follows the
+    // cup up the 2 mm the door sits above the side.
+    assert_eq!(proposed.door_y, Length::from_micrometres(358_000));
+    assert_eq!(proposed.mount_y, Length::from_micrometres(360_000));
+    assert_eq!(
+        proposed.side,
+        app.editor.project().hinge_installations[0].side
+    );
+    assert!(
+        hinge_installation::preview(app.editor.project(), &proposed)
+            .unwrap()
+            .issues
+            .is_empty()
+    );
 }

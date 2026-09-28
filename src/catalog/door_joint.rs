@@ -227,10 +227,6 @@ pub fn preview(
         .find(|b| b.id == hinge.door_board_id)
         .ok_or(JointError::MissingRoot)?;
     let door_world = world_pose(project, door.id).map_err(|_| JointError::InvalidPose)?;
-    let x = match hinge.side.door_edge {
-        BoardEdge::MinX => 0.0,
-        BoardEdge::MaxX => door.length.micrometres() as f64 / 1000.0,
-    };
     // Approximate fixed axis: the cup-face edge for overlay doors. An inset
     // door sits between the sides and swings out about its front edge, so
     // the axis moves to the opposite (outside) face.
@@ -249,17 +245,34 @@ pub fn preview(
         BoardFace::MinZ => 0.0,
         BoardFace::MaxZ => door.thickness.micrometres() as f64 / 1000.0,
     };
+    let [x, y] = crate::hinge_installation::edge_point(
+        hinge.side.door_edge,
+        door.length,
+        door.width,
+        0,
+        i128::from(hinge.door_y.micrometres()),
+    )
+    .map(|v| v as f64 / 1000.0);
     let origin = door_world
-        .transform_point([x, hinge.door_y.micrometres() as f64 / 1000.0, z])
+        .transform_point([x, y, z])
         .map_err(|_| JointError::InvalidAxis)?;
     // Positive opening moves the free edge away from the inside cup face.
     // A global sign would open one of a mirrored pair into the cabinet.
     // Persisted legacy axes are not rewritten: needs_review compares them
     // with this proposal and requires an explicit undoable reconfirmation.
-    let direction = match (hinge.side.door_edge, hinge.side.door_face) {
-        (BoardEdge::MinX, BoardFace::MinZ) | (BoardEdge::MaxX, BoardFace::MaxZ) => -1.0,
-        _ => 1.0,
+    // Axis = inward (hinge edge toward the free edge) × outward (away from
+    // the cup face), so that d × inward points away from the cabinet.
+    let inward: [f64; 3] = match hinge.side.door_edge {
+        BoardEdge::MinX => [1.0, 0.0, 0.0],
+        BoardEdge::MaxX => [-1.0, 0.0, 0.0],
+        BoardEdge::MinY => [0.0, 1.0, 0.0],
+        BoardEdge::MaxY => [0.0, -1.0, 0.0],
     };
+    let outward = match hinge.side.door_face {
+        BoardFace::MinZ => 1.0,
+        BoardFace::MaxZ => -1.0,
+    };
+    let direction = [inward[1] * outward, -inward[0] * outward, 0.0];
     let joint = DoorJoint {
         id,
         moving_root_id: root,
@@ -268,7 +281,7 @@ pub fn preview(
         closed_world_pose: world,
         closed_local_pose: local,
         axis_origin_mm: origin,
-        axis_direction: door_world.rotation.rotate([0.0, direction, 0.0]),
+        axis_direction: door_world.rotation.rotate(direction),
     };
     check(project, &joint)?;
     let mut candidate = project.clone();
@@ -335,6 +348,18 @@ pub fn remove(editor: &mut ProjectEditor, id: Uuid) -> Result<bool, EditError<Jo
 }
 
 /// Closed-pose drift and installation diagnostics are read-only review signals.
+/// Whether two axis origins lie on one line along `direction`: sliding a
+/// hinge along the door moves the origin but not the axis.
+fn same_line(a: [f64; 3], b: [f64; 3], direction: [f64; 3]) -> bool {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = [
+        d[1] * direction[2] - d[2] * direction[1],
+        d[2] * direction[0] - d[0] * direction[2],
+        d[0] * direction[1] - d[1] * direction[0],
+    ];
+    cross.iter().all(|v| v.abs() < 1e-6)
+}
+
 pub fn needs_review(project: &Project, joint: &DoorJoint) -> bool {
     local_pose(project, joint.moving_root_id) != Some(joint.closed_local_pose)
         || world_pose(project, joint.moving_root_id).ok() != Some(joint.closed_world_pose)
@@ -346,8 +371,12 @@ pub fn needs_review(project: &Project, joint: &DoorJoint) -> bool {
             joint.hinge_installation_ids.clone(),
         )
         .is_ok_and(|fresh| {
-            fresh.joint.axis_origin_mm == joint.axis_origin_mm
-                && fresh.joint.axis_direction == joint.axis_direction
+            fresh.joint.axis_direction == joint.axis_direction
+                && same_line(
+                    fresh.joint.axis_origin_mm,
+                    joint.axis_origin_mm,
+                    joint.axis_direction,
+                )
         })
         || joint.hinge_installation_ids.iter().any(|id| {
             project
