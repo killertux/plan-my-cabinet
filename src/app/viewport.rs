@@ -157,6 +157,11 @@ pub struct MoveTool {
     pub mode: ToolMode,
     pub face_snap: bool,
     pub grid_snap: bool,
+    /// Set by the host each frame: face handles are offered only when a
+    /// resize could be committed (Design, no other edit in progress).
+    pub resize_enabled: bool,
+    resize: Option<resize::ResizeDrag>,
+    resize_hover: Option<(usize, bool)>,
     grid_edit_requested: bool,
     drag: Option<MoveDrag>,
     capture_snap: Option<CaptureSnap>,
@@ -193,6 +198,9 @@ impl Default for MoveTool {
             mode: ToolMode::Navigate,
             face_snap: true,
             grid_snap: true,
+            resize_enabled: false,
+            resize: None,
+            resize_hover: None,
             grid_edit_requested: false,
             drag: None,
             capture_snap: None,
@@ -235,6 +243,7 @@ pub struct SelectionProposal {
 pub struct ViewportInteraction {
     pub drag: Option<DragAction>,
     pub selection: Option<SelectionProposal>,
+    pub resize: Option<ResizeAction>,
 }
 
 impl MoveTool {
@@ -354,6 +363,10 @@ impl MoveTool {
     }
     pub(crate) fn dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    pub fn resizing(&self) -> bool {
+        self.resize.is_some()
     }
 
     pub fn cancel(&mut self) -> Option<DragAction> {
@@ -1102,7 +1115,9 @@ mod annotations;
 mod canvas;
 mod controls;
 mod hardware_annotations;
+mod resize;
 mod scene_render;
+pub use resize::{ResizeAction, ResizeRequest};
 pub use scene_render::install;
 #[cfg(test)]
 use scene_render::scene_with_faces;
@@ -1242,6 +1257,10 @@ pub fn show_move_with_hardware(
         material_tint,
         rect,
     );
+    if !modal && !overlay_blocked && !hardware_workspace {
+        let handles = resize::handles(project, camera, rect, selection, tool);
+        resize::paint(ui, tool, &handles);
+    }
     annotations::paint(
         ui,
         camera,

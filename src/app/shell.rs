@@ -1060,6 +1060,18 @@ impl DesktopApp {
                 })
                 .map(|poses| poses.into_iter().collect::<std::collections::HashMap<_, _>>())
         });
+        // Face handles only when a resize can be committed right away: Design,
+        // nothing else previewing, and no unfinished dimension draft that the
+        // drag would silently overtake.
+        let tool = &self.design.move_tool;
+        self.design.move_tool.resize_enabled = self.session.active == Workspace::Design
+            && !modal
+            && (tool.resizing() || self.editor.preview().is_none())
+            && self.selection.active.is_none_or(|id| {
+                self.edit_drafts
+                    .existing_board(self.editor.project().id, id)
+                    .is_none_or(|draft| !draft.dirty())
+            });
         let surface = ui.allocate_ui_with_layout(
             ui.available_size(),
             egui::Layout::top_down(egui::Align::Min),
@@ -1131,10 +1143,64 @@ impl DesktopApp {
             }
             None => {}
         }
+        match action.resize {
+            Some(viewport::ResizeAction::Preview(request)) => self.preview_resize(request),
+            Some(viewport::ResizeAction::Accept(request)) => self.accept_resize(request),
+            Some(viewport::ResizeAction::Cancel) => self.editor.cancel_preview(),
+            None => {}
+        }
+        if action.resize.is_some() {
+            ui.ctx().request_repaint();
+        }
         // A collapsed pane is a foreground drawer. Keep the app-owned draft
         // alive, but do not let the HUD cover its close/actions or a modal.
         if self.session.active == Workspace::Design && self.design_hud_available() {
             self.show_design_hud(ui.ctx(), surface.response.rect);
+        }
+    }
+
+    /// Show a proposed size live: the editor preview holds the resized board
+    /// (same pose rule as the committed edit) until the drag ends.
+    pub(crate) fn preview_resize(&mut self, request: viewport::ResizeRequest) {
+        use plan_my_cabinet::board_dimensions::BoardDimension;
+        let Ok(preview) = self.editor.preview_board_dimension(
+            request.board_id,
+            request.dimension,
+            request.value,
+            request.anchor,
+        ) else {
+            return;
+        };
+        if self.editor.preview().is_none() {
+            self.editor.begin_preview();
+        }
+        let _ = self.editor.update_preview(|project| -> Result<(), ()> {
+            let board = project.board_mut(request.board_id).ok_or(())?;
+            board.pose = preview.pose;
+            match request.dimension {
+                BoardDimension::Length => board.length = request.value,
+                BoardDimension::Width => board.width = request.value,
+                BoardDimension::Thickness => board.thickness = request.value,
+            }
+            Ok(())
+        });
+    }
+
+    /// Commit the dragged size as one undoable edit, from the committed
+    /// project (the preview was only for display).
+    pub(crate) fn accept_resize(&mut self, request: viewport::ResizeRequest) {
+        self.editor.cancel_preview();
+        match self.editor.preview_board_dimension(
+            request.board_id,
+            request.dimension,
+            request.value,
+            request.anchor,
+        ) {
+            Ok(preview) => match self.editor.edit_board_dimension(preview) {
+                Ok(conflicts) => self.cut_plan.material_conflicts = conflicts,
+                Err(error) => self.report_edit(Err::<(), _>(error)),
+            },
+            Err(_) => self.toasts.error(self.localizer.text("toast-edit-rejected")),
         }
     }
 

@@ -163,7 +163,31 @@ Goal: clear boundaries and smaller files. The build and tests stay green after e
    - Give the bin tests a shared `test_ctx()` that installs the fonts.
    - Give the `release_cabinet` optimizer deadline headroom under load.
 
-## Phase 4 — UX
+## Phase 4 — UX — done
+
+What was done:
+- **4.1** The Cut plan searches on its own: 600 ms of quiet on a new revision/objective,
+  once per revision, only while the plan is visible and nothing blocks it. Results still
+  need Compare/Accept. Captures and app-level tests keep the manual start.
+- **4.2** `theme_widgets::empty_state`: Cut plan offers New board or Add sheet;
+  Handoff and Hardware without boards offer New board. `--capture-project empty` was
+  added to review these screens.
+- **4.3** Face handles on the single selected board in Design (length and width faces;
+  thickness stays with the material).
+  - Dragging previews live through the editor preview. Release commits one
+    `edit_board_dimension` and Esc cancels. Snapping follows the grid, whole mm without
+    grid snap, and 0.1 mm with Alt.
+  - Handles are hidden while another edit, preview or dirty dimension draft is open.
+  - Fixed on the way: a focused canvas called `orbit(0, 0)` every frame, which clamped
+    the pitch and dropped the Top/Front preset.
+- **4.4** Changes:
+  - Save works during door motion. A background search no longer blocks Save, New or
+    Open.
+  - PDF sheet drawings use the full width, label cuts on their own line and label thin
+    parts.
+  - The Position dialog's old workspace buttons stay removed: the rail remains
+    usable while it is open.
+
 
 1. **Automatic re-optimization.**
    - When the design or stock changes, start the optimizer after a 600 ms debounce.

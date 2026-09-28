@@ -28,13 +28,32 @@ pub(super) fn interact_with_selection(
         }
         camera.pending_frame = false;
     }
+    let handles = if modal {
+        Vec::new()
+    } else {
+        resize::handles(project, camera, rect, selection, tool)
+    };
     if modal {
         action = tool.cancel();
+        if tool.resize.take().is_some() {
+            interaction.resize = Some(ResizeAction::Cancel);
+        }
     } else {
+        // Face handles take the drag before moving or orbiting.
+        let resizing = resize::interact(
+            ui,
+            &response,
+            project,
+            selection.active,
+            tool,
+            &handles,
+            &mut interaction,
+        );
         if tool.drag.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             action = tool.cancel();
         }
         if action.is_none()
+            && !resizing
             && tool.mode == ToolMode::Move
             && !preview_active
             && response.drag_started_by(egui::PointerButton::Primary)
@@ -101,6 +120,8 @@ pub(super) fn interact_with_selection(
             }
         }
         if tool.drag.is_none()
+            && !resizing
+            && tool.resize_hover.is_none()
             && !ui.input(|i| i.pointer.any_down())
             && let Some(pointer) = response.hover_pos()
         {
@@ -139,6 +160,7 @@ pub(super) fn interact_with_selection(
         {
             camera.pan(delta.x as f64, delta.y as f64, rect.height() as f64);
         } else if response.dragged_by(egui::PointerButton::Primary)
+            && !resizing
             && (tool.mode != ToolMode::Move || preview_active)
         {
             camera.orbit(delta.x as f64, delta.y as f64);
@@ -198,10 +220,14 @@ pub(super) fn interact_with_selection(
                 let y = (i.key_pressed(egui::Key::ArrowDown) as i32
                     - i.key_pressed(egui::Key::ArrowUp) as i32) as f64
                     * step;
-                if i.modifiers.shift {
-                    camera.pan(x, y, rect.height() as f64);
-                } else {
-                    camera.orbit(x, y);
+                // Only an actual arrow press moves the view: orbiting by zero
+                // would still clamp the pitch and drop the named preset.
+                if x != 0.0 || y != 0.0 {
+                    if i.modifiers.shift {
+                        camera.pan(x, y, rect.height() as f64);
+                    } else {
+                        camera.orbit(x, y);
+                    }
                 }
                 if i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals) {
                     camera.zoom(1.2);

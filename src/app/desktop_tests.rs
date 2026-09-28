@@ -4351,3 +4351,31 @@ fn keyboard_combo_selection_closes_popup_without_dismissing_dialog() {
     assert!(!cancel);
     assert!(!egui::Popup::is_id_open(&ctx, popup_id.unwrap()));
 }
+
+#[test]
+fn dragging_a_face_handle_previews_live_and_commits_one_undoable_resize() {
+    use plan_my_cabinet::board_dimensions::BoardDimension;
+    let mut app = navigation_app();
+    let board = app.editor.project().boards[0].clone();
+    let revision = app.editor.project().revision;
+    let longer = Length::from_micrometres(board.length.micrometres() + 50_000);
+    let request = viewport::ResizeRequest {
+        board_id: board.id,
+        dimension: BoardDimension::Length,
+        value: longer,
+        anchor: plan_my_cabinet::units::Anchor::Start,
+    };
+    app.preview_resize(request);
+    let shown = app.editor.preview().unwrap().board(board.id).unwrap();
+    assert_eq!(shown.length, longer, "the viewport shows the new size");
+    assert_eq!(shown.pose, board.pose, "the start face stays put");
+    assert_eq!(app.editor.project().board(board.id).unwrap().length, board.length);
+    assert_eq!(app.editor.project().revision, revision, "previews never commit");
+
+    app.accept_resize(request);
+    assert!(app.editor.preview().is_none());
+    assert_eq!(app.editor.project().board(board.id).unwrap().length, longer);
+    assert_eq!(app.editor.project().revision, revision + 1, "one edit");
+    app.invoke(Request::new(A::Undo)).unwrap();
+    assert_eq!(app.editor.project().board(board.id).unwrap().length, board.length);
+}
