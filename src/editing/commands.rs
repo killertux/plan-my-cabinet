@@ -510,6 +510,7 @@ mod tests {
             revision: "1".into(),
             installation_dimensions: HashMap::new(),
             verified_hinge: None,
+            origin: None,
         });
         p.hardware.push(Hardware {
             id: Uuid::new_v4(),

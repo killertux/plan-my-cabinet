@@ -1,98 +1,129 @@
-//! Offline factual catalog. No manufacturer artwork, PDF, or runtime requests.
-//! Evidence: docs/hinge-source-review.md, visually inspected printed p. 23.
-
-use std::collections::HashMap;
+//! Hinge records pinned into projects, and how far their facts can be trusted.
+//!
+//! Records come from catalog packs (`catalog_pack`). A project keeps its own
+//! copy, so a changed or missing pack never alters a saved project. Trust is
+//! derived, never stored: a record is `Reviewed` only while it equals a
+//! record of a reviewed pack compiled into this application.
+use std::sync::OnceLock;
 
 use uuid::Uuid;
 
+use crate::catalog_pack::{CatalogRegistry, ReviewStatus, snapshot};
 use crate::commands::{EditError, ProjectEditor};
-use crate::domain::{CatalogReference, OverlaySetting, Project, UnavailableDetail, VerifiedHinge};
+use crate::domain::{CatalogReference, Project, VerifiedHinge};
 use crate::hinge_installation::{InstallationStatus, diagnose};
 use crate::units::Length;
 
+/// The first reviewed kit, kept as named anchors for its source review
+/// (`docs/hinge-source-review.md`) and for tests.
 pub const KIT_ID: &str = "51MX153DRV00100";
 pub const PLATE_ID: &str = "52MX15FG11003D";
 pub const SOURCE_URL: &str = "https://www.fgvtn.com.br/site/novopdf/Catalogo_Geral.pdf";
 pub const SOURCE_SHA256: &str = "e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2";
 
-fn mm(value: i64) -> Length {
-    Length::from_micrometres(value * 1_000)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trust {
+    /// Equals a record of a reviewed pack bundled with the application.
+    Reviewed,
+    /// Coherent facts from a user pack, an older bundled revision or a draft.
+    /// Guidance is given and labelled as user-supplied data.
+    UserSupplied,
 }
 
-/// Frozen reviewed revision: keep this validator available when a future
-/// packaged catalog selects a newer record, so old pinned projects still open.
-fn reviewed_2025_hinge() -> CatalogReference {
-    CatalogReference {
-        id: Uuid::new_v4(),
-        name: "FGVTN Click 3D Slow Reta / Calço 0 (complete kit)".into(),
-        product_id: KIT_ID.into(),
-        plate_id: Some(PLATE_ID.into()),
-        source: SOURCE_URL.into(),
-        revision: format!("May 2025 catalog; modified 2026-09-16; SHA-256 {SOURCE_SHA256}"),
-        // The legacy dimension bag is deliberately empty. Typed facts have named
-        // coordinate references; an arbitrary key must not become drilling advice.
-        installation_dimensions: HashMap::new(),
-        verified_hinge: Some(VerifiedHinge {
-            printed_page: 23,
-            pdf_page: 14,
-            source_sha256: SOURCE_SHA256.into(),
-            attribution: "FGVTN General Catalog, Click 3D Slow, printed p. 23".into(),
-            plate_height: Length::ZERO,
-            overlay_by_cup_edge: (3..=6)
-                .map(|k| OverlaySetting {
-                    cup_edge_setback: mm(k),
-                    overlay: mm(k + 12),
-                })
-                .collect(),
-            door_thickness_min: mm(15),
-            door_thickness_max: mm(22),
-            cup_diameter: mm(35),
-            cup_depth: Length::from_micrometres(11_300),
-            plate_hole_pitch: mm(32),
-            plate_front_offset: mm(37),
-            opening_limit_degrees: 105,
-            screw_details: UnavailableDetail::Unavailable,
-        }),
-    }
+fn bundled() -> &'static CatalogRegistry {
+    static REGISTRY: OnceLock<CatalogRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(CatalogRegistry::bundled)
 }
 
-/// A new ID belongs to the project snapshot, never to the bundled catalog.
-pub fn builtin_hinge() -> CatalogReference {
-    reviewed_2025_hinge()
+/// Every record of the bundled reviewed packs, as snapshots.
+fn reviewed_records() -> &'static [CatalogReference] {
+    static RECORDS: OnceLock<Vec<CatalogReference>> = OnceLock::new();
+    RECORDS.get_or_init(|| {
+        let mut records = Vec::new();
+        for pack in bundled().usable() {
+            if pack.review.status != ReviewStatus::Reviewed {
+                continue;
+            }
+            for family in &pack.hinges {
+                for variant in &family.variants {
+                    records.push(snapshot(pack, family, variant, "en"));
+                }
+            }
+        }
+        records
+    })
 }
 
-/// A typed supported claim must match the reviewed source and *all* dimensions.
-/// User-provided legacy records remain usable as references, never as a verified kit.
+fn same_facts(a: &CatalogReference, b: &CatalogReference) -> bool {
+    a.product_id == b.product_id
+        && a.plate_id == b.plate_id
+        && a.source == b.source
+        && a.revision == b.revision
+        && a.installation_dimensions.is_empty()
+        && a.verified_hinge == b.verified_hinge
+}
+
+/// Pinned facts usable for numeric guidance: present and internally
+/// consistent. Legacy free-form dimension maps never qualify.
+pub fn facts(entry: &CatalogReference) -> Option<&VerifiedHinge> {
+    entry.verified_hinge.as_ref().filter(|facts| {
+        entry.installation_dimensions.is_empty() && crate::catalog_pack::facts_are_consistent(facts)
+    })
+}
+
 pub fn is_verified(entry: &CatalogReference) -> bool {
-    let baseline = reviewed_2025_hinge();
-    entry.product_id == baseline.product_id
-        && entry.plate_id == baseline.plate_id
-        && entry.source == baseline.source
-        && entry.revision == baseline.revision
-        && entry.installation_dimensions.is_empty()
-        && entry.verified_hinge == baseline.verified_hinge
+    facts(entry).is_some()
+}
+
+/// `None` when the record gives no guidance at all.
+pub fn trust(entry: &CatalogReference) -> Option<Trust> {
+    facts(entry)?;
+    Some(
+        if reviewed_records()
+            .iter()
+            .any(|record| same_facts(entry, record))
+        {
+            Trust::Reviewed
+        } else {
+            Trust::UserSupplied
+        },
+    )
+}
+
+/// The first reviewed kit (Click 3D Slow Reta / Calço 0) with a fresh ID.
+pub fn builtin_hinge() -> CatalogReference {
+    let mut entry = reviewed_records()
+        .iter()
+        .find(|r| r.product_id == KIT_ID)
+        .cloned()
+        .expect("bundled FGVTN pack lists the reviewed kit");
+    entry.id = Uuid::new_v4();
+    entry
 }
 
 pub fn supported_setting(entry: &CatalogReference, setback: Length, overlay: Length) -> bool {
-    is_verified(entry)
-        && entry.verified_hinge.as_ref().is_some_and(|facts| {
-            facts
-                .overlay_by_cup_edge
-                .iter()
-                .any(|setting| setting.cup_edge_setback == setback && setting.overlay == overlay)
-        })
+    facts(entry).is_some_and(|facts| {
+        facts
+            .overlay_by_cup_edge
+            .iter()
+            .any(|setting| setting.cup_edge_setback == setback && setting.overlay == overlay)
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogEditError {
     MissingEntry,
-    InvalidBuiltin,
+    /// No loaded pack has a record to replace this one with.
+    NotInCatalog,
     DependentInstallation(String),
 }
 
-/// Add the bundled record as an independent project-owned snapshot.
-pub fn add_builtin(editor: &mut ProjectEditor) -> Result<Uuid, EditError<CatalogEditError>> {
-    let entry = builtin_hinge();
+/// Add a pack record as an independent project-owned snapshot.
+pub fn add(
+    editor: &mut ProjectEditor,
+    mut entry: CatalogReference,
+) -> Result<Uuid, EditError<CatalogEditError>> {
+    entry.id = Uuid::new_v4();
     let id = entry.id;
     editor.transact(|project| {
         project.catalog.push(entry);
@@ -101,14 +132,52 @@ pub fn add_builtin(editor: &mut ProjectEditor) -> Result<Uuid, EditError<Catalog
     Ok(id)
 }
 
+pub fn add_builtin(editor: &mut ProjectEditor) -> Result<Uuid, EditError<CatalogEditError>> {
+    add(editor, builtin_hinge())
+}
+
+/// The record `registry` would replace `entry` with, if it differs. Records
+/// from before catalog packs are matched to a bundled one by product code.
+pub fn replacement(
+    registry: &CatalogRegistry,
+    entry: &CatalogReference,
+    language: &str,
+) -> Option<CatalogReference> {
+    let mut fresh = match &entry.origin {
+        Some(origin) => {
+            let (pack, family, variant) = registry.find_variant(origin)?;
+            snapshot(pack, family, variant, language)
+        }
+        None => registry.usable().into_iter().find_map(|pack| {
+            pack.hinges.iter().find_map(|family| {
+                family
+                    .variants
+                    .iter()
+                    .find(|v| v.code == entry.product_id)
+                    .map(|variant| snapshot(pack, family, variant, language))
+            })
+        })?,
+    };
+    fresh.id = entry.id;
+    Some(fresh)
+}
+
+/// A newer pack record exists for this pinned entry.
+pub fn update_available(registry: &CatalogRegistry, entry: &CatalogReference) -> bool {
+    replacement(registry, entry, "en")
+        .is_some_and(|fresh| !same_facts(entry, &fresh) || fresh.origin != entry.origin)
+}
+
 /// Explicit replacement, retaining the project-local ID and recomputing every
 /// dependent installation's diagnostics in the same candidate transaction.
-pub fn update_from_builtin_with_status(
+pub fn update_from_catalog_with_status(
     editor: &mut ProjectEditor,
+    registry: &CatalogRegistry,
     catalog_id: Uuid,
+    language: &str,
 ) -> Result<(bool, Vec<InstallationStatus>), EditError<CatalogEditError>> {
     let mut statuses = Vec::new();
-    let changed = update_from_builtin(editor, catalog_id, |candidate, _| {
+    let changed = update_from_catalog(editor, registry, catalog_id, language, |candidate, _| {
         statuses = candidate
             .hinge_installations
             .iter()
@@ -120,18 +189,40 @@ pub fn update_from_builtin_with_status(
     Ok((changed, statuses))
 }
 
-/// Compatibility hook for existing hardware callers. Installation diagnosis
-/// always runs before the hook, regardless of what the caller does with it.
+/// Compatibility entry point: replace from the bundled packs.
 pub fn update_from_builtin(
     editor: &mut ProjectEditor,
     catalog_id: Uuid,
+    validate_installations: impl FnMut(&Project, &[Uuid]) -> Result<(), String>,
+) -> Result<bool, EditError<CatalogEditError>> {
+    update_from_catalog(editor, bundled(), catalog_id, "en", validate_installations)
+}
+
+pub fn update_from_builtin_with_status(
+    editor: &mut ProjectEditor,
+    catalog_id: Uuid,
+) -> Result<(bool, Vec<InstallationStatus>), EditError<CatalogEditError>> {
+    update_from_catalog_with_status(editor, bundled(), catalog_id, "en")
+}
+
+/// Installation diagnosis always runs before the hook, regardless of what
+/// the caller does with it.
+pub fn update_from_catalog(
+    editor: &mut ProjectEditor,
+    registry: &CatalogRegistry,
+    catalog_id: Uuid,
+    language: &str,
     mut validate_installations: impl FnMut(&Project, &[Uuid]) -> Result<(), String>,
 ) -> Result<bool, EditError<CatalogEditError>> {
-    let mut replacement = builtin_hinge();
-    if !is_verified(&replacement) {
-        return Err(EditError::Command(CatalogEditError::InvalidBuiltin));
-    }
-    replacement.id = catalog_id;
+    let current = editor
+        .project()
+        .catalog
+        .iter()
+        .find(|entry| entry.id == catalog_id)
+        .ok_or(EditError::Command(CatalogEditError::MissingEntry))?;
+    let replacement = replacement(registry, current, language)
+        .filter(is_verified)
+        .ok_or(EditError::Command(CatalogEditError::NotInCatalog))?;
     editor.transact(|candidate| {
         let entry = candidate
             .catalog
@@ -163,10 +254,14 @@ pub fn update_from_builtin(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{DomainError, Hardware, HardwareKind};
+    use crate::domain::{CatalogReference, DomainError, Hardware, HardwareKind, UnavailableDetail};
     use crate::money::Currency;
     use crate::persistence::{prepare_bytes, save};
     use crate::units::{Pose, Quaternion};
+
+    fn mm(value: i64) -> Length {
+        Length::from_micrometres(value * 1_000)
+    }
 
     #[test]
     fn source_fixture_and_supported_geometry_are_exact() {
@@ -242,24 +337,43 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_variants_and_modified_facts_cannot_borrow_baseline() {
+    fn modified_facts_lose_reviewed_trust_and_incoherent_facts_are_rejected() {
         let baseline = builtin_hinge();
-        for change in 0..5 {
+        assert_eq!(trust(&baseline), Some(Trust::Reviewed));
+        // A renamed copy keeps its trust: the name is the user's label.
+        let mut renamed = baseline.clone();
+        renamed.name = "Kitchen hinge".into();
+        assert_eq!(trust(&renamed), Some(Trust::Reviewed));
+        for change in 0..4 {
             let mut entry = baseline.clone();
             match change {
                 0 => entry.product_id = "51MX153DCV00100".into(),
                 1 => entry.plate_id = None,
                 2 => entry.verified_hinge.as_mut().unwrap().cup_depth = mm(12),
-                3 => entry.verified_hinge.as_mut().unwrap().source_sha256 = "other".into(),
+                _ => entry.verified_hinge.as_mut().unwrap().source_sha256 = "0".repeat(64),
+            }
+            // Coherent but different facts: still usable, labelled as user data.
+            assert_eq!(trust(&entry), Some(Trust::UserSupplied), "change {change}");
+            let mut project = Project::new("Edited", Currency::Brl);
+            project.catalog.push(entry);
+            assert_eq!(project.validate(), Ok(()));
+        }
+        for change in 0..3 {
+            let mut entry = baseline.clone();
+            let facts = entry.verified_hinge.as_mut().unwrap();
+            match change {
+                0 => facts.cup_depth = mm(15),
+                1 => facts.overlay_by_cup_edge.reverse(),
                 _ => {
                     entry
                         .installation_dimensions
                         .insert("pilot_depth".into(), mm(8));
                 }
             }
-            let mut project = Project::new("Unsupported", Currency::Brl);
-            project.catalog.push(entry.clone());
             assert!(!is_verified(&entry));
+            assert_eq!(trust(&entry), None);
+            let mut project = Project::new("Incoherent", Currency::Brl);
+            project.catalog.push(entry.clone());
             assert_eq!(
                 project.validate(),
                 Err(DomainError::InvalidCatalog(entry.id))

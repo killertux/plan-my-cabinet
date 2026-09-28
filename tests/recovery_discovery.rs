@@ -231,7 +231,7 @@ fn unknown_metadata_legacy_payload_and_invalid_snapshots_remain_diagnosable() {
         saved.revision + 1
     );
 
-    for version in [1, 3] {
+    for version in [1, 4] {
         record["project"]["schema_version"] = version.into();
         if version == 1 {
             record["project"]["boards"][0]["length"] = 0.into();

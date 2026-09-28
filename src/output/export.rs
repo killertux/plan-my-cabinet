@@ -1552,6 +1552,7 @@ mod tests {
             revision: "1".into(),
             installation_dimensions: std::collections::HashMap::from([("cup".into(), mm(11))]),
             verified_hinge: None,
+            origin: None,
         });
         p.hardware.push(Hardware {
             id: Uuid::new_v4(),
@@ -1661,6 +1662,7 @@ mod tests {
             mount_y: mm(25),
             cup_edge_setback: mm(3),
             overlay: mm(15),
+            inset_depth: Default::default(),
         };
         // The 35 mm cup and 32 mm plate pitch fit in 50 mm board widths.
         p.catalog.push(catalog);
@@ -1685,7 +1687,10 @@ mod tests {
         assert_eq!(plan.installation_guidance.len(), 1);
         let g = &plan.installation_guidance[0];
         assert_eq!(g.references.product_id, crate::hardware_catalog::KIT_ID);
-        assert_eq!(g.references.plate_id, crate::hardware_catalog::PLATE_ID);
+        assert_eq!(
+            g.references.plate_id.as_deref(),
+            Some(crate::hardware_catalog::PLATE_ID)
+        );
         assert_eq!(g.references.printed_page, 23);
         assert_eq!(g.references.cup_center_um, [20_500, 25_000, 0]);
         assert_eq!(

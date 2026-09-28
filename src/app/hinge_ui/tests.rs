@@ -234,7 +234,7 @@ fn offline_tree_groups_by_membership_and_tracks_selected_warning() {
     assert!(text.contains(hardware_catalog::KIT_ID));
     assert!(text.contains(hardware_catalog::PLATE_ID));
     assert!(text.contains("rev. May 2025"));
-    assert!(text.contains("Unsupported door thickness"));
+    assert!(text.contains("outside this hinge's documented range"));
     assert!(text.lines().any(|line| line == "Door"), "{text}");
     assert!(text.contains("on Side"));
     assert!(text.contains("Not on a door"));
@@ -289,7 +289,7 @@ fn selected_inspector_discloses_only_supported_derived_references() {
         })
         .unwrap();
     let text = inspector_text(&mut app, id);
-    assert!(text.contains("Unsupported K / overlay pair"));
+    assert!(text.contains("is not in the hinge's table"));
     assert!(!text.contains("Board-local reference diagram"));
     assert!(!text.contains("79.5"));
     app.editor.undo().unwrap();

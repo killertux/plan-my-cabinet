@@ -1185,14 +1185,17 @@ mod tests {
             .resolve(&store, RecoveryChoice::Recover)
             .unwrap()
             .unwrap();
-        assert_eq!(recovered.project().schema_version, 2);
+        assert_eq!(
+            recovered.project().schema_version,
+            crate::domain::SCHEMA_VERSION
+        );
         assert_eq!(recovered.project().export_records, saved.export_records);
         assert_eq!(recovered.project().boards, saved.boards);
         assert!(recovered.is_dirty());
         assert!(!recovered.can_undo());
         assert_eq!(fs::read(&path).unwrap(), golden);
 
-        for version in [1, 3] {
+        for version in [1, 4] {
             let mut invalid = record.clone();
             invalid["project"]["schema_version"] = version.into();
             if version == 1 {
@@ -1201,11 +1204,11 @@ mod tests {
             let bytes = serde_json::to_vec(&invalid).unwrap();
             fs::write(&store.file, &bytes).unwrap();
             let result = store.inspect(&saved);
-            if version == 3 {
+            if version == 4 {
                 assert!(matches!(
                     result,
                     Err(RecoveryError::Invalid(
-                        PersistenceError::UnsupportedVersion(3)
+                        PersistenceError::UnsupportedVersion(4)
                     ))
                 ));
             } else {

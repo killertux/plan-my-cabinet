@@ -12,6 +12,7 @@ use crate::{
     BatchDialog, BoardDimensionDialog, BoardMaterialDialog, CreationDialog, GridDialog,
     MaterialEditDialog,
     assembly_ui::AssemblyDialog,
+    catalog_ui::CatalogDialog,
     currency_ui::CurrencyDialog,
     door_joint_ui::{DoorDialog, RemovalDialog},
     hardware_ui::HardwareDialog,
@@ -108,6 +109,7 @@ modals! {
     Assembly(AssemblyDialog) => assembly, assembly_mut, take_assembly, set_assembly;
     Hardware(HardwareDialog) => hardware, hardware_mut, take_hardware, set_hardware;
     Hinge(HingeDialog) => hinge, hinge_mut, take_hinge, set_hinge;
+    Catalog(CatalogDialog) => catalog, catalog_mut, take_catalog, set_catalog;
     Door(DoorDialog) => door, door_mut, take_door, set_door;
     Removal(RemovalDialog) => removal, removal_mut, take_removal, set_removal;
 }

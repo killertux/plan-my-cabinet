@@ -44,7 +44,7 @@ fn saving_migrated_source_requires_notice_and_cancel_keeps_original_bytes() {
         persistence::prepare_reader(File::open(&source).unwrap())
             .unwrap()
             .source_version(),
-        2
+        3
     );
     fs::remove_dir_all(dir).unwrap();
 }

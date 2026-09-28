@@ -1461,6 +1461,7 @@ impl DesktopApp {
         self.show_assembly_dialog(ui.ctx());
         self.show_hardware_dialog(ui.ctx());
         self.show_hinge_dialog(ui.ctx());
+        self.show_catalog_dialog(ui.ctx());
         self.show_door_dialog(ui.ctx());
         self.show_removal_dialog(ui.ctx());
         self.show_project_dialog(ui.ctx());

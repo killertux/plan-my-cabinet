@@ -1189,6 +1189,8 @@ fn issue(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Unit) ->
                     "pdf-install-cup-outside",
                 crate::hinge_installation::InstallationIssue::PlateOutsideMount =>
                     "pdf-install-plate-outside",
+                crate::hinge_installation::InstallationIssue::InsetShallowerThanDoor =>
+                    "pdf-install-inset-depth",
             }),
             loc.text("pdf-installation-withheld")
         ),
@@ -1678,28 +1680,10 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
             .find(|g| g.id == installation.id)
         {
             let r = &g.references;
-            p.line(format!(
-                "{} / {} — {} ({}; {}: {}; PDF: {})",
-                r.product_id,
-                r.plate_id,
-                r.attribution,
-                r.source,
-                label(&loc, "pdf-printed-page"),
-                r.printed_page,
-                r.pdf_page
-            ));
-            p.line(format!(
-                "{}: K={} / R={}; {}: Ø{} / {}; {}: H0, {} / {}",
-                label(&loc, "pdf-supported-pair"),
-                length(g.cup_edge_setback, settings.units, settings.language),
-                length(g.overlay, settings.units, settings.language),
-                label(&loc, "pdf-cup"),
-                length(r.cup_diameter, settings.units, settings.language),
-                length(r.cup_depth, settings.units, settings.language),
-                label(&loc, "pdf-plate"),
-                length(r.plate_hole_pitch, settings.units, settings.language),
-                length(r.plate_front_offset, settings.units, settings.language)
-            ));
+            p.line(r.source_line(&loc));
+            p.line(r.settings_line(&loc, g.cup_edge_setback, g.overlay, |v| {
+                length(v, settings.units, settings.language)
+            }));
             let coord = |point: [i128; 3]| -> String {
                 point
                     .iter()

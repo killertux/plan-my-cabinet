@@ -157,4 +157,6 @@ pub(crate) struct CutPlanState {
 pub(crate) struct HardwareState {
     pub(crate) door_motion: Option<(Uuid, f64)>,
     pub(crate) catalog_update_notice: Option<String>,
+    /// Bundled and user catalog packs, loaded at startup and on Reload.
+    pub(crate) catalogs: plan_my_cabinet::catalog_pack::CatalogRegistry,
 }

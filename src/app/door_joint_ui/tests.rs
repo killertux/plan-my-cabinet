@@ -44,6 +44,7 @@ fn fixture() -> (DesktopApp, Uuid, Uuid) {
         mount_y: Length::from_micrometres(50_000),
         cup_edge_setback: Length::from_micrometres(3_000),
         overlay: Length::from_micrometres(15_000),
+        inset_depth: Default::default(),
     };
     plan_my_cabinet::hinge_installation::create(&mut app.editor, hinge).unwrap();
     (app, ids[0], ids[1])

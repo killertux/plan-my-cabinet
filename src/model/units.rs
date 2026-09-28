@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// A signed manufacturing coordinate or length in thousandths of a millimetre.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Length(i64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

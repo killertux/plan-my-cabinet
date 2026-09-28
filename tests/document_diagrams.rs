@@ -317,6 +317,7 @@ fn hinge_fixture() -> Project {
         mount_y: mm(50),
         cup_edge_setback: mm(3),
         overlay: mm(15),
+        inset_depth: Default::default(),
     };
     p.catalog.push(catalog);
     p.hinge_installations.push(hinge.clone());

@@ -67,3 +67,100 @@ The documented door thickness is 15–22 mm. Supported cup-edge setback K / over
 **Fastener drilling unavailable:** screw types, pilot diameters and depths, cup-screw locations, safe clearances and hinge count are not verified. Confirm the board orientation and installation at the shop. Source: [FGVTN General Catalog](https://www.fgvtn.com.br/site/novopdf/Catalogo_Geral.pdf), printed p. 23 (PDF p. 14), May 2025 revision reviewed in [source review](hinge-source-review.md). The project pins its catalog snapshot; refresh explicitly to recheck dependent installations.
 
 The reviewed PDF has SHA-256 `e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2` (catalog metadata modified 2026-09-16). Its drawing shows 48 mm between cup fixing-hole centres, **not** a complete drilling specification; do not infer pilot depth/diameter or screw choice. No verified hinge load rating, recommended quantity, structural fitness, accurate concealed-linkage path, or collision clearance is available. The on-screen and packet warnings remain at every preview angle. The manufacturer's PDF and artwork are not shipped with this app; only factual source-attributed dimensions and original annotations are included. Invalid installation references are omitted from numeric packet guidance without blocking otherwise valid wood cuts.
+
+## Catalog packs
+
+Hinge data comes from **catalog packs**: one TOML file per manufacturer, with
+the facts of each hinge and the source they were read from. **Add hinge from
+catalog…** opens the catalog browser:
+
+- **Packs** lists every pack with a status: **Reviewed** (bundled with the app
+  and checked against the cited sheets), **User data** (your own file),
+  **Draft**, or **Errors**. A pack with errors is listed with every problem
+  and its place in the file, but offers nothing to add.
+- **Hinge** and **Arm** choose a family and its full overlay (Reta), half
+  overlay (Curva) or inset (Alta) variant. The facts show the product and
+  plate codes, cup, door range, plate height H, plate hole pitch and front
+  offset, opening angle and source.
+- **Test bench** runs the same installation checks as a project on a sample
+  door: pick a K pair from the table, type the door and side thickness (and
+  E for inset) and see whether it fits, where the cup and plate centres fall,
+  or which check fails.
+- **Add to project** pins the chosen variant into the project. The project
+  keeps its own copy: editing or deleting the pack later never changes a
+  saved project. **Update from catalog** replaces a pinned record explicitly
+  (one undoable edit) and rechecks its installations.
+
+Records from your own packs give full measurements. The card, inspector and
+PDF label them **User data** and name the pack; check them against the
+manufacturer's sheet before drilling. A pinned record whose numbers do not
+agree with each other (for example a cup deeper than the thinnest door, or a
+K table out of order) gives no numeric guidance.
+
+### Inset hinges (Alta)
+
+An inset door sits between the cabinet sides. Its table gives the gap **F**
+between door edge and side for each K, instead of an overlay R. The hinge
+dialog asks for **E**: the distance from the side's front edge to the door's
+inside face (the door thickness when the door is flush with the front). The
+plate sits at the front offset plus E (for example 37 + 18 = 55 mm). An E
+smaller than the door thickness is flagged, because the door would stand
+proud of the front. Door motion previews an inset door about its outside
+front edge.
+
+### Writing your own pack
+
+Put `.toml` files in your catalog folder (**Open folder** in the browser;
+on macOS `~/Library/Application Support/Plan My Cabinet/catalogs`) or use
+**Import pack…**, then **Reload**. Lengths are millimetres; decimals such as
+`9.8` are exact. The bundled `catalogs/fgvtn.toml` is a complete example.
+
+```toml
+schema = 1
+id = "acme"                    # lowercase letters, digits and '-'
+manufacturer = "Acme"
+version = "2026-10-01"         # change it whenever the data changes
+review = { status = "draft" }  # or "reviewed"
+
+[[sources]]
+id = "acme-sheet"
+title = "Acme hinge sheet"
+url = "https://example.com/hinge.pdf"
+sha256 = "…64 hex digits of the PDF you read…"
+revision = "Oct 2026"
+printed_page = 12              # optional
+pdf_page = 1                   # optional
+
+[[hinges]]
+id = "soft-110"
+name = { en = "Acme soft-close 110°", pt-BR = "Acme amortecida 110°" }
+source = "acme-sheet"
+soft_close = true
+mounting = "clip"              # clip | slide_on | fixed_plate (optional)
+opening_degrees = 110          # optional; without it door motion is unavailable
+cup = { diameter = 35, depth = 11.5 }
+door_thickness = { min = 16, max = 22 }
+plate = { front_offset = 37, hole_pitch = 32 }   # hole_pitch optional
+fasteners = "Ø4×16 screws"     # optional text
+notes = "Anything else from the sheet"            # optional
+# allow = [{ warning = "not-monotonic", reason = "As printed" }]
+
+  [[hinges.variants]]
+  arm = "full_overlay"         # full_overlay | half_overlay | inset
+  code = "AC-110-FO"
+  plate_code = "AC-PL-0"       # optional
+  plate_height = 0
+  k_table = [[3, 14], [4, 15], [5, 16]]   # [K, R]; for inset [K, F]
+```
+
+The loader reports every problem at once. Errors (the pack cannot be used)
+include unknown fields, invalid ids, duplicate codes, lengths finer than
+1 µm, a thickness range the wrong way round, a cup as deep as the thinnest
+door, and K values that do not increase. Warnings (the pack stays usable)
+include uneven R/F steps, a missing opening angle, a draft pack, and a user
+pack that replaces a bundled one with the same id. A warning can be accepted
+for one hinge with `allow`, but only with a reason.
+
+To check a pack without opening the app, run
+`plan-my-cabinet --check-catalog my-pack.toml`. It prints each problem with
+its place in the file and exits non-zero on errors.

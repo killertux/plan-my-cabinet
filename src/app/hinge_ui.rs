@@ -17,6 +17,8 @@ pub(crate) struct HingeDialog {
     catalog: Option<Uuid>,
     side: HingeMountingSide,
     values: [String; 4],
+    /// E for inset arms: side front edge to the door's inside face.
+    inset_depth: String,
     error: bool,
     chrome: ModalChrome,
 }
@@ -199,7 +201,7 @@ pub(crate) fn warning_callout<R>(
         .inner
 }
 
-fn warn_text(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
+pub(crate) fn warn_text(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text.into())
@@ -263,7 +265,7 @@ fn chooser_field(ui: &mut egui::Ui, text: &str, hint: &str, enabled: bool) -> eg
 }
 
 /// The documented K/R pairs as one segmented control. Returns the chosen pair.
-fn pair_segmented(
+pub(crate) fn pair_segmented(
     ui: &mut egui::Ui,
     localizer: &Localizer,
     pairs: &[(Length, Length)],
@@ -382,10 +384,52 @@ fn cup_plate_diagram(
     p.text(
         o + egui::vec2(46.0, 83.0),
         egui::Align2::LEFT_CENTER,
-        short_mm(localizer, r.plate_hole_pitch),
+        if r.plate_hole_pitch == Length::ZERO {
+            "—".to_owned()
+        } else {
+            short_mm(localizer, r.plate_hole_pitch)
+        },
         egui::FontId::monospace(9.5),
         tw::MUTED,
     );
+}
+
+/// "32 mm apart", or "not documented" when the source gives no pitch.
+fn plate_pitch_text(
+    localizer: &Localizer,
+    r: &hinge_installation::InstallationReferences,
+) -> String {
+    if r.plate_hole_pitch == Length::ZERO {
+        localizer.text("catalogs-unknown")
+    } else {
+        format!(
+            "{} {}",
+            short_mm(localizer, r.plate_hole_pitch),
+            localizer.text("hardware-holes-apart")
+        )
+    }
+}
+
+/// Front offset, or "37 + E 18 = 55" for an inset arm.
+fn plate_front_text(
+    localizer: &Localizer,
+    r: &hinge_installation::InstallationReferences,
+) -> String {
+    if r.arm.is_inset() {
+        format!(
+            "{} + E {} = {}",
+            short_mm(localizer, r.plate_front_offset),
+            short_mm(localizer, r.inset_depth),
+            short_mm(
+                localizer,
+                Length::from_micrometres(
+                    r.plate_front_offset.micrometres() + r.inset_depth.micrometres()
+                )
+            )
+        )
+    } else {
+        short_mm(localizer, r.plate_front_offset)
+    }
 }
 
 /// A relationship owns its listed installation IDs, not every installation on
@@ -453,6 +497,28 @@ fn catalog_card(ui: &mut egui::Ui, localizer: &Localizer, entry: &CatalogReferen
                 )
                 .wrap(),
             );
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                crate::catalog_ui::trust_chip(ui, localizer, hardware_catalog::trust(entry));
+                if let Some(facts) = hardware_catalog::facts(entry) {
+                    tw::chip(
+                        ui,
+                        &crate::catalog_ui::arm_label(localizer, facts.arm),
+                        tw::VIEWPORT,
+                        tw::MUTED,
+                    );
+                }
+                if let Some(origin) = &entry.origin {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} · {}",
+                            origin.manufacturer, origin.pack_version
+                        ))
+                        .size(11.0)
+                        .color(tw::FAINT),
+                    );
+                }
+            });
             let revision = format!(
                 "{} {}",
                 localizer.text("hardware-rev-short"),
@@ -555,6 +621,15 @@ impl HingeDialog {
                     ]
                 },
             ),
+            inset_depth: old.map_or_else(
+                || {
+                    old.map(|i| i.door_board_id)
+                        .or_else(|| boards.first().map(|b| b.id))
+                        .and_then(|id| boards.iter().find(|b| b.id == id))
+                        .map_or_else(|| "18".into(), |door| mm(door.thickness))
+                },
+                |i| mm(i.inset_depth),
+            ),
             error: false,
             chrome: ModalChrome::new(egui::Id::new("hinge-dialog"))
                 .first_focus(egui::Id::new(("hinge-value-field", 0)))
@@ -562,7 +637,20 @@ impl HingeDialog {
         }
     }
 
-    fn proposed(&self, app: &DesktopApp) -> Option<HingeInstallation> {
+    #[cfg(test)]
+    pub(crate) fn catalog_id(&self) -> Option<Uuid> {
+        self.catalog
+    }
+
+    /// Test seam: K, the table value (R or F) and E as typed.
+    #[cfg(test)]
+    pub(crate) fn set_values(&mut self, k: &str, value: &str, inset_depth: &str) {
+        self.values[2] = k.into();
+        self.values[3] = value.into();
+        self.inset_depth = inset_depth.into();
+    }
+
+    pub(crate) fn proposed(&self, app: &DesktopApp) -> Option<HingeInstallation> {
         let project = app.editor.project();
         let (door, mount, catalog) = (self.door?, self.mount?, self.catalog?);
         if door == mount
@@ -576,6 +664,17 @@ impl HingeDialog {
             return None;
         }
         let [door_y, mount_y, k, overlay] = self.values.each_ref().map(|v| distance(v));
+        let inset = project
+            .catalog
+            .iter()
+            .find(|c| c.id == catalog)
+            .and_then(hardware_catalog::facts)
+            .is_some_and(|facts| facts.arm.is_inset());
+        let inset_depth = if inset {
+            distance(&self.inset_depth)?
+        } else {
+            Length::ZERO
+        };
         Some(HingeInstallation {
             id: self.id.unwrap_or(self.new_id),
             door_board_id: door,
@@ -586,6 +685,7 @@ impl HingeDialog {
             mount_y: mount_y?,
             cup_edge_setback: k?,
             overlay: overlay?,
+            inset_depth,
         })
     }
 }
@@ -600,6 +700,7 @@ pub(crate) fn issue_key(issue: &InstallationIssue) -> &'static str {
         InstallationIssue::UnsupportedOverlay => "hinge-overlay-warning",
         InstallationIssue::CupOutsideDoor => "hinge-cup-warning",
         InstallationIssue::PlateOutsideMount => "hinge-plate-warning",
+        InstallationIssue::InsetShallowerThanDoor => "hinge-inset-depth-warning",
     }
 }
 
@@ -760,7 +861,7 @@ fn status_ui(
                         ),
                         (
                             localizer.text("hardware-plate-front"),
-                            short_mm(localizer, r.plate_front_offset),
+                            plate_front_text(localizer, r),
                             tw::TEXT,
                         ),
                     ],
@@ -1764,16 +1865,12 @@ impl DesktopApp {
                                     ),
                                     (
                                         localizer.text("hardware-plate-holes"),
-                                        format!(
-                                            "{} {}",
-                                            short_mm(localizer, r.plate_hole_pitch),
-                                            localizer.text("hardware-holes-apart")
-                                        ),
+                                        plate_pitch_text(localizer, r),
                                         tw::TEXT,
                                     ),
                                     (
                                         localizer.text("hardware-plate-front"),
-                                        short_mm(localizer, r.plate_front_offset),
+                                        plate_front_text(localizer, r),
                                         tw::TEXT,
                                     ),
                                 ];
@@ -1876,7 +1973,11 @@ impl DesktopApp {
                             tw::TEXT,
                         ));
                         rows.push((
-                            localizer.text("hinge-supported-pairs"),
+                            format!(
+                                "{} (K/{})",
+                                localizer.text("hinge-supported-pairs"),
+                                crate::catalog_ui::table_letter(facts.arm)
+                            ),
                             facts
                                 .overlay_by_cup_edge
                                 .iter()
@@ -2134,6 +2235,11 @@ impl DesktopApp {
                 ui.add_space(8.0);
                 let quarter = ((ui.available_width() - 3.0 * 8.0) / 4.0).max(60.0);
                 let mut invalid_key = None;
+                let inset = draft
+                    .catalog
+                    .and_then(|id| project.catalog.iter().find(|c| c.id == id))
+                    .and_then(hardware_catalog::facts)
+                    .is_some_and(|facts| facts.arm.is_inset());
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     for (index, key) in
@@ -2149,6 +2255,7 @@ impl DesktopApp {
                                     0 => "hardware-dialog-door-y",
                                     1 => "hardware-plate-y",
                                     2 => "hardware-dialog-k",
+                                    _ if inset => "hardware-dialog-f",
                                     _ => "hardware-dialog-r",
                                 });
                                 field_label(ui, &short);
@@ -2172,6 +2279,32 @@ impl DesktopApp {
                         );
                     }
                 });
+                if inset {
+                    ui.add_space(4.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(2.0 * quarter + 8.0, 52.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            field_label(ui, &localizer.text("hinge-inset-depth"));
+                            let invalid = distance(&draft.inset_depth).is_none();
+                            if invalid {
+                                invalid_key = Some("hinge-inset-depth");
+                            }
+                            tw::value_field(
+                                ui,
+                                egui::Id::new(("hinge-value-field", 4)),
+                                &localizer.text("hinge-inset-depth"),
+                                &mut draft.inset_depth,
+                                quarter,
+                                Some("mm"),
+                                None,
+                                true,
+                                invalid,
+                            )
+                            .on_hover_text(localizer.text("hinge-inset-depth-hint"));
+                        },
+                    );
+                }
                 if let Some(key) = invalid_key {
                     ui.label(
                         egui::RichText::new(format!(

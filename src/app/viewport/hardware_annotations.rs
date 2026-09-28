@@ -134,6 +134,13 @@ fn warning_text(issues: &[InstallationIssue], pt: bool) -> &'static str {
                 "Plate outside mount"
             }
         }
+        Some(InstallationIssue::InsetShallowerThanDoor) => {
+            if pt {
+                "Porta além de E"
+            } else {
+                "Door deeper than E"
+            }
+        }
         Some(InstallationIssue::MissingPart(_)) => {
             if pt {
                 "Peça ausente"

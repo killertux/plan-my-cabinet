@@ -20,7 +20,8 @@ pub mod ui;
 
 // Flat paths (`plan_my_cabinet::commands`, `crate::domain`) stay valid.
 pub use catalog::{
-    door_joint, hardware_catalog, hinge_installation, template_recipes, template_setup,
+    catalog_pack, door_joint, hardware_catalog, hinge_installation, template_recipes,
+    template_setup,
 };
 pub use editing::{
     assembly_edit, board_commands, board_dimensions, color_commands, commands, edit_drafts,

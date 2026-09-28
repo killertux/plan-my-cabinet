@@ -305,6 +305,7 @@ pub fn project() -> Project {
             mount_y: mm(mount_y),
             cup_edge_setback: mm(4),
             overlay: mm(16),
+            inset_depth: Default::default(),
         });
     }
     for (id, root, mount, hinges) in [

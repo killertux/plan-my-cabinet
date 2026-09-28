@@ -306,14 +306,17 @@ impl DesktopApp {
     }
 
     pub(crate) fn save_to(&mut self, path: &Path, replacing: bool, after: Option<NextAction>) {
-        // The migrated editor is schema 2 even though its source bytes remain
-        // schema 1. Require a conscious decision before the first write,
-        // including Save As and Save while resolving an unsaved-work prompt.
+        // The migrated editor is the current schema even though its source
+        // bytes are older, which older releases then cannot open. Require a
+        // conscious decision before the first write, including Save As and
+        // Save while resolving an unsaved-work prompt.
         if self.project_files.path.as_ref().is_some_and(|source| {
             File::open(source)
                 .ok()
                 .and_then(|file| persistence::prepare_reader(file).ok())
-                .is_some_and(|prepared| prepared.source_version() == 1)
+                .is_some_and(|prepared| {
+                    prepared.source_version() < u64::from(plan_my_cabinet::domain::SCHEMA_VERSION)
+                })
         }) {
             self.project_files.prompt = Some(Prompt::Upgrade(path.to_path_buf(), replacing, after));
             return;

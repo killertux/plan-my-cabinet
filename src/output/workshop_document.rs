@@ -230,6 +230,8 @@ fn issue_text(
                     "pdf-install-cup-outside",
                 crate::hinge_installation::InstallationIssue::PlateOutsideMount =>
                     "pdf-install-plate-outside",
+                crate::hinge_installation::InstallationIssue::InsetShallowerThanDoor =>
+                    "pdf-install-inset-depth",
             }),
             loc.text("pdf-installation-withheld")
         ),
@@ -787,28 +789,10 @@ fn hardware_pages(
         }
         let g = guidance.expect("checked above");
         let r = &g.references;
-        builder.paragraph(&format!(
-            "{} / {} — {} ({}; {}: {}; PDF: {})",
-            r.product_id,
-            r.plate_id,
-            r.attribution,
-            r.source,
-            loc.text("pdf-printed-page"),
-            r.printed_page,
-            r.pdf_page
-        ))?;
-        builder.paragraph(&format!(
-            "{}: K={} / R={}; {}: Ø{} / {}; {}: H0, {} / {}",
-            loc.text("pdf-supported-pair"),
-            length(g.cup_edge_setback, unit, language),
-            length(g.overlay, unit, language),
-            loc.text("pdf-cup"),
-            length(r.cup_diameter, unit, language),
-            length(r.cup_depth, unit, language),
-            loc.text("pdf-plate"),
-            length(r.plate_hole_pitch, unit, language),
-            length(r.plate_front_offset, unit, language)
-        ))?;
+        builder.paragraph(&r.source_line(loc))?;
+        builder.paragraph(&r.settings_line(loc, g.cup_edge_setback, g.overlay, |v| {
+            length(v, unit, language)
+        }))?;
         let coord = |values: [i128; 3]| -> Result<String, WorkshopDocumentError> {
             values
                 .iter()

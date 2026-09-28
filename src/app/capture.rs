@@ -14,11 +14,13 @@ use std::sync::{Arc, Mutex};
 
 pub const HELP: &str = "Usage: plan-my-cabinet [--capture-baseline|--capture-gallery NEW_DIRECTORY \
     [--capture-size WIDTHxHEIGHT] [--capture-scale 90|100|115|130] \
-    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved|palette]]\n\
+    [--capture-language en|pt-BR] [--capture-workspace design|stock|cut-plan|hardware|handoff] [--capture-welcome empty] [--capture-settings cutting|grid|costs|general|shortcuts|about] [--capture-page 1..] [--capture-snap face|grid] [--capture-dialog board|position|face|resize|material|unsaved|palette|catalog]]\n\
     Baseline captures a selected application workspace or the isolated empty Welcome; gallery captures offline UI primitives.\n\
     A capture is evidence to review, not automatic redesign acceptance.\n\
     Writes capture.ppm and manifest.json without opening user projects.\n\
-    Requires a native graphics session; the output directory must not exist.";
+    Requires a native graphics session; the output directory must not exist.\n\
+       plan-my-cabinet --check-catalog PACK.toml...\n\
+    Validates hardware catalog packs and prints every problem; exits non-zero on errors.";
 
 pub type Completion = Arc<Mutex<Option<Result<(), String>>>>;
 
@@ -31,10 +33,11 @@ pub enum Dialog {
     Material,
     Unsaved,
     Palette,
+    Catalog,
 }
 
 impl Dialog {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Board,
         Self::Position,
         Self::Face,
@@ -42,6 +45,7 @@ impl Dialog {
         Self::Material,
         Self::Unsaved,
         Self::Palette,
+        Self::Catalog,
     ];
 
     pub fn name(self) -> &'static str {
@@ -53,6 +57,7 @@ impl Dialog {
             Self::Material => "material",
             Self::Unsaved => "unsaved",
             Self::Palette => "palette",
+            Self::Catalog => "catalog",
         }
     }
 
@@ -66,6 +71,14 @@ impl Dialog {
         if self == Self::Palette {
             app.palette.open(&eframe::egui::Context::default());
             app.palette.query = "sh".into();
+        } else if self == Self::Catalog {
+            // The richest review state: an inset arm with its E field on the bench.
+            let mut dialog = crate::catalog_ui::CatalogDialog::new();
+            dialog.show_variant(
+                &app.hardware.catalogs,
+                ("fgvtn", "ms-slow-calco-fixo", "51MS15XFG0115BF"),
+            );
+            app.modals.set_catalog(Some(dialog));
         } else if self == Self::Unsaved {
             app.project_files.prompt = Some(crate::project_ui::Prompt::Dirty(
                 crate::project_ui::NextAction::New,
@@ -77,7 +90,7 @@ impl Dialog {
                 Self::Face => A::PlaceFace,
                 Self::Resize => A::BatchDimensions,
                 Self::Material => A::NewMaterial,
-                Self::Unsaved | Self::Palette => unreachable!(),
+                Self::Unsaved | Self::Palette | Self::Catalog => unreachable!(),
             };
             let request = if matches!(self, Self::Position | Self::Face) {
                 Request::with(action, Target::Board(LEFT_SIDE_ID))

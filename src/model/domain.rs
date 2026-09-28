@@ -9,7 +9,7 @@ use crate::export::ExportRecord;
 use crate::money::{Currency, Money};
 use crate::units::{Length, Pose, Unit, UnitError};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
 /// Provisional project cutting assumption; confirm against the actual saw before shop use.
 pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
@@ -151,8 +151,8 @@ pub struct Allocation {
     pub locked: bool,
 }
 
-/// Project-pinned catalog facts. The catalog verification milestone populates
-/// these fields only from reviewed manufacturer sources.
+/// Project-pinned catalog facts, copied from a catalog pack when added. The
+/// project keeps this snapshot: a changed or missing pack never alters it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CatalogReference {
     pub id: Uuid,
@@ -165,9 +165,43 @@ pub struct CatalogReference {
     /// Absent for legacy/user-authored references, which cannot claim supported guidance.
     #[serde(default)]
     pub verified_hinge: Option<VerifiedHinge>,
+    /// The pack record this snapshot was copied from; absent for records
+    /// created before catalog packs.
+    #[serde(default)]
+    pub origin: Option<CatalogOrigin>,
 }
 
-/// Factual installation references for the single visually reviewed kit/plate pair.
+/// Where a pinned snapshot came from, used to offer updates and to name the
+/// data's provenance on screen and in exports.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogOrigin {
+    pub pack_id: String,
+    pub pack_version: String,
+    pub manufacturer: String,
+    pub item_id: String,
+    pub variant_code: String,
+}
+
+/// Cup-arm geometry. Overlay arms cover the cabinet side by R; an inset arm
+/// sits the door between the sides with a gap F.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HingeArm {
+    #[default]
+    FullOverlay,
+    HalfOverlay,
+    Inset,
+}
+
+impl HingeArm {
+    pub const ALL: [Self; 3] = [Self::FullOverlay, Self::HalfOverlay, Self::Inset];
+
+    pub const fn is_inset(self) -> bool {
+        matches!(self, Self::Inset)
+    }
+}
+
+/// Factual installation references for one catalog kit/plate pair.
 /// Lengths are integer micrometres; K is measured from door edge to cup edge.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifiedHinge {
@@ -175,7 +209,11 @@ pub struct VerifiedHinge {
     pub pdf_page: u16,
     pub source_sha256: String,
     pub attribution: String,
+    #[serde(default)]
+    pub arm: HingeArm,
     pub plate_height: Length,
+    /// The manufacturer's K table. For overlay arms `overlay` is R; for
+    /// `HingeArm::Inset` it is the gap F between door edge and cabinet side.
     pub overlay_by_cup_edge: Vec<OverlaySetting>,
     pub door_thickness_min: Length,
     pub door_thickness_max: Length,
@@ -234,7 +272,12 @@ pub struct HingeInstallation {
     pub mount_y: Length,
     /// K is the distance from the selected door X edge to the *cup edge*.
     pub cup_edge_setback: Length,
+    /// R for overlay arms; the gap F for an inset arm.
     pub overlay: Length,
+    /// Inset arms only: E, from the mounting board's front edge to the door's
+    /// inside face. The plate sits at the catalog front offset plus E.
+    #[serde(default)]
+    pub inset_depth: Length,
 }
 
 /// Mechanical relationship, distinct from the assembly tree. The closed pose

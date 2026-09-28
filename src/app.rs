@@ -5,6 +5,7 @@ pub(crate) mod actions;
 pub(crate) mod assembly_ui;
 pub(crate) mod board_dialogs;
 pub(crate) mod capture;
+pub(crate) mod catalog_ui;
 pub(crate) mod command_palette;
 pub(crate) mod currency_ui;
 pub(crate) mod door_joint_ui;

@@ -173,6 +173,7 @@ fn rectangular_cabinet_release_walkthrough() {
             mount_y: mm(100),
             cup_edge_setback: mm(3),
             overlay: mm(15),
+            inset_depth: Default::default(),
         },
     )
     .unwrap();

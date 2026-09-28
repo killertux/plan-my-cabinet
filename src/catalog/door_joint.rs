@@ -231,7 +231,21 @@ pub fn preview(
         BoardEdge::MinX => 0.0,
         BoardEdge::MaxX => door.length.micrometres() as f64 / 1000.0,
     };
-    let z = match hinge.side.door_face {
+    // Approximate fixed axis: the cup-face edge for overlay doors. An inset
+    // door sits between the sides and swings out about its front edge, so
+    // the axis moves to the opposite (outside) face.
+    let inset = project
+        .catalog
+        .iter()
+        .find(|c| c.id == hinge.catalog_id)
+        .and_then(crate::hardware_catalog::facts)
+        .is_some_and(|facts| facts.arm.is_inset());
+    let axis_face = match (hinge.side.door_face, inset) {
+        (face, false) => face,
+        (BoardFace::MinZ, true) => BoardFace::MaxZ,
+        (BoardFace::MaxZ, true) => BoardFace::MinZ,
+    };
+    let z = match axis_face {
         BoardFace::MinZ => 0.0,
         BoardFace::MaxZ => door.thickness.micrometres() as f64 / 1000.0,
     };
@@ -364,12 +378,7 @@ pub fn opening_limit(project: &Project, joint: &DoorJoint) -> Result<f64, JointE
             .iter()
             .find(|c| c.id == hinge.catalog_id)
             .ok_or(JointError::UnverifiedLimit)?;
-        if !crate::hardware_catalog::is_verified(entry) {
-            return Err(JointError::UnverifiedLimit);
-        }
-        let degrees = entry
-            .verified_hinge
-            .as_ref()
+        let degrees = crate::hardware_catalog::facts(entry)
             .ok_or(JointError::UnverifiedLimit)?
             .opening_limit_degrees;
         if degrees == 0 {
@@ -561,6 +570,7 @@ mod tests {
                 mount_y: mm(y),
                 cup_edge_setback: mm(3),
                 overlay: mm(15),
+                inset_depth: Default::default(),
             });
         }
         p.catalog.push(catalog);

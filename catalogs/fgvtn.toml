@@ -1,0 +1,352 @@
+# FGVTN concealed hinges (Brazil).
+#
+# Facts only, transcribed from the manufacturer's public sheets and checked
+# visually against a raster of each page (docs/catalogs/fgvtn-review.md).
+# The PDFs are cited by URL and SHA-256 and are not redistributed.
+#
+# Units are millimetres. k_table rows are [K, R] for overlay arms (Reta,
+# Curva) and [K, F] for inset arms (Alta); a "–" in the source is left out.
+
+schema = 1
+id = "fgvtn"
+manufacturer = "FGVTN"
+country = "BR"
+version = "2026-09-27"
+review = { status = "reviewed", date = "2026-09-27", notes = "Each sheet checked visually; doubtful rows are omitted, see fgvtn-review.md." }
+
+[[sources]]
+id = "catalogo-geral-2025"
+title = "FGVTN General Catalog"
+url = "https://www.fgvtn.com.br/site/novopdf/Catalogo_Geral.pdf"
+sha256 = "e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2"
+revision = "May 2025 catalog; modified 2026-09-16"
+printed_page = 23
+pdf_page = 14
+
+[[sources]]
+id = "easy-tn-click-slow-inox-calco-duplo"
+title = "FGVTN sheet: Dobradiça Easy TN Click Slow Inox Calço Duplo"
+url = "https://www.fgvtn.com.br/site/novopdf/dobradica_easy_TN_inox_calco_duplo_slowmotion.pdf"
+sha256 = "4143fa79191af66a4a79fdc4061e8b2ad3de55655533d58bb02675b95f13ed10"
+revision = "3_DOBRADICAS_2 p. 25, 2021-07-01"
+printed_page = 25
+pdf_page = 1
+
+[[sources]]
+id = "ms-slow-calco-fixo"
+title = "FGVTN sheet: Dobradiça FGVTN MS Slow Calço Fixo"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradica_FGVTN_MS_Slow_Calco_Fixo_Fev_2024.pdf"
+sha256 = "3575e7663295f82743d95b3c9c1f5701b205b8b12cd0f0e5ce6e51988f5b4c41"
+revision = "Feb 2024 (general catalog JAN24 p. 91, 2024-02-06)"
+printed_page = 91
+pdf_page = 1
+
+[[sources]]
+id = "tn-inox"
+title = "FGVTN sheet: Dobradiça TN Inox"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradi%C3%A7a_TN_Inox_Ago23.pdf"
+sha256 = "89562c742f7f4f4ce9dd6c06c73f97781f89f27c322071c85a9c9e6c6d7df692"
+revision = "Aug 2023"
+pdf_page = 1
+
+[[sources]]
+id = "tn-inox-slowmotion"
+title = "FGVTN sheet: Dobradiça TN Inox Slowmotion"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradica_TN_Inox_Slowmotion.pdf"
+sha256 = "e81310308f2ccb85094a99675b04076d7258c8d952f9079b12fab2815609e674"
+revision = "catalog p. 52 (undated sheet, retrieved 2026-09)"
+printed_page = 52
+pdf_page = 1
+
+[[sources]]
+id = "tn-ms-slow-calco-fixo"
+title = "FGVTN sheet: Dobradiça TN MS Slow Calço Fixo"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradica_TN_MS_Slow_Calco_Fixo.pdf"
+sha256 = "65de8c33307ab340d879b49dcae94fa13e0f218dfa331a42d6a0689f365bc287"
+revision = "3_DOBRADICAS_2 p. 16, 2021-11-09"
+printed_page = 16
+pdf_page = 1
+
+[[sources]]
+id = "tn-ms-slow-calco-fixo-caneco-9-8"
+title = "FGVTN sheet: Dobradiça TN MS Slow Calço Fixo Caneco 9,8"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradica_TN_MS_slow_calco_fixo_caneco_9%2C8_Nov23.pdf"
+sha256 = "0f8eabbdd70d4f672303788a9736e81041c044d603a13dcda27cb2b3fb712638"
+revision = "Apr 2026"
+pdf_page = 1
+
+[[sources]]
+id = "tn-ms-slow-inox-calco-fixo"
+title = "FGVTN sheet: Dobradiça TN MS Slow Inox Calço Fixo"
+url = "https://www.fgvtn.com.br/site/novopdf/Dobradica_TN_MS_Slow_Inox_Calco_Fixo_Jul23.pdf"
+sha256 = "05721c0e64eb8a113e196ef4300c178f141605c9b212276d0e9fcd45c8f85b00"
+revision = "Jul 2023 (general catalog JUN23 p. 122, 2023-07-11)"
+printed_page = 122
+pdf_page = 1
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "click-3d-slow"
+name = { en = "Click 3D Slow", pt-BR = "Click 3D Slow" }
+source = "catalogo-geral-2025"
+attribution = "FGVTN General Catalog, Click 3D Slow, printed p. 23"
+soft_close = true
+mounting = "clip"
+opening_degrees = 105
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 15, max = 22 }
+plate = { front_offset = 37, hole_pitch = 32 }
+adjustment = { vertical = 2 }
+notes = "Complete kit: hinge, Calço 3D and body and cup covers. Only the Reta / H=0 kit is reviewed."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MX153DRV00100"
+  plate_code = "52MX15FG11003D"
+  name = { en = "FGVTN Click 3D Slow Reta / Calço 0 (complete kit)", pt-BR = "FGVTN Click 3D Slow Reta / Calço 0 (kit completo)" }
+  plate_height = 0
+  k_table = [[3, 15], [4, 16], [5, 17], [6, 18]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "easy-tn-click-slow-inox-calco-duplo"
+name = { en = "Easy TN Click Slow stainless, double-row plate", pt-BR = "Dobradiça Easy TN Click Slow Inox Calço Duplo" }
+source = "easy-tn-click-slow-inox-calco-duplo"
+soft_close = true
+finish = "stainless steel"
+mounting = "clip"
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 14, max = 20 }
+# The plate's vertical screw spacing is not dimensioned on the sheet.
+plate = { front_offset = 37 }
+adjustment = { vertical = 2, frontal = 2.5 }
+fasteners = "Stainless screws included (size not stated)"
+notes = "Side cover adjustment +2/−3 mm. Cup screws 52 mm apart, 5.5 mm behind the cup centre. No opening angle printed."
+# The sheet prints no opening angle; motion preview is unavailable for it.
+allow = [{ warning = "no-opening-angle", reason = "Not printed on the manufacturer's sheet." }]
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MX15TNSS000CD"
+  plate_height = 0
+  k_table = [[3, 13], [4, 14], [5, 15], [6, 16]]
+
+  # The sheet prints R = 3 for K = 3, breaking the +1 mm step of the rest of
+  # the table (6, 7, 8). The doubtful row is left out until FGVTN confirms it.
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MX15TNSS008CD"
+  plate_height = 0
+  k_table = [[4, 6], [5, 7], [6, 8]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MX15TNSS015CD"
+  plate_height = 0
+  k_table = [[3, 3], [4, 2], [5, 1]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "ms-slow-calco-fixo"
+name = { en = "FGVTN MS Slow, fixed plate", pt-BR = "Dobradiça FGVTN MS Slow Calço Fixo" }
+source = "ms-slow-calco-fixo"
+soft_close = true
+finish = "nickel-plated steel"
+mounting = "fixed_plate"
+opening_degrees = 105
+cup = { diameter = 35, depth = 9.5 }
+door_thickness = { min = 12, max = 20 }
+plate = { front_offset = 37, hole_pitch = 32 }
+adjustment = { vertical = 3.5, frontal = 3, overlay = 3 }
+notes = "Cup screws 48 mm apart."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15XFG0100BF"
+  plate_height = 4
+  k_table = [[3, 13], [4, 14], [5, 15], [6, 16]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15XFG0108BF"
+  plate_height = 2
+  k_table = [[3, 5.5], [4, 6.5], [5, 7.5], [6, 8.5]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MS15XFG0115BF"
+  plate_height = 2
+  k_table = [[3, 4], [4, 3], [5, 2], [6, 1]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "tn-inox"
+name = { en = "TN stainless", pt-BR = "Dobradiça TN Inox" }
+source = "tn-inox"
+finish = "stainless steel"
+opening_degrees = 110
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 16, max = 26 }
+plate = { front_offset = 37, hole_pitch = 32 }
+fasteners = "Stainless screws included (size not stated)"
+notes = "Stainless plate included. Cup screws 52 mm apart, 5.5 mm behind the cup centre."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15TNSS00050"
+  plate_height = 0
+  k_table = [[3, 14], [4, 15], [5, 16], [6, 17], [7, 18]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15TNSS08050"
+  plate_height = 0
+  k_table = [[3, 6], [4, 7], [5, 8], [6, 9], [7, 10]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MS15TNSS15050"
+  plate_height = 0
+  k_table = [[3, 3], [4, 2], [5, 1]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "tn-inox-slowmotion"
+name = { en = "TN stainless soft-close, slide-on", pt-BR = "Dobradiça TN Inox Slowmotion" }
+source = "tn-inox-slowmotion"
+soft_close = true
+finish = "stainless steel 201"
+mounting = "slide_on"
+opening_degrees = 110
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 16, max = 20 }
+plate = { front_offset = 37, hole_pitch = 32 }
+fasteners = "Stainless PHS 4×15 screws included"
+notes = "Stainless plates H2/H0 included. Cup screws 52 mm apart, 5.5 mm behind the cup centre."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15TNSX00050"
+  plate_height = 2
+  k_table = [[3, 14], [4, 15], [5, 16], [6, 17], [7, 18]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15TNSX08050"
+  plate_height = 2
+  k_table = [[3, 6], [4, 7], [5, 8], [6, 9], [7, 10]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MS15TNSX15050"
+  plate_height = 0
+  k_table = [[3, 4], [4, 3], [5, 2], [6, 1]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "tn-ms-slow-calco-fixo"
+name = { en = "TN MS Slow, fixed plate", pt-BR = "Dobradiça TN MS Slow Calço Fixo" }
+source = "tn-ms-slow-calco-fixo"
+soft_close = true
+finish = "nickel-plated steel"
+mounting = "fixed_plate"
+opening_degrees = 110
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 16, max = 20 }
+# Four-screw plate: columns 14 mm apart, vertical spacing not dimensioned.
+plate = { front_offset = 37 }
+adjustment = { vertical = 2, frontal = 2.5 }
+notes = "0 mm plate included (H = 0). Side cover adjustment +2/−3 mm. Cup screws 52 mm apart, 5.5 mm behind the cup centre."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15XTN2200BF"
+  plate_height = 0
+  k_table = [[3, 14], [4, 15], [5, 16], [6, 17]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15XTN2208BF"
+  plate_height = 0
+  k_table = [[3, 6], [4, 7], [5, 8], [6, 9]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MS15XTN2215BF"
+  plate_height = 0
+  k_table = [[3, 4], [4, 3], [5, 2], [6, 1]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "tn-ms-slow-calco-fixo-caneco-9-8"
+name = { en = "TN MS Slow, fixed plate, 9.8 mm cup", pt-BR = "Dobradiça TN MS Slow Calço Fixo Caneco 9,8" }
+source = "tn-ms-slow-calco-fixo-caneco-9-8"
+soft_close = true
+finish = "nickel-plated steel"
+mounting = "fixed_plate"
+opening_degrees = 110
+cup = { diameter = 35, depth = 9.8 }
+door_thickness = { min = 12, max = 18 }
+# Four-screw plate: columns 14 mm apart, vertical spacing not dimensioned.
+plate = { front_offset = 37 }
+adjustment = { vertical = 2, frontal = 3 }
+notes = "Overlay adjustment +3/−2 mm. Cup screws 52 mm apart, 5.5 mm behind the cup centre."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15XTN4900BF"
+  plate_height = 2
+  k_table = [[3, 12], [4, 13], [5, 14], [6, 15]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15XTN4908BF"
+  plate_height = 2
+  k_table = [[3, 4], [4, 5], [5, 6], [6, 7]]
+
+  [[hinges.variants]]
+  arm = "inset"
+  code = "51MS15XTN4915BF"
+  plate_height = 0
+  k_table = [[3, 5], [4, 4], [5, 3], [6, 2]]
+
+# ---------------------------------------------------------------------------
+
+[[hinges]]
+id = "tn-ms-slow-inox-calco-fixo"
+name = { en = "TN MS Slow stainless, fixed plate", pt-BR = "Dobradiça TN MS Slow Inox Calço Fixo" }
+source = "tn-ms-slow-inox-calco-fixo"
+soft_close = true
+finish = "stainless steel"
+mounting = "fixed_plate"
+opening_degrees = 105
+# The sheet prints "ø3,5x11,3"; the drawing dimensions the cup as ø35.
+cup = { diameter = 35, depth = 11.3 }
+door_thickness = { min = 15, max = 20 }
+# Four-screw plate: columns 14 mm apart, vertical spacing not dimensioned.
+plate = { front_offset = 37 }
+adjustment = { vertical = 2, frontal = 3, overlay = 3 }
+fasteners = "Stainless Ø4×16 screws included"
+notes = "Cup screws 52 mm apart, 5.5 mm behind the cup centre."
+
+  [[hinges.variants]]
+  arm = "full_overlay"
+  code = "51MS15XTNSS00CF"
+  plate_height = 2
+  k_table = [[3, 13], [4, 14], [5, 15], [6, 16]]
+
+  [[hinges.variants]]
+  arm = "half_overlay"
+  code = "51MS15XTNSS08CF"
+  plate_height = 0
+  k_table = [[3, 5.5], [4, 6.5], [5, 7.5], [6, 8.5]]
+
+  # The Alta variant (51MS15XTNSS15CF) is left out: its printed gap column
+  # (–, 1, 2, 3) grows with K, the reverse of every other FGVTN inset table.

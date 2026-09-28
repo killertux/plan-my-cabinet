@@ -192,6 +192,7 @@ fn reference_dialogs_are_exclusive_nonmutating_real_drafts() {
             Dialog::Resize => app.modals.batch_dimension().is_some(),
             Dialog::Unsaved => app.project_files.prompt.is_some(),
             Dialog::Palette => app.palette.open,
+            Dialog::Catalog => app.modals.catalog().is_some(),
         });
     }
     assert!(parse(&["--capture-baseline", "out", "--capture-dialog", "unknown"]).is_err());

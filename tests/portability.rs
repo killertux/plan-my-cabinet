@@ -72,6 +72,7 @@ fn fixture() -> Project {
         revision: "1".into(),
         installation_dimensions: HashMap::new(),
         verified_hinge: None,
+        origin: None,
     });
     p.hardware.push(Hardware {
         id: id(7),
@@ -144,7 +145,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     std::fs::write(&source, LEGACY).unwrap();
     let mut editor = reopen(&source);
     let p = editor.project();
-    assert_eq!(p.schema_version, 2);
+    assert_eq!(p.schema_version, 3);
     assert_eq!(p.revision, 17);
     assert!(!editor.is_dirty());
     assert!(!editor.can_undo());
@@ -152,7 +153,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     assert_eq!(editor.saved_revision(), Some(17));
     // Independent typed decoding proves no migration quantization or catalog refresh.
     let mut expected: Project = serde_json::from_slice(LEGACY).unwrap();
-    expected.schema_version = 2;
+    expected.schema_version = 3;
     expected.stock_aliases.insert(id(4), "S1".into());
     expected.next_stock_s_alias = 2;
     assert_eq!(p, &expected);
@@ -189,7 +190,21 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     assert!(!loaded.is_dirty());
     // Compare all JSON fields as well, including IDs, prices and historical receipts.
     let mut original: serde_json::Value = serde_json::from_slice(LEGACY).unwrap();
-    original["schema_version"] = 2.into();
+    original["schema_version"] = 3.into();
+    // Version 3 writes the catalog-pack fields with their exact v1 defaults.
+    for entry in original["catalog"].as_array_mut().unwrap() {
+        entry["origin"] = serde_json::Value::Null;
+        if let Some(facts) = entry.get_mut("verified_hinge").filter(|f| !f.is_null()) {
+            facts["arm"] = "full_overlay".into();
+        }
+    }
+    for installation in original["hinge_installations"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+    {
+        installation["inset_depth"] = 0.into();
+    }
     original["stock_aliases"] = serde_json::json!({ id(4).to_string(): "S1" });
     original["next_stock_s_alias"] = 2.into();
     original["next_stock_o_alias"] = 1.into();
@@ -219,7 +234,7 @@ fn legacy_missing_optional_fields_keep_original_defaults_without_dirtying() {
     let bytes = serde_json::to_vec(&value).unwrap();
     let editor = prepare_bytes(&bytes).unwrap().into_editor();
     let p = editor.project();
-    assert_eq!(p.schema_version, 2);
+    assert_eq!(p.schema_version, 3);
     assert_eq!(
         p.grid_spacing,
         plan_my_cabinet::domain::DEFAULT_GRID_SPACING
@@ -263,7 +278,7 @@ fn legacy_invalid_and_future_documents_preserve_files_and_active_edits() {
             serde_json::json!("bad"),
         ),
         ("/export_records/0/file_sha256", serde_json::json!("bad")),
-        ("/schema_version", serde_json::json!(3)),
+        ("/schema_version", serde_json::json!(4)),
     ] {
         let mut value = original.clone();
         *value.pointer_mut(pointer).unwrap() = bad;

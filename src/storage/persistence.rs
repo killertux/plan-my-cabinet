@@ -306,7 +306,7 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         .get("schema_version")
         .and_then(Value::as_u64)
         .ok_or(PersistenceError::MissingVersion)?;
-    if version != 1 && version != u64::from(SCHEMA_VERSION) {
+    if !(1..=u64::from(SCHEMA_VERSION)).contains(&version) {
         return Err(PersistenceError::UnsupportedVersion(version));
     }
     let mut project: Project = serde_json::from_value(value).map_err(PersistenceError::Json)?;
@@ -322,6 +322,9 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         project.next_stock_o_alias = 1;
         project.schema_version = SCHEMA_VERSION;
     } else {
+        // Version 2 predates catalog packs: its hinge snapshots have no origin,
+        // arm (all were full overlay) or inset depth, which default exactly.
+        project.schema_version = SCHEMA_VERSION;
         validate(&project)?;
     }
     project
@@ -494,6 +497,7 @@ mod tests {
             revision: "2026".into(),
             installation_dimensions: HashMap::from([("cup_depth".into(), mm(11))]),
             verified_hinge: None,
+            origin: None,
         });
         p.hardware.push(Hardware {
             id: Uuid::new_v4(),
@@ -816,8 +820,8 @@ mod tests {
             assert!(editor.preview().is_some());
         }
         assert!(matches!(
-            prepare_bytes(b"{\"schema_version\":3}"),
-            Err(PersistenceError::UnsupportedVersion(3))
+            prepare_bytes(b"{\"schema_version\":4}"),
+            Err(PersistenceError::UnsupportedVersion(4))
         ));
         assert!(matches!(
             prepare_bytes(b"{\"schema_version\":4294967296}"),

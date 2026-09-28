@@ -66,3 +66,67 @@ na seção avançada.
 Depois de instalar as dobradiças, escolha **Adicionar relação de porta**. Selecione uma peça móvel ou raiz de montagem, uma peça fixa de montagem e instalações existentes compatíveis. A prévia lista a subárvore móvel (inclusive puxadores aninhados), a peça fixa, o eixo na posição fechada e os avisos das instalações. Confirmar cria uma relação reversível sem mover o projeto fechado. Editar altera a seleção de dobradiças; excluir remove a relação em uma etapa de desfazer. Ciclos, autorreferência e duplicatas de raiz móvel ou dobradiça são rejeitados. Selecione uma peça ou montagem e use **Excluir peça / montagem selecionada** para conferir alocações, instalações e relações dependentes antes da exclusão da subárvore em uma etapa reversível. Cancelar não altera o projeto. Avisos após mudanças em peças/dobradiças exigem revisão; o eixo de referência não garante folgas nem serve como instrução de furação.
 
 O PDF examinado tem SHA-256 `e8aafa4f3656a108e8e91dd1681685455a4bf4f644cf01d4ecfa3fd80bf44df2` (metadados modificados em 16/09/2026). O desenho mostra 48 mm entre os centros de fixação do caneco, **não** uma especificação completa de furação: não deduza diâmetro/profundidade dos pré-furos nem a escolha dos parafusos. Não há classificação de carga, quantidade recomendada de dobradiças, adequação estrutural, trajetória precisa do mecanismo oculto ou folga livre de colisões verificadas. Os avisos na tela e no plano continuam válidos em todos os ângulos. O PDF e as imagens do fabricante não acompanham o aplicativo; somente dimensões factuais atribuídas à fonte e anotações próprias. Referências inválidas são omitidas das instruções numéricas do plano sem bloquear cortes de madeira válidos.
+
+## Pacotes de catálogo
+
+Os dados de dobradiças vêm de **pacotes de catálogo**: um arquivo TOML por
+fabricante, com os dados de cada dobradiça e a fonte de onde foram lidos.
+**Adicionar dobradiça do catálogo…** abre o navegador de catálogos:
+
+- **Pacotes** lista cada pacote com um estado: **Revisado** (incluído no
+  aplicativo e conferido com as fichas citadas), **Dados do usuário** (seu
+  próprio arquivo), **Rascunho** ou **Erros**. Um pacote com erros aparece
+  com cada problema e sua posição no arquivo, mas não oferece nada para
+  adicionar.
+- **Dobradiça** e **Braço** escolhem a família e a variante Reta, Curva ou
+  Alta. Os dados mostram os códigos da dobradiça e do calço, caneco, faixa
+  de espessura da porta, altura do calço H, furação e recuo frontal do
+  calço, ângulo de abertura e fonte.
+- **Bancada de teste** roda as mesmas verificações de um projeto numa porta
+  de exemplo: escolha um par K da tabela, informe a espessura da porta e da
+  lateral (e E para embutida) e veja se cabe, onde ficam os centros do caneco
+  e do calço, ou qual verificação falha.
+- **Adicionar ao projeto** fixa a variante escolhida no projeto. O projeto
+  guarda sua própria cópia: editar ou apagar o pacote depois nunca altera um
+  projeto salvo. **Atualizar do catálogo** substitui um registro fixado de
+  forma explícita (uma edição que pode ser desfeita) e reavalia as
+  instalações.
+
+Registros dos seus pacotes dão medidas completas. O cartão, o inspetor e o
+PDF os marcam como **Dados do usuário** e citam o pacote; confira com a ficha
+do fabricante antes de furar. Um registro cujos números não fecham entre si
+(por exemplo, caneco mais fundo que a porta mais fina, ou tabela K fora de
+ordem) não gera orientação numérica.
+
+### Dobradiças Alta (porta embutida)
+
+Uma porta embutida fica entre as laterais do móvel. A tabela dá a **folga F**
+entre a borda da porta e a lateral para cada K, em vez do recobrimento R. O
+diálogo da dobradiça pede **E**: a distância da borda frontal da lateral até
+a face interna da porta (a espessura da porta quando ela fica rente à
+frente). O calço fica no recuo frontal mais E (por exemplo 37 + 18 = 55 mm).
+Um E menor que a espessura da porta gera aviso, porque a porta ficaria
+saliente na frente. A prévia de movimento gira a porta embutida pela aresta
+frontal externa.
+
+### Como escrever seu pacote
+
+Coloque arquivos `.toml` na sua pasta de catálogos (**Abrir pasta** no
+navegador; no macOS `~/Library/Application Support/Plan My Cabinet/catalogs`)
+ou use **Importar pacote…** e depois **Recarregar**. As medidas são em
+milímetros; decimais como `9.8` são exatos. O arquivo incluído
+`catalogs/fgvtn.toml` é um exemplo completo; o formato está descrito, campo a
+campo, no guia em inglês (`hardware-en.md`).
+
+O carregador informa todos os problemas de uma vez. Erros (o pacote não pode
+ser usado) incluem campos desconhecidos, ids inválidos, códigos repetidos,
+medidas mais finas que 1 µm, faixa de espessura invertida, caneco tão fundo
+quanto a porta mais fina e valores de K que não crescem. Avisos (o pacote
+continua utilizável) incluem passos irregulares de R/F, ângulo de abertura
+ausente, pacote em rascunho e pacote do usuário que substitui um incluído com
+o mesmo id. Um aviso pode ser aceito para uma dobradiça com `allow`, mas
+somente com um motivo.
+
+Para verificar um pacote sem abrir o aplicativo, rode
+`plan-my-cabinet --check-catalog meu-pacote.toml`. Ele mostra cada problema
+com sua posição no arquivo e termina com erro se houver erros.

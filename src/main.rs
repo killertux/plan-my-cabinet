@@ -56,8 +56,8 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, capture, command_palette, currency_ui, door_joint_ui, handoff_ui,
-    hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
+    actions, assembly_ui, capture, catalog_ui, command_palette, currency_ui, door_joint_ui,
+    handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
     pending_navigation, placement_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, state,
     stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
     workspace_state,
@@ -207,7 +207,10 @@ impl Default for DesktopApp {
             shell_estimate: None,
             project_files: project_ui::ProjectFiles::default(),
             toasts: toasts::Toasts::default(),
-            hardware: state::HardwareState::default(),
+            hardware: state::HardwareState {
+                catalogs: plan_my_cabinet::catalog_pack::CatalogRegistry::bundled(),
+                ..Default::default()
+            },
             cut_plan: state::CutPlanState::default(),
             design: state::DesignState::default(),
             chromes: state::DialogChromes::default(),
@@ -570,11 +573,49 @@ fn platform_config_dir() -> Result<PathBuf, &'static str> {
         .ok_or("A valid absolute platform configuration directory is unavailable")
 }
 
+/// `--check-catalog`: validate pack files for authors and CI. Prints every
+/// problem with its TOML path; fails when any pack has an error.
+fn check_catalogs(paths: &[std::ffi::OsString]) -> std::process::ExitCode {
+    if paths.is_empty() {
+        eprintln!("Usage: plan-my-cabinet --check-catalog PACK.toml...");
+        return std::process::ExitCode::FAILURE;
+    }
+    let mut failed = false;
+    for path in paths {
+        let loaded = plan_my_cabinet::catalog_pack::load_file(Path::new(path));
+        let path = Path::new(path).display();
+        if let Some(pack) = loaded.usable() {
+            let variants: usize = pack.hinges.iter().map(|h| h.variants.len()).sum();
+            println!(
+                "{path}: {} {} — {} hinges, {variants} variants, {} warnings",
+                pack.manufacturer,
+                pack.version,
+                pack.hinges.len(),
+                loaded.warnings()
+            );
+        } else {
+            println!("{path}: {} errors", loaded.errors());
+            failed = true;
+        }
+        for issue in &loaded.issues {
+            println!("  {issue}");
+        }
+    }
+    if failed {
+        std::process::ExitCode::FAILURE
+    } else {
+        std::process::ExitCode::SUCCESS
+    }
+}
+
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
         println!("{}", capture::HELP);
         return std::process::ExitCode::SUCCESS;
+    }
+    if args.first().is_some_and(|arg| arg == "--check-catalog") {
+        return check_catalogs(&args[1..]);
     }
     let capture_config = match capture::Config::parse(args) {
         Ok(config) => config,
@@ -792,6 +833,9 @@ fn main() -> std::process::ExitCode {
                     Ok(dir) => app.load_preferences(&context.egui_ctx, &dir),
                     Err(error) => app.preferences_error = Some(error.into()),
                 }
+                let user_packs = project_ui::user_data_dir().map(|dir| dir.join("catalogs"));
+                app.hardware.catalogs =
+                    plan_my_cabinet::catalog_pack::CatalogRegistry::load(user_packs.as_deref());
             }
             Ok(Box::new(app))
         }),

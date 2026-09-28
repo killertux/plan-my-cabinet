@@ -938,10 +938,7 @@ impl DesktopApp {
                 self.editor.project(),
                 locale,
             ))),
-            (A::AddCatalog, _) => {
-                let result = hardware_catalog::add_builtin(&mut self.editor);
-                self.report_edit(result);
-            }
+            (A::AddCatalog, _) => self.open_catalog_dialog(),
             (A::UpdateCatalog, T::Catalog(id)) => self.update_catalog_action(id),
             (A::EditMaterial, T::Material(id)) => self.open_material_action(id, locale),
             (A::BatchDimensions, _) => self.open_batch_action(),
@@ -1330,7 +1327,12 @@ impl DesktopApp {
 
     fn update_catalog_action(&mut self, id: Uuid) {
         self.hardware.catalog_update_notice = Some(
-            match hardware_catalog::update_from_builtin_with_status(&mut self.editor, id) {
+            match hardware_catalog::update_from_catalog_with_status(
+                &mut self.editor,
+                &self.hardware.catalogs,
+                id,
+                catalog_ui::language_tag(&self.localizer),
+            ) {
                 Ok((_, statuses)) => {
                     let details = statuses
                         .iter()
