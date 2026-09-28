@@ -329,6 +329,19 @@ fn edge(axis: Axis, side: Edge) -> &'static str {
     }
 }
 
+/// Saw-cut strip fill in sheet drawings.
+pub const KERF_BAND: Ink = Ink {
+    red: 220,
+    green: 220,
+    blue: 220,
+};
+/// Background of a cut label tag, so it stays readable over lines.
+const TAG_FILL: Ink = Ink {
+    red: 255,
+    green: 255,
+    blue: 255,
+};
+
 fn sheet_pages(
     builder: &mut DocumentBuilder,
     tree: &CutTree,
@@ -356,7 +369,7 @@ fn sheet_pages(
         .rectangle;
     let actual_x = root.extent[0].micrometres() as f64 / 1000.0;
     let actual_y = root.extent[1].micrometres() as f64 / 1000.0;
-    let scale = (166.0 / actual_x).min(72.0 / actual_y);
+    let scale = (166.0 / actual_x).min(105.0 / actual_y);
     let scale_label = format!(
         "{}: 1 mm {} = {} mm {}; {}",
         loc.text("pdf-scale"),
@@ -420,22 +433,141 @@ fn sheet_pages(
     }
     builder.set_continuation(context);
 
-    // Up to five labelled cut callouts per row below the scaled stock. No
-    // identifiers depend on fitting inside a narrow physical part rectangle.
-    let rows = tree.cut_count().div_ceil(5);
+    // Labels are laid out in drawing coordinates first, then drawn. Part
+    // numbers go inside their part; each cut label sits on its own cut line as
+    // a small tag, moved along the line to avoid other labels. Only a label
+    // with no free spot falls back to a keyed row below the drawing.
     let drawing_height = (actual_y * scale) as f32;
-    let height = 12.0 + drawing_height + rows as f32 * 4.5 + 7.0;
-    let frame = builder.diagram(height)?;
-    let x0 = frame.x + 5.0;
-    let y0 = frame.y + 5.0;
+    let caption = TextStyle::CAPTION.leading_mm;
     let at = |value: crate::units::Length| (value.micrometres() as f64 / 1000.0 * scale) as f32;
-    let rect = |r: crate::cut_tree::Rectangle| Rect {
-        x: x0 + at(r.origin[0]),
-        y: y0 + at(r.origin[1]),
+    let local = |r: crate::cut_tree::Rectangle| Rect {
+        x: at(r.origin[0]),
+        y: at(r.origin[1]),
         width: at(r.extent[0]),
         height: at(r.extent[1]),
     };
-    builder.box_at(rect(root), Some(Stroke::STANDARD), None)?;
+    let overlaps = |a: &Rect, b: &Rect| {
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    };
+    let sheet = local(root);
+    // The grain arrow occupies the sheet's top-left corner.
+    let mut taken: Vec<Rect> = match stock.grain {
+        StockGrain::AlongX => vec![Rect { x: 0.0, y: 0.0, width: 17.0, height: 4.0 }],
+        StockGrain::AlongY => vec![Rect { x: 0.0, y: 0.0, width: 4.0, height: 17.0 }],
+        _ => Vec::new(),
+    };
+    let mut part_labels = Vec::new();
+    for node in tree.nodes() {
+        if let CutKind::Part(board_id) = node.kind {
+            let part = local(node.rectangle);
+            let label = labels.part(board_id);
+            let width = builder.measure(&label, TextStyle::CAPTION)? + 0.1;
+            let y = part.y + (part.height - caption).clamp(0.0, 0.4);
+            let spot = [part.x + 0.8, part.x + 18.0, part.x + 0.8]
+                .into_iter()
+                .zip([y, y, part.y + 4.4])
+                .map(|(x, y)| Rect {
+                    x,
+                    y,
+                    width,
+                    height: caption,
+                })
+                .find(|spot| {
+                    spot.x + spot.width <= part.x + part.width - 0.4
+                        && spot.y + spot.height <= part.y + part.height
+                        && !taken.iter().any(|other| overlaps(spot, other))
+                });
+            if let Some(spot) = spot {
+                taken.push(spot);
+                part_labels.push((label, spot));
+            }
+        }
+    }
+    let mut operations = tree.operations();
+    operations.sort_by_key(|op| op.number);
+    let mut bands = Vec::new();
+    let mut tags = Vec::new();
+    let mut unplaced = Vec::new();
+    for op in &operations {
+        let input = local(tree.node(op.input).expect("verified input").rectangle);
+        let first = local(
+            tree.node(op.outputs.first)
+                .expect("verified first output")
+                .rectangle,
+        );
+        let band = match op.axis {
+            Axis::X => Rect {
+                x: first.x + first.width,
+                y: input.y,
+                width: at(tree.kerf()),
+                height: input.height,
+            },
+            Axis::Y => Rect {
+                x: input.x,
+                y: first.y + first.height,
+                width: input.width,
+                height: at(tree.kerf()),
+            },
+        };
+        bands.push(band);
+        let label = format!("C{}", op.number);
+        let label_width = builder.measure(&label, TextStyle::CAPTION)? + 0.2;
+        let (w, h) = (label_width + 1.0, caption);
+        let spot = [0.5, 0.3, 0.7, 0.15, 0.85, 0.4, 0.6]
+            .into_iter()
+            .map(|t| match op.axis {
+                Axis::X => Rect {
+                    x: band.x + band.width / 2.0 - w / 2.0,
+                    y: band.y + band.height * t - h / 2.0,
+                    width: w,
+                    height: h,
+                },
+                Axis::Y => Rect {
+                    x: band.x + band.width * t - w / 2.0,
+                    y: band.y + band.height / 2.0 - h / 2.0,
+                    width: w,
+                    height: h,
+                },
+            })
+            .find(|spot| {
+                spot.x >= sheet.x
+                    && spot.y >= sheet.y
+                    && spot.x + spot.width <= sheet.x + sheet.width
+                    && spot.y + spot.height <= sheet.y + sheet.height
+                    && !taken.iter().any(|other| overlaps(spot, other))
+            });
+        match spot {
+            Some(spot) => {
+                taken.push(spot);
+                tags.push((label, label_width, spot));
+            }
+            None => unplaced.push((
+                label,
+                label_width,
+                Point {
+                    x: band.x + band.width / 2.0,
+                    y: band.y + band.height / 2.0,
+                },
+            )),
+        }
+    }
+    let rows = unplaced.len().div_ceil(5);
+    let height = 12.0
+        + drawing_height
+        + if rows == 0 {
+            0.0
+        } else {
+            rows as f32 * 4.5 + 7.0
+        };
+    let frame = builder.diagram(height)?;
+    let x0 = frame.x + 5.0;
+    let y0 = frame.y + 5.0;
+    let place = |r: Rect| Rect {
+        x: x0 + r.x,
+        y: y0 + r.y,
+        ..r
+    };
+    builder.box_at(place(sheet), Some(Stroke::STANDARD), None)?;
     let arrow = match stock.grain {
         StockGrain::AlongX => Some((
             Point {
@@ -477,69 +609,41 @@ fn sheet_pages(
         )?;
     }
     for node in tree.nodes() {
-        if let CutKind::Part(board_id) = node.kind {
-            let box_rect = rect(node.rectangle);
-            builder.box_at(box_rect, Some(Stroke::STANDARD), None)?;
-            let label = labels.part(board_id);
-            let width = builder.measure(&label, TextStyle::CAPTION)?;
-            if box_rect.width > width + 2.0 && box_rect.height > TextStyle::CAPTION.leading_mm + 2.0
-            {
-                builder.label_at(
-                    &label,
-                    TextStyle::CAPTION,
-                    box_rect.x + 1.0,
-                    box_rect.y + 1.0,
-                    width + 0.1,
-                )?;
-            }
+        if let CutKind::Part(_) = node.kind {
+            builder.box_at(place(local(node.rectangle)), Some(Stroke::STANDARD), None)?;
         }
     }
-    let mut operations = tree.operations();
-    operations.sort_by_key(|op| op.number);
-    for (i, op) in operations.iter().enumerate() {
-        let input = rect(tree.node(op.input).expect("verified input").rectangle);
-        let first = rect(
-            tree.node(op.outputs.first)
-                .expect("verified first output")
-                .rectangle,
-        );
-        let band = match op.axis {
-            Axis::X => Rect {
-                x: first.x + first.width,
-                y: input.y,
-                width: at(tree.kerf()),
-                height: input.height,
-            },
-            Axis::Y => Rect {
-                x: input.x,
-                y: first.y + first.height,
-                width: input.width,
-                height: at(tree.kerf()),
-            },
-        };
-        // Very narrow physical kerfs remain exact in the model, not inflated
-        // to a display-only minimum. The centre line keys the operation.
-        builder.box_at(
-            band,
-            None,
-            Some(Ink {
-                red: 220,
-                green: 220,
-                blue: 220,
-            }),
-        )?;
-        let centre = Point {
-            x: band.x + band.width / 2.0,
-            y: band.y + band.height / 2.0,
-        };
-        let label = format!("C{}", op.number);
-        let label_width = builder.measure(&label, TextStyle::CAPTION)? + 0.2;
-        let column = i % 5;
-        let label_x = frame.x + 3.0 + column as f32 * 35.0;
+    for (label, spot) in &part_labels {
+        let spot = place(*spot);
+        builder.label_at(label, TextStyle::CAPTION, spot.x, spot.y, spot.width)?;
+    }
+    // Very narrow physical kerfs remain exact in the model, not inflated to a
+    // display-only minimum.
+    for band in &bands {
+        builder.box_at(place(*band), None, Some(KERF_BAND))?;
+    }
+    let tag_stroke = Stroke {
+        ink: Ink {
+            red: 150,
+            green: 150,
+            blue: 150,
+        },
+        width_mm: 0.12,
+    };
+    for (label, label_width, spot) in &tags {
+        let spot = place(*spot);
+        builder.box_at(spot, Some(tag_stroke), Some(TAG_FILL))?;
+        builder.label_at(label, TextStyle::CAPTION, spot.x + 0.5, spot.y, *label_width)?;
+    }
+    for (i, (label, label_width, centre)) in unplaced.iter().enumerate() {
+        let label_x = frame.x + 3.0 + (i % 5) as f32 * 35.0;
         let label_y = y0 + drawing_height + 3.0 + (i / 5) as f32 * 4.5;
         builder.path_styled(
             vec![
-                centre,
+                Point {
+                    x: x0 + centre.x,
+                    y: y0 + centre.y,
+                },
                 Point {
                     x: label_x + label_width / 2.0,
                     y: label_y,
@@ -555,7 +659,7 @@ fn sheet_pages(
                 width_mm: 0.12,
             },
         )?;
-        builder.label_at(&label, TextStyle::CAPTION, label_x, label_y, label_width)?;
+        builder.label_at(label, TextStyle::CAPTION, label_x, label_y, *label_width)?;
     }
     builder.paragraph(&format!(
         "{} × {}",

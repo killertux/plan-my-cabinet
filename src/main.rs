@@ -432,6 +432,17 @@ impl DesktopApp {
             || self.project_files.blocking()
     }
 
+    /// Door motion is the only mode open: no dialog, prompt, palette or repair.
+    fn door_motion_only(&self) -> bool {
+        self.hardware.door_motion.is_some()
+            && !self.palette.open
+            && self.navigation.pending().is_none()
+            && !self.other_modal_open()
+            && !self.cut_plan.repair.active()
+            && !self.project_files.blocking()
+            && !self.cut_plan.optimizer.comparison_open()
+    }
+
     /// Mounted overlays block raw scene input even on their opening frame,
     /// before egui has established the new modal layer. Motion and repair are
     /// scene modes, not overlays; their hosts apply their own restrictions.

@@ -157,11 +157,12 @@ fn dense_bilingual_cut_callouts_and_continuations_retain_witness_identity() {
             .iter()
             .flat_map(|page| &page.primitives)
             .filter_map(|primitive| match primitive {
+                // Saw-cut strips, not the white label tags drawn over them.
                 Primitive::Box {
                     bounds,
-                    fill: Some(_),
+                    fill: Some(fill),
                     ..
-                } => Some(bounds),
+                } if *fill == plan_my_cabinet::workshop_document::KERF_BAND => Some(bounds),
                 _ => None,
             })
             .collect();

@@ -628,15 +628,18 @@ impl DesktopApp {
             id,
             A::NewProject | A::OpenProject | A::SaveProject | A::SaveProjectAs | A::OpenWelcome
         ) {
+            // Saving writes the committed project, so door motion (a view
+            // angle) and a background search (its own snapshot) do not block
+            // it. Replacing the project cancels a search but not a motion mode.
+            let saving = matches!(id, A::SaveProject | A::SaveProjectAs);
             if (self.other_modal_open()
                 && self.modals.placement().is_none()
                 && self.modals.board_dimension().is_none())
                 || self.cut_plan.optimizer.comparison_open()
                 || self.navigation.pending().is_some()
-                || self.hardware.door_motion.is_some()
+                || (self.hardware.door_motion.is_some() && !saving)
                 || self.project_files.blocking()
                 || self.handoff.activity.is_some()
-                || self.cut_plan.optimizer.running()
             {
                 return Err(Unavailable::Busy);
             }

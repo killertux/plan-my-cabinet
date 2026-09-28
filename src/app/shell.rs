@@ -1157,7 +1157,10 @@ impl DesktopApp {
             );
         }
         self.sync_scene_inspector();
-        if let Some(action) = actions::project_shortcut(ui.ctx(), self.modal_open()) {
+        // Door motion leaves the keyboard free; each action still applies its
+        // own availability (Save is allowed, edits are not).
+        let shortcuts_blocked = self.modal_open() && !self.door_motion_only();
+        if let Some(action) = actions::project_shortcut(ui.ctx(), shortcuts_blocked) {
             self.invoke_or_report(Request::new(action));
         }
         let (issues, total, invalid_estimate) = self.shell_facts();

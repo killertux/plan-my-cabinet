@@ -1267,6 +1267,23 @@ fn move_preview_accepts_once_and_does_not_implicitly_apply_on_stay() {
 }
 
 #[test]
+fn save_stays_available_during_door_motion_but_project_replacement_waits() {
+    let mut app = navigation_app();
+    app.hardware.door_motion = Some((Uuid::new_v4(), 30.0));
+    assert!(app.door_motion_only());
+    assert_eq!(app.action_availability(Request::new(A::SaveProject)), Ok(()));
+    assert_eq!(app.action_availability(Request::new(A::SaveProjectAs)), Ok(()));
+    assert_eq!(
+        app.action_availability(Request::new(A::NewProject)),
+        Err(actions::Unavailable::Busy)
+    );
+    assert!(!app.busy_for_save());
+    assert!(app.busy_for_project());
+    app.palette.open = true;
+    assert!(!app.door_motion_only(), "another surface on top still blocks");
+}
+
+#[test]
 fn hardware_motion_resets_only_on_successful_navigation() {
     let mut app = navigation_app();
     app.session.switch(Workspace::Hardware);

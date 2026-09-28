@@ -256,7 +256,11 @@ fn bilingual_dense_packet_serializes_exact_pages_glyphs_and_diagrams() {
             .collect::<Vec<_>>();
         assert_eq!(
             all.iter()
-                .filter(|p| matches!(p, Primitive::Box { fill: Some(_), .. }))
+                .filter(|p| matches!(
+                    p,
+                    Primitive::Box { fill: Some(fill), .. }
+                        if *fill == plan_my_cabinet::workshop_document::KERF_BAND
+                ))
                 .count(),
             27
         );

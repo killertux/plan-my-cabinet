@@ -128,11 +128,19 @@ impl DesktopApp {
         }
     }
 
+    /// A background search never blocks: saving writes the committed project
+    /// and replacing it resets (and so cancels) the optimizer.
     pub(crate) fn busy_for_project(&self) -> bool {
-        self.modal_open()
-            || self.handoff.activity.is_some()
-            || self.cut_plan.optimizer.running()
-            || self.editor.preview().is_some()
+        self.modal_open() || self.handoff.activity.is_some() || self.editor.preview().is_some()
+    }
+
+    /// Door motion only changes the displayed angle, so Save stays available.
+    pub(crate) fn busy_for_save(&self) -> bool {
+        if self.door_motion_only() {
+            self.handoff.activity.is_some() || self.editor.preview().is_some()
+        } else {
+            self.busy_for_project()
+        }
     }
 
     pub(crate) fn request_project_action(&mut self, action: NextAction) {
@@ -166,7 +174,7 @@ impl DesktopApp {
         if self.resolve_draft_before_project_command(PendingProjectCommand::Save(save_as)) {
             return;
         }
-        if self.busy_for_project() {
+        if self.busy_for_save() {
             return;
         }
         if !save_as && let Some(path) = self.project_files.path.clone() {
