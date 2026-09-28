@@ -81,6 +81,17 @@ fn first_run_drawers_tile_generates_editable_unsaved_project_and_stock_route() {
         TemplateKind::Drawers,
     ));
     let setup = &mut app.template.setup.as_mut().unwrap().setup;
+    // The tile opens with the same standard materials as New project, and
+    // every role already has one, so the setup can be reviewed straight away.
+    let standard = plan_my_cabinet::material_presets::BR_STANDARD.len();
+    assert_eq!(setup.materials.len(), standard);
+    assert!(
+        TemplateKind::Drawers
+            .roles()
+            .iter()
+            .all(|role| setup.roles.contains_key(role))
+    );
+    assert!(setup.review().is_ok());
     setup.project_name = "Three drawers".into();
     let value = |mm: i64| {
         plan_my_cabinet::template_setup::ProposedLength::new(Conversion::Exact(
@@ -105,7 +116,7 @@ fn first_run_drawers_tile_generates_editable_unsaved_project_and_stock_route() {
     app.request_project_action(project_ui::NextAction::Template);
     assert!(!app.project_files.welcome.visible);
     assert_eq!(app.editor.project().boards.len(), 23);
-    assert_eq!(app.editor.project().materials.len(), 4);
+    assert_eq!(app.editor.project().materials.len(), standard + 4);
     assert!(app.editor.project().stock.is_empty());
     assert!(app.editor.project().allocations.is_empty());
     assert!(app.template.message.is_some());

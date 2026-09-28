@@ -180,12 +180,17 @@ impl DesktopApp {
         match intent {
             WelcomeIntent::NewProject => self.request_project_action(project_ui::NextAction::New),
             WelcomeIntent::Template(kind) => {
-                self.template.setup = Some(TemplateSetupUi::new(
+                let mut setup = TemplateSetupUi::new(
                     kind,
                     self.localizer.text("project-default-name"),
                     self.editor.project().currency,
                     self.editor.project().display_unit,
-                ));
+                );
+                // Same starting materials as New project, with roles pre-filled.
+                setup
+                    .setup
+                    .seed_standard_materials(self.localizer.language());
+                self.template.setup = Some(setup);
                 self.template.message = None;
             }
             WelcomeIntent::OpenProject => self.request_project_action(project_ui::NextAction::Open),

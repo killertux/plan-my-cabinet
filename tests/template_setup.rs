@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use plan_my_cabinet::commands::ProjectEditor;
 use plan_my_cabinet::domain::{BoardGrain, Project, SrgbColor};
 use plan_my_cabinet::first_fit::FirstFit;
+use plan_my_cabinet::i18n::Language;
+use plan_my_cabinet::material_presets::BR_STANDARD;
 use plan_my_cabinet::money::Currency;
 use plan_my_cabinet::template_setup::{
     MaterialRole, ProposedLength, SetupError, TemplateField, TemplateKind, TemplateSetup,
@@ -202,4 +204,59 @@ fn nested_material_cancel_keeps_parent_draft_and_roles_can_share_material() {
     let p = result.editor.project();
     assert_eq!(p.boards[0].material_id, p.boards[5].material_id);
     assert_eq!(p.boards[5].thickness, Length::from_micrometres(18_000));
+}
+
+fn seeded(kind: TemplateKind, language: Language) -> TemplateSetup {
+    let mut stage = setup(kind);
+    stage.materials.clear();
+    stage.roles.clear();
+    stage.seed_standard_materials(language);
+    stage
+}
+
+#[test]
+fn standard_materials_are_offered_with_every_role_prefilled() {
+    for kind in [
+        TemplateKind::Base,
+        TemplateKind::Wall,
+        TemplateKind::Drawers,
+    ] {
+        let stage = seeded(kind, Language::PtBr);
+        assert_eq!(stage.materials.len(), BR_STANDARD.len());
+        assert!(stage.materials.iter().all(|m| m.color.is_some()));
+        assert!(stage.materials.iter().any(|m| m.name == "Compensado"));
+        assert!(
+            kind.roles()
+                .iter()
+                .all(|role| stage.roles.contains_key(role))
+        );
+        assert!(stage.review().is_ok(), "{kind:?} defaults must review");
+    }
+    let stage = seeded(TemplateKind::Drawers, Language::En);
+    let chosen = |role| {
+        let id = stage.roles[&role];
+        let m = stage.materials.iter().find(|m| m.id == id).unwrap();
+        (m.name.as_str(), m.thickness.conversion.suggested())
+    };
+    let t = |mm: i64| Length::from_micrometres(mm * 1000);
+    assert_eq!(chosen(MaterialRole::Carcass), ("White MDF", t(15)));
+    assert_eq!(chosen(MaterialRole::Back), ("HDF", t(3)));
+    assert_eq!(chosen(MaterialRole::Box), ("White MDF", t(15)));
+    assert_eq!(chosen(MaterialRole::BoxBottom), ("HDF", t(3)));
+    assert_eq!(chosen(MaterialRole::ExternalFront), ("White MDF", t(18)));
+    let generated = stage.generate().unwrap();
+    let p = generated.editor.project();
+    assert_eq!(p.materials.len(), BR_STANDARD.len());
+    assert_eq!(p.material_colors.len(), BR_STANDARD.len());
+    assert_eq!(p.boards.len(), 23);
+}
+
+#[test]
+fn seeding_never_replaces_materials_already_in_the_setup() {
+    let mut stage = setup(TemplateKind::Drawers);
+    let before = stage.materials.len();
+    let roles = stage.roles.clone();
+    stage.seed_standard_materials(Language::En);
+    assert_eq!(stage.materials.len(), before);
+    assert_eq!(stage.roles, roles);
 }

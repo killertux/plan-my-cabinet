@@ -7,6 +7,8 @@ use uuid::Uuid;
 use crate::commands::{EditError, ProjectEditor};
 use crate::domain::{BoardGrain, DomainError, Material, Project, SrgbColor};
 use crate::first_fit::{FirstFit, allocate_new_board};
+use crate::i18n::Language;
+use crate::material_presets::BR_STANDARD;
 use crate::money::Currency;
 use crate::template_recipes::{
     BaseRecipe, CabinetSize, DrawersRecipe, RecipeCandidate, RecipeError, RecipeMaterial,
@@ -200,6 +202,42 @@ impl TemplateSetup {
             color,
         });
         id
+    }
+
+    /// Offers the standard material set that `New project` seeds (see
+    /// `material_presets::BR_STANDARD`) and pre-assigns each role a common
+    /// choice: 15 mm white MDF carcass and boxes, 3 mm HDF back and box
+    /// bottoms, 18 mm white MDF fronts. Every assignment stays editable.
+    /// Does nothing when the setup already has materials.
+    pub fn seed_standard_materials(&mut self, language: Language) {
+        if !self.materials.is_empty() {
+            return;
+        }
+        let mut ids = Vec::with_capacity(BR_STANDARD.len());
+        for preset in BR_STANDARD {
+            let id = self.add_material(
+                preset.name(language),
+                ProposedLength::new(Conversion::Exact(preset.thickness())),
+                preset.grain,
+                Some(preset.color),
+            );
+            ids.push((preset, id));
+        }
+        let find = |name_en: &str, thickness_mm: i64| {
+            ids.iter()
+                .find(|(p, _)| p.name_en == name_en && p.thickness_mm == thickness_mm)
+                .map(|(_, id)| *id)
+        };
+        for &role in self.kind.roles() {
+            let choice = match role {
+                MaterialRole::Carcass | MaterialRole::Box => find("White MDF", 15),
+                MaterialRole::Back | MaterialRole::BoxBottom => find("HDF", 3),
+                MaterialRole::ExternalFront => find("White MDF", 18),
+            };
+            if let Some(id) = choice {
+                self.roles.insert(role, id);
+            }
+        }
     }
 
     /// Validate the entire setup before showing a candidate. A fresh project
