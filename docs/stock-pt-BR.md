@@ -24,6 +24,26 @@ O resumo de alocação conta cada peça uma vez, inclusive as ocultas na montage
 
 A chapa focalizada no Plano de corte mostra réguas, escala/legenda e opções de exibição independentes de **Cortes**, **Retalhos**, **Fibras** e **IDs**. **Ajustar chapa** e essas opções mudam só a apresentação: ocultar cortes ou IDs não transforma uma posição em conflito em posição viável. Faixas numeradas e retalhos retangulares reutilizáveis hachurados vêm apenas de uma sequência de corte atual verificada; a sequência física numerada no inspetor informa peça de entrada, borda de referência, distância conservada, lado da lâmina e peças resultantes. Ao apontar uma linha, a faixa correspondente é destacada na chapa sem selecionar nem mover a peça do móvel. Chamadas para peças pequenas conservam identidade e dimensões finais mesmo com zoom reduzido. Posições inválidas mantêm os indicadores de conflito; esgotar o limite de prova continua **desconhecido**, nunca um plano verificado com zero cortes. O inspetor separa áreas de retalhos recuperáveis, lâmina fora dos refilos, refilos e outros descartes para permitir conferir toda a área da chapa.
 
+## Posicionar peças automaticamente
+
+Peças criadas antes de existir qualquer chapa (um projeto de modelo, por exemplo) começam **Sem alocação**, e adicionar uma chapa depois não as move. A seção **Precisa de estoque** do Plano de corte as posiciona para você:
+
+- **Posicionar peças sem chapa** coloca cada peça em espera nas chapas declaradas, em volta das que já estão posicionadas. Nada que já está posicionado se move.
+- **Refazer plano** reorganiza todas as peças não travadas, usando o mínimo de chapas possível e preferindo as chapas mais altas na ordem de prioridade. Peças travadas ficam onde estão.
+
+Os dois aplicam na hora, como um único passo de desfazer, e uma mensagem diz quantas peças foram posicionadas e quantas ainda esperam. O encaixe é feito por material e espessura. Cada peça sai de um retângulo livre com cortes retos de ponta a ponta, então toda chapa montada já tem uma sequência de cortes verificada. Veio, espessura de corte e refilos são respeitados.
+
+Para cada material e espessura com peças em espera, Precisa de estoque mostra um cartão dizendo o motivo:
+
+- **Ainda não há chapa deste material e espessura**, ou **as chapas deste material estão cheias**. O cartão oferece **Adicionar N chapas (comprimento × largura)**: o menor número de chapas em que todas as peças em espera cabem. As chapas copiam a maior chapa daquele material que você declarou, ou usam o tamanho padrão do material (2750 × 1840 mm para os MDF padrão). Elas entram como **A comprar** e são preenchidas no mesmo passo de desfazer.
+- Peças **grandes demais para qualquer chapa** do material, ou que **só cabem giradas e o veio não permite**, aparecem pelo nome. Mais chapas do mesmo tamanho não resolvem; altere a peça, o veio, ou adicione uma chapa maior.
+
+Quando não há chapa para copiar e o material não é um padrão, o cartão abre **Adicionar chapa** para aquele material.
+
+As peças em espera aparecem dentro do cartão do seu material (**Mostrar as peças em espera**, cada uma com **Revelar**), e não como um cartão por peça. Peças com conflito, ou que cabem em chapas que você já tem, continuam com o próprio cartão.
+
+Um projeto de modelo pode começar com as chapas: na etapa de Revisão do modelo, **Adicionar as chapas que este móvel precisa** (ligado por padrão) mostra uma linha por material, como “MDF Branco · 15 mm: 1 chapa de 2750 × 1840 mm”. Ao gerar, essas chapas entram como A comprar e todas as peças são posicionadas, no mesmo passo de desfazer. Materiais sem tamanho padrão são citados, para você adicionar as chapas em Estoque depois.
+
 ## Editar chapa / Sessão de reparo
 
 Selecione uma peça na chapa 2D, na lista de peças sem alocação ou na vista 3D e escolha **Editar chapa / Sessão de reparo**. Arraste uma peça destravada na chapa atual: o contorno acompanha o cursor com indicação de viabilidade e a posição é preparada ao soltar. Também é possível digitar as origens X e Y na chapa, usar **Preparar posição / transferência**, escolher outra chapa declarada para transferir e marcar **Giro de um quarto** se o veio permitir. A entrada numérica também aloca peças sem alocação. Aceitam-se mm, cm, m, in, ft e frações de polegada. Arredondamentos a 0,001 mm exigem confirmação explícita do valor proposto. **Travar posição** impede mover, girar ou transferir até **Destravar posição**; **Desalocar** remove explicitamente até peças travadas. A trava não impede que um redimensionamento da peça invalide sua posição.
@@ -52,7 +72,7 @@ A **nova despesa estimada** soma o preço integral por peça de cada chapa ou re
 
 Preço de compra ou tarifa de corte em branco significa **desconhecido**, não gratuito. O valor `0` informado é um zero conhecido. Os subtotais conhecidos de material e cortes continuam visíveis quando disponíveis, mas a falta do preço de uma chapa usada ou da tarifa necessária torna o total **incompleto**, nunca zero por padrão. Alocações incompletas ou não verificadas também não têm total completo. Uma proposta de custo desconhecido não sustenta a afirmação de menor despesa, mesmo que outra tenha custo conhecido.
 
-**Iniciar otimização** busca no conjunto finito de estoque declarado alocações completas e compatíveis com sequências de cortes integrais verificadas de forma independente; respeita veio, largura de corte e refilos. Posições travadas mantêm chapa, coordenadas e orientação. É uma **busca heurística limitada**: o resultado é o **melhor encontrado dentro do limite da busca**, sem garantia de ótimo global. Não encontrar um plano completo antes do limite significa apenas que nenhum foi encontrado *nesse limite*, não que o corte seja impossível. Uma disposição atual completa e viável é preservada como solução inicial; se não houver melhora, continua disponível e não é substituída silenciosamente. Rascunhos sem alocação ou em conflito não vencem a classificação de planos completos.
+**Iniciar otimização** busca no conjunto finito de estoque declarado alocações completas e compatíveis com sequências de cortes integrais verificadas de forma independente; respeita veio, largura de corte e refilos. Posições travadas mantêm chapa, coordenadas e orientação. Ela parte do mesmo encaixe de **Refazer plano** (várias ordens de encaixe e regras de corte) e classifica esses planos pelo objetivo escolhido. É uma **busca heurística limitada**: o resultado é o **melhor encontrado dentro do limite da busca**, sem garantia de ótimo global. Não encontrar um plano completo antes do limite significa apenas que nenhum foi encontrado *nesse limite*, não que o corte seja impossível. Uma disposição atual completa e viável é preservada como solução inicial; se não houver melhora, continua disponível e não é substituída silenciosamente. Rascunhos sem alocação ou em conflito não vencem a classificação de planos completos.
 
 Escolha o objetivo antes de buscar:
 

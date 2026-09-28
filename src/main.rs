@@ -7,6 +7,7 @@ use fluent_bundle::FluentArgs;
 use plan_my_cabinet::allocation_diagnostics::{
     BoardDiagnostic, Status as AllocationStatus, diagnose,
 };
+use plan_my_cabinet::auto_place::PlaceSummary;
 #[cfg(test)]
 use plan_my_cabinet::board_commands::{NewBoard, NewMaterial};
 use plan_my_cabinet::board_dimensions::{
@@ -39,6 +40,7 @@ use plan_my_cabinet::placement::CoordinateFrame;
 use plan_my_cabinet::settings_ui::{
     SOURCE_URL as APP_SOURCE_URL, Section as SettingsSection, SettingsIntent, SettingsState,
 };
+use plan_my_cabinet::sheet_packer::{PackMode, suggest_sheets};
 use plan_my_cabinet::stock_read_models::StockReadModel;
 use plan_my_cabinet::units::{
     Anchor, Conversion, Length, Pose, Quaternion, Unit, UnitError, dimension,

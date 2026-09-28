@@ -64,6 +64,9 @@ pub(crate) enum ActionId {
     Unallocate,
     ToggleAllocationLock,
     SelectSheetBoard,
+    PlaceUnallocated,
+    ReplanSheets,
+    AddSuggestedSheets,
     StartOptimization,
     CancelOptimization,
     AcceptOptimization,
@@ -208,6 +211,9 @@ registry! {
     Unallocate => ("sheet-unallocate-action", CutPlan, "unallocate part", "desalocar peça"),
     ToggleAllocationLock => ("sheet-lock", CutPlan, "lock unlock part", "travar destravar peça"),
     SelectSheetBoard => ("board-list", CutPlan, "select sheet part", "selecionar peça plano"),
+    PlaceUnallocated => ("sheet-place-unallocated", CutPlan, "place unallocated parts automatically allocate nest", "posicionar peças sem chapa automaticamente alocar"),
+    ReplanSheets => ("sheet-replan", CutPlan, "re-plan all sheets repack nest", "refazer plano chapas reorganizar"),
+    AddSuggestedSheets => ("sheet-add-suggested", CutPlan, "add missing sheets", "adicionar chapas que faltam"),
     StartOptimization => ("optimize-start", CutPlan, "optimize layout", "otimizar plano"),
     CancelOptimization => ("optimize-cancel", CutPlan, "cancel optimizer", "cancelar otimizador"),
     AcceptOptimization => ("optimize-accept", CutPlan, "accept optimized layout", "aceitar plano otimizado"),
@@ -441,6 +447,7 @@ pub(crate) enum Argument {
     Preset(viewport::Preset),
     Projection(viewport::Projection),
     StockPriority { target: usize, subset: bool },
+    Length(plan_my_cabinet::units::Length),
 }
 
 impl Request {
@@ -783,6 +790,14 @@ impl DesktopApp {
                 Err(Unavailable::NoRepair)
             }
             A::BeginRepair if self.cut_plan.repair.active() => Err(Unavailable::NoRepair),
+            A::PlaceUnallocated | A::ReplanSheets | A::AddSuggestedSheets
+                if self.cut_plan.repair.active() || self.editor.preview().is_some() =>
+            {
+                Err(Unavailable::Busy)
+            }
+            A::AddSuggestedSheets if !matches!((request.target, request.argument), (T::Material(id), Argument::Length(_)) if project.materials.iter().any(|m| m.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
             A::CancelOptimization if !self.cut_plan.optimizer.running() => {
                 Err(Unavailable::NoOptimization)
             }
@@ -826,6 +841,41 @@ impl DesktopApp {
         // An empty history is the expected no-op of Cmd+Z, not a failure.
         if !matches!(reason, Unavailable::NoUndo | Unavailable::NoRedo) {
             self.toasts.error(reason.reason(self.localizer.language()));
+        }
+    }
+
+    /// One toast for an automatic placement: what moved, what was added and
+    /// what is still waiting (the Needs stock list says why).
+    pub(crate) fn report_placement(
+        &mut self,
+        result: Result<
+            PlaceSummary,
+            plan_my_cabinet::commands::EditError<std::convert::Infallible>,
+        >,
+    ) {
+        let summary = match result {
+            Ok(summary) => summary,
+            Err(error) => return self.report_edit(Err::<(), _>(error)),
+        };
+        self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("placed", summary.placed);
+        args.set("sheets", summary.sheets_added);
+        args.set("waiting", summary.unplaced.len());
+        let mut text = self.localizer.format(
+            match (summary.sheets_added, summary.placed) {
+                (0, 0) => "toast-place-nothing",
+                (0, _) => "toast-placed",
+                _ => "toast-sheets-added",
+            },
+            Some(&args),
+        );
+        if !summary.unplaced.is_empty() {
+            text.push(' ');
+            text.push_str(&self.localizer.format("toast-place-waiting", Some(&args)));
+            self.toasts.error(text);
+        } else {
+            self.toasts.info(text);
         }
     }
 
@@ -897,6 +947,28 @@ impl DesktopApp {
                 }
             }
             (A::CancelOptimization, _) => self.cut_plan.optimizer.cancel(),
+            (A::PlaceUnallocated | A::ReplanSheets, _) => {
+                let mode = if request.id == A::PlaceUnallocated {
+                    PackMode::FillGaps
+                } else {
+                    PackMode::Replan
+                };
+                let result = self.editor.auto_place(mode);
+                self.report_placement(result);
+            }
+            (A::AddSuggestedSheets, T::Material(id)) => {
+                let Argument::Length(thickness) = request.argument else {
+                    return Err(Unavailable::MissingTarget);
+                };
+                let sheet = suggest_sheets(self.editor.project())
+                    .into_iter()
+                    .find(|s| s.material_id == id && s.thickness == thickness)
+                    .and_then(|s| s.sheet)
+                    .filter(|sheet| sheet.count > 0)
+                    .ok_or(Unavailable::MissingTarget)?;
+                let result = self.editor.add_sheets_and_place(id, thickness, &sheet);
+                self.report_placement(result);
+            }
             (A::SetOptimizerObjective | A::AcceptOptimization, _) => {
                 match self.request_navigation(NavigationRoute::Workspace(Workspace::CutPlan)) {
                     Outcome::Navigated | Outcome::Stayed => {

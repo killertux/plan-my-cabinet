@@ -15,6 +15,7 @@ use plan_my_cabinet::i18n::{Language, Localizer};
 use plan_my_cabinet::material_changes::{ConflictReason, allocation_conflicts};
 use plan_my_cabinet::money::MoneyLocale;
 use plan_my_cabinet::sheet_edit::SheetEditSession;
+use plan_my_cabinet::sheet_packer::{SheetSuggestion, Unplaced, suggest_sheets};
 use plan_my_cabinet::stock_read_models::{SheetProof, StockPieceReadModel, StockReadModel};
 use plan_my_cabinet::units::{Conversion, Length, Unit};
 use std::collections::{HashMap, HashSet};
@@ -67,6 +68,7 @@ pub(crate) fn diagnostics_key(project: &Project, preview: Option<u64>) -> Diagno
 pub struct RepairUi {
     stock_model_cache: Option<(DiagnosticsKey, Option<StockReadModel>)>,
     board_diagnostics_cache: Option<(DiagnosticsKey, Vec<BoardDiagnostic>)>,
+    suggestion_cache: Option<(DiagnosticsKey, Vec<SheetSuggestion>)>,
     focused_sheet: Option<Uuid>,
     hovered_cut: Option<(Uuid, usize)>,
     affected_cache: Option<AffectedCache>,
@@ -286,6 +288,19 @@ impl RepairUi {
                 .unwrap_or_else(|| allocation_diagnostics::diagnose(project));
             self.board_diagnostics_cache = Some((key, diagnostics));
         }
+        if self
+            .suggestion_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != key)
+        {
+            self.suggestion_cache = Some((key, suggest_sheets(project)));
+        }
+    }
+
+    fn suggestions(&self) -> &[SheetSuggestion] {
+        self.suggestion_cache
+            .as_ref()
+            .map_or(&[], |(_, suggestions)| suggestions.as_slice())
     }
 
     /// Empty until the first `refresh`.
@@ -2317,6 +2332,261 @@ fn issue_card(
     request
 }
 
+/// Automatic placement: fill gaps, re-plan, and per-material advice on what
+/// is missing, each with a one-click fix. Every button is one undoable edit.
+fn place_panel(
+    ui: &mut egui::Ui,
+    project: &Project,
+    suggestions: &[SheetSuggestion],
+    waiting: bool,
+    disabled: bool,
+    focus: SheetFocus,
+    localizer: &Localizer,
+) -> Option<Request> {
+    if project.boards.is_empty() {
+        return None;
+    }
+    let mut request = None;
+    let has_stock = !project.stock.is_empty();
+    let unallocated = project
+        .boards
+        .iter()
+        .any(|b| !project.allocations.iter().any(|a| a.board_id == b.id));
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+        if small_button(
+            ui,
+            Some(Icon::Place),
+            &localizer.text("sheet-place-unallocated"),
+            unallocated,
+            !disabled && has_stock && unallocated,
+        )
+        .on_hover_text(localizer.text("sheet-place-hint"))
+        .on_disabled_hover_text(localizer.text(if has_stock {
+            "sheet-place-none"
+        } else {
+            "sheet-place-no-stock"
+        }))
+        .clicked()
+        {
+            request = Some(Request::new(A::PlaceUnallocated));
+        }
+        if small_button(
+            ui,
+            Some(Icon::Layers),
+            &localizer.text("sheet-replan"),
+            !unallocated,
+            !disabled && has_stock,
+        )
+        .on_hover_text(localizer.text("sheet-replan-hint"))
+        .clicked()
+        {
+            request = Some(Request::new(A::ReplanSheets));
+        }
+    });
+    if !waiting {
+        return request;
+    }
+    let locale = locale(localizer);
+    let names = |ids: &[(Uuid, Unplaced)], reason: Unplaced| -> Vec<String> {
+        ids.iter()
+            .filter(|(_, r)| *r == reason)
+            .filter_map(|(id, _)| project.boards.iter().find(|b| b.id == *id))
+            .map(|b| b.name.clone())
+            .collect()
+    };
+    for suggestion in suggestions {
+        let material = project
+            .materials
+            .iter()
+            .find(|m| m.id == suggestion.material_id)
+            .map_or("?", |m| m.name.as_str());
+        let declared = project.stock.iter().any(|s| {
+            s.material_id == suggestion.material_id && s.thickness == suggestion.thickness
+        });
+        egui::Frame::new()
+            .fill(tw::CARD)
+            .stroke(Stroke::new(1.0, tw::WARN_STROKE))
+            .corner_radius(8)
+            .inner_margin(Margin::same(10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 5.0;
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("material", material);
+                args.set(
+                    "thickness",
+                    format!("{} mm", mm_text(suggestion.thickness, locale)),
+                );
+                args.set("count", suggestion.waiting);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 7.0;
+                    ui.add(icons::icon(Icon::Sheet, tw::WARN, 14.0));
+                    ui.add(
+                        egui::Label::new(
+                            tw::medium(
+                                ui,
+                                localizer.format("sheet-group-waiting", Some(&args)),
+                                13.0,
+                            )
+                            .color(tw::TEXT),
+                        )
+                        .wrap(),
+                    );
+                });
+                let note = |ui: &mut egui::Ui, text: String| {
+                    ui.add(
+                        egui::Label::new(RichText::new(text).size(12.0).color(tw::MUTED)).wrap(),
+                    );
+                };
+                let fixable = suggestion.waiting - suggestion.blocked.len();
+                if fixable > 0 {
+                    note(
+                        ui,
+                        localizer.text(if declared {
+                            "sheet-group-full"
+                        } else {
+                            "sheet-group-no-stock"
+                        }),
+                    );
+                }
+                for (reason, key) in [
+                    (Unplaced::TooLarge, "sheet-group-too-large"),
+                    (Unplaced::Grain, "sheet-group-grain"),
+                ] {
+                    let list = names(&suggestion.blocked, reason);
+                    if !list.is_empty() {
+                        let mut args = fluent_bundle::FluentArgs::new();
+                        args.set("count", list.len());
+                        args.set("names", list.join(", "));
+                        note(ui, localizer.format(key, Some(&args)));
+                    }
+                }
+                if let Some(next) =
+                    waiting_parts(ui, project, suggestion, disabled, focus, localizer)
+                {
+                    request = Some(next);
+                }
+                match &suggestion.sheet {
+                    Some(sheet) if sheet.count > 0 && fixable > 0 => {
+                        let mut args = fluent_bundle::FluentArgs::new();
+                        args.set("count", sheet.count);
+                        args.set("size", compact_dims(&[sheet.length, sheet.width], locale));
+                        if small_button(
+                            ui,
+                            Some(Icon::Plus),
+                            &localizer.format("sheet-group-add", Some(&args)),
+                            true,
+                            !disabled,
+                        )
+                        .on_hover_text(localizer.text("sheet-group-add-hint"))
+                        .clicked()
+                        {
+                            request = Some(
+                                Request::with(
+                                    A::AddSuggestedSheets,
+                                    Target::Material(suggestion.material_id),
+                                )
+                                .argument(Argument::Length(suggestion.thickness)),
+                            );
+                        }
+                    }
+                    _ => {
+                        if small_button(
+                            ui,
+                            Some(Icon::Plus),
+                            &localizer.format("sheet-add-named", Some(&args)),
+                            fixable > 0,
+                            !disabled,
+                        )
+                        .on_hover_text(localizer.text("sheet-group-no-size"))
+                        .clicked()
+                        {
+                            request = Some(Request::with(
+                                A::NewStock,
+                                Target::Material(suggestion.material_id),
+                            ));
+                        }
+                    }
+                }
+            });
+    }
+    request
+}
+
+/// Collapsible list of one material's waiting parts, each with Reveal. It
+/// opens itself when an issue link targets one of them.
+fn waiting_parts(
+    ui: &mut egui::Ui,
+    project: &Project,
+    suggestion: &SheetSuggestion,
+    disabled: bool,
+    focus: SheetFocus,
+    localizer: &Localizer,
+) -> Option<Request> {
+    let mut request = None;
+    let locale = locale(localizer);
+    let targeted = focus.issue.filter(|id| suggestion.boards.contains(id));
+    let mut args = fluent_bundle::FluentArgs::new();
+    args.set("count", suggestion.boards.len());
+    let header = egui::CollapsingHeader::new(
+        RichText::new(localizer.format("sheet-group-parts", Some(&args)))
+            .size(12.0)
+            .color(tw::SECONDARY),
+    )
+    .id_salt((
+        "waiting-parts",
+        suggestion.material_id,
+        suggestion.thickness,
+    ))
+    .open((targeted.is_some() && focus.scroll_to_target).then_some(true));
+    header.show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        for id in &suggestion.boards {
+            let Some(board) = project.boards.iter().find(|b| b.id == *id) else {
+                continue;
+            };
+            let focused = targeted == Some(board.id);
+            let row = ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let dims = compact_dims(&[board.length, board.width], locale);
+                let name_width = (ui.available_width() - 130.0).max(40.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(name_width);
+                    ui.add(
+                        egui::Label::new(RichText::new(&board.name).size(12.0).color(if focused {
+                            tw::FOCUS
+                        } else {
+                            tw::TEXT
+                        }))
+                        .truncate(),
+                    );
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(
+                            !disabled,
+                            egui::Button::new(
+                                RichText::new(localizer.text("sheet-reveal")).size(11.5),
+                            )
+                            .small(),
+                        )
+                        .on_hover_text(localizer.text("global-locate"))
+                        .clicked()
+                    {
+                        request = Some(Request::with(A::LocateIssue, Target::Board(board.id)));
+                    }
+                    ui.label(tw::mono(dims, 11.0).color(tw::FAINT));
+                });
+            });
+            if focused && focus.scroll_to_target {
+                row.response.scroll_to_me(Some(egui::Align::Center));
+            }
+        }
+    });
+    request
+}
+
 /// The host renders this in the Cut plan controls pane. Selection and repair
 /// requests use the same actions as the canvas, without borrowing its height.
 pub fn show_sheet_list(
@@ -2441,6 +2711,17 @@ pub fn show_sheet_list(
         })
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
+            if let Some(next) = place_panel(
+                ui,
+                project,
+                repair.suggestions(),
+                !issues.is_empty(),
+                modal || repairing,
+                focus,
+                localizer,
+            ) {
+                request = Some(next);
+            }
             if issues.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(6.0);
@@ -2455,7 +2736,16 @@ pub fn show_sheet_list(
                     );
                 });
             }
+            // Waiting parts are listed under their material card instead.
+            let grouped: HashSet<Uuid> = repair
+                .suggestions()
+                .iter()
+                .flat_map(|s| s.boards.iter().copied())
+                .collect();
             for entry in issues {
+                if entry.status == Status::Unallocated && grouped.contains(&entry.board_id) {
+                    continue;
+                }
                 let Some(board) = project.boards.iter().find(|b| b.id == entry.board_id) else {
                     continue;
                 };

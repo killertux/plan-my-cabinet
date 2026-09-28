@@ -13,6 +13,7 @@ use crate::domain::{
     Allocation, Board, BoardGrain, DomainError, Project, Stock, StockGrain, StockSource,
 };
 use crate::first_fit::candidate_axis;
+use crate::sheet_packer;
 use crate::units::Length;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +75,7 @@ fn grain_rank(project: &Project, board: &Board) -> u8 {
     u8::from(board.effective_grain(material) == BoardGrain::Unrestricted)
 }
 
-fn stock_order(project: &Project, cost_aware: bool) -> Vec<&Stock> {
+pub(crate) fn stock_order(project: &Project, cost_aware: bool) -> Vec<&Stock> {
     let mut stock = project.ordered_stock();
     if cost_aware {
         // Unknown purchase prices come last; ownership is a known zero material expense.
@@ -89,7 +90,7 @@ fn stock_order(project: &Project, cost_aware: bool) -> Vec<&Stock> {
     stock
 }
 
-fn allocation_id(board: Uuid, stock: Uuid, origin: [Length; 2], turn: bool) -> Uuid {
+pub(crate) fn allocation_id(board: Uuid, stock: Uuid, origin: [Length; 2], turn: bool) -> Uuid {
     let mut hash = Sha256::new();
     hash.update(b"candidate allocation v1");
     hash.update(board.as_bytes());
@@ -360,7 +361,28 @@ fn generate_impl(
         .iter()
         .map(|candidate| signature(&candidate.allocations))
         .collect();
-    for ordering in 0..4 {
+    // Constructive packing proves each sheet as it builds it and handles
+    // real cabinets in microseconds. The placement search below is only a
+    // fallback when packing leaves boards that the declared stock could hold.
+    // A zero budget asks for no alternatives at all.
+    let (packed, unreachable) = if budget.placements > 0 && budget.witness_states > 0 {
+        sheet_packer::candidates(project)
+    } else {
+        (Vec::new(), false)
+    };
+    for candidate in packed {
+        check()?;
+        attempts += 1;
+        progress(attempts);
+        check()?;
+        let key = signature(&candidate.allocations);
+        if !complete_keys.contains(&key) && validate_complete(project, &candidate).is_ok() {
+            complete_keys.insert(key);
+            result.complete.push(candidate);
+        }
+    }
+    let search = result.complete.is_empty() && !unreachable;
+    for ordering in (0..4).filter(|_| search) {
         check()?;
         let mut boards: Vec<_> = project
             .boards

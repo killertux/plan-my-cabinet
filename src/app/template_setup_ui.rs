@@ -166,6 +166,7 @@ impl TemplateSetupUi {
         if kind == TemplateKind::Drawers {
             setup.drawer_count = Some(3);
         }
+        setup.add_sheets = true;
         Self {
             setup,
             stage: Stage::Project,
@@ -277,7 +278,7 @@ impl TemplateSetupUi {
                             );
                         }
                         Stage::Review => match review.as_ref().expect("review stage") {
-                            Ok(review) => review_panel(ui, l, &self.setup, review),
+                            Ok(review) => review_panel(ui, l, &mut self.setup, review),
                             Err(errors) => errors_panel(ui, l, &self.setup, errors),
                         },
                     }
@@ -632,7 +633,12 @@ fn grain_field(ui: &mut egui::Ui, l: &Localizer, grain: &mut BoardGrain) {
     });
 }
 
-fn review_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, review: &TemplateReview) {
+fn review_panel(
+    ui: &mut egui::Ui,
+    l: &Localizer,
+    setup: &mut TemplateSetup,
+    review: &TemplateReview,
+) {
     ui.label(l.text("template-setup-review-intro"));
     ui.label(format!(
         "{}: {} × {} × {}",
@@ -660,6 +666,7 @@ fn review_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, review:
             l.text("template-setup-drawer-count")
         ));
     }
+    sheets_section(ui, l, setup, review);
     ui.label(RichText::new(l.text("template-setup-review-bom")).strong());
     for (index, board) in review.candidate.boards.iter().enumerate() {
         let material = review
@@ -669,9 +676,8 @@ fn review_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, review:
             .expect("review material");
         let fit = match &review.fits[index] {
             (FirstFit::Allocated(_), Some(allocation)) => format!(
-                "{} · {} X {} Y {}",
+                "{} · X {} Y {}",
                 l.text("template-setup-fit"),
-                allocation.stock_id,
                 mm(allocation.origin[0], l),
                 mm(allocation.origin[1], l)
             ),
@@ -707,8 +713,57 @@ fn review_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, review:
                 ));
             });
     }
-    ui.colored_label(WARN, l.text("template-setup-stock-next"));
     ui.small(l.text("template-setup-disclaimer"));
+}
+
+/// The option to buy the sheets with the cabinet, and what it would add.
+fn sheets_section(
+    ui: &mut egui::Ui,
+    l: &Localizer,
+    setup: &mut TemplateSetup,
+    review: &TemplateReview,
+) {
+    ui.label(RichText::new(l.text("template-setup-sheets")).strong());
+    ui.checkbox(&mut setup.add_sheets, l.text("template-setup-add-sheets"));
+    if !setup.add_sheets {
+        ui.colored_label(WARN, l.text("template-setup-stock-next"));
+        return;
+    }
+    let name = |id| {
+        review
+            .materials
+            .iter()
+            .find(|m| m.id == id)
+            .map_or("?", |m| m.name.as_str())
+    };
+    for added in &review.sheets {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("material", name(added.material_id));
+        args.set("thickness", mm(added.thickness, l));
+        args.set("count", added.sheet.count);
+        args.set(
+            "size",
+            format!(
+                "{} × {}",
+                mm(added.sheet.length, l),
+                mm(added.sheet.width, l)
+            ),
+        );
+        ui.label(l.format("template-setup-sheet-line", Some(&args)));
+    }
+    // Materials without a standard sheet size get no sheets.
+    let mut missing: Vec<&str> = Vec::new();
+    for (board, (fit, _)) in review.candidate.boards.iter().zip(&review.fits) {
+        let material = name(board.material_id);
+        if !matches!(fit, FirstFit::Allocated(_)) && !missing.contains(&material) {
+            missing.push(material);
+        }
+    }
+    if !missing.is_empty() {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("materials", missing.join(", "));
+        ui.colored_label(WARN, l.format("template-setup-sheets-unknown", Some(&args)));
+    }
 }
 
 fn axis(vector: [f64; 3]) -> &'static str {

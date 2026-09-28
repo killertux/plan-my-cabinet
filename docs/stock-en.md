@@ -24,6 +24,26 @@ The allocation overview counts every board once, including hidden assembly board
 
 The focused Cut plan sheet shows rulers, a scale/legend and independent **Cuts**, **Offcuts**, **Grain** and **IDs** display choices. **Fit sheet** and these switches change presentation only: hiding Cuts or IDs cannot turn a conflicted placement into a feasible one. Numbered bands and hatched reusable rectangular offcuts are drawn only from a current verified cutting witness; the inspector's numbered physical sequence names each input piece, reference edge, retained distance, kerf side and resulting pieces. Hover a row to identify its matching band on the sheet without selecting or moving a board. Part callouts at low zoom retain the board identity and finished dimensions. Invalid recorded positions keep their conflict indicators; proof-budget exhaustion stays visibly **unknown**, never a verified zero-cut layout. The sheet inspector separates recoverable offcut, non-trim kerf, trim and other-waste areas so the full stock-area balance is discoverable.
 
+## Place parts automatically
+
+Boards created before any sheet existed (a template project, for example) start **Unallocated**, and adding a sheet later does not move them. The **Needs stock** section of Cut plan places them for you:
+
+- **Place unallocated parts** puts every waiting part on the declared sheets, around the parts already placed. Nothing already placed moves.
+- **Re-plan all** repacks every part that is not locked, using as few sheets as it can and preferring sheets higher in the priority order. Locked parts stay where they are.
+
+Both commit straight away as one undoable step, and a message says how many parts moved and how many are still waiting. Packing works per material and thickness. Each part is cut from a free rectangle with straight, full-span cuts, so every sheet it builds has a verified cut sequence by construction. It respects grain, kerf and trims.
+
+For each material and thickness that still has waiting parts, Needs stock shows a card saying why:
+
+- **No sheet of this material and thickness yet**, or **the sheets of this material are full**. The card offers **Add N sheets (length × width)**: the smallest number of sheets that lets every waiting part fit. The sheets copy the biggest sheet of that material you declared, or use the material's standard size (2750 × 1840 mm for the standard MDF presets). They are added **To purchase** and filled in the same undoable step.
+- Parts **too large for any sheet** of the material, or parts that **fit only turned when their grain forbids it**, are listed by name. More sheets of the same size would not help; change the part, its grain, or add a bigger sheet.
+
+When there is no sheet to copy and the material is not a standard preset, the card opens **Add sheet** for that material instead.
+
+The waiting parts are listed inside their material's card (**Show the waiting parts**, each with **Reveal**) rather than as one card each. Parts with a conflict, or parts that fit sheets you already have, keep their own card.
+
+A template project can start with its sheets: in the template's Review step, **Add the sheets this cabinet needs** (on by default) lists one line per material, such as “White MDF · 15 mm: 1 sheet of 2750 × 1840 mm”. Generating then adds those sheets as To purchase and places every board, in the same undoable step. Materials without a standard size are named, so you can add their sheets in Stock afterwards.
+
 ## Edit sheet / Repair session
 
 Select a part in the 2D sheet, unallocated list, or 3D view, then choose **Edit sheet / Repair session**. Drag an unlocked allocated part on its current sheet: the outline follows the pointer with feasibility feedback, and releasing stages the new position. Alternatively enter sheet X and Y origins and choose **Stage placement / transfer**; select another declared sheet to transfer it, or toggle **Quarter-turn** where grain permits it. Numeric entry also allocates an unallocated board. Length inputs accept mm, cm, m, in, ft and inch fractions. Values needing rounding to 0.001 mm show the proposed value and require explicit consent. **Lock placement** prevents repositioning, rotation or transfer until **Unlock placement**; **Unallocate** explicitly removes even a locked part. A lock does not prevent a design resize from invalidating its placement.
@@ -52,7 +72,7 @@ For area accounting, original stock area = finished-part area + recoverable rect
 
 Blank purchase prices and a blank cut fee mean **unknown**, not free. An entered `0` is an explicitly known zero. Known material and cutting subtotals remain visible when available, but a missing used-sheet price or required fee makes the total **incomplete**, never zero by default. Incomplete or unverified allocations likewise have no complete spending total. An unknown-cost candidate cannot support a lowest-spending claim, even if another candidate has known costs.
 
-**Start optimization** searches the finite declared stock pool for complete, compatible allocations with independently verified full-span cut sequences; it respects grain, kerf and trims. Locked placements retain their sheet, coordinates and orientation. This is a **bounded heuristic search**, so its result is **best found within the search budget**, not a guaranteed global optimum. Failure to find a complete plan before the limit means none was found *within that budget*, not that cutting is impossible. A complete feasible current layout is retained as an incumbent; if no improvement is found it remains available and is not silently replaced. Unallocated or conflicted drafts cannot win a complete-plan ranking.
+**Start optimization** searches the finite declared stock pool for complete, compatible allocations with independently verified full-span cut sequences; it respects grain, kerf and trims. Locked placements retain their sheet, coordinates and orientation. It starts from the same packing as **Re-plan all** (several packing orders and split rules), then ranks those plans by the chosen objective. This is a **bounded heuristic search**, so its result is **best found within the search budget**, not a guaranteed global optimum. Failure to find a complete plan before the limit means none was found *within that budget*, not that cutting is impossible. A complete feasible current layout is retained as an incumbent; if no improvement is found it remains available and is not silently replaced. Unallocated or conflicted drafts cannot win a complete-plan ranking.
 
 Choose an objective before searching:
 

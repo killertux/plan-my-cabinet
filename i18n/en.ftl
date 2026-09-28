@@ -260,10 +260,17 @@ template-setup-datum-hint = External fronts project before Y=0; the overlay back
 template-setup-assumptions-base = Full-height sides; bottom between sides; front and rear top rails; overlay back.
 template-setup-assumptions-wall = Full-height sides; top, bottom and one shelf between sides; overlay back. Wall fixings and load capacity are not specified.
 template-setup-assumptions-drawers = Closed carcass with overlay back; each drawer has box sides, front, back, applied bottom and separate external front. Equal-height bays divide from the bottom; the first bays/fronts receive any 0.001 mm remainder.
-template-setup-fit = First fit on stock
+template-setup-fit = Placed on a sheet
 template-setup-fit-unknown = First-fit search inconclusive
 template-setup-unallocated = Unallocated · no stock declared
 template-setup-stock-next = No stock is purchased automatically. After generating, open Stock to add sheets and allocate parts.
+template-setup-sheets = Sheets
+template-setup-add-sheets = Add the sheets this cabinet needs (To purchase) and place the boards on them
+template-setup-sheet-line = { $material } · { $thickness }: { $count ->
+    [one] 1 sheet
+   *[other] { $count } sheets
+} of { $size }
+template-setup-sheets-unknown = No standard sheet size for { $materials }. Add their sheets in Stock after generating; Cut plan then places the boards.
 template-setup-disclaimer = Starting geometry only · no slide selection, machining instructions, load rating or validated mechanical fit.
 template-setup-review-blocked = Correct these inputs before generating:
 template-setup-error-name = Enter a name of at most 256 characters.
@@ -339,6 +346,53 @@ sheet-heading = 2D stock sheets
 sheet-priority-cards = SHEETS · PRIORITY ORDER
 sheet-needs-stock = NEEDS STOCK
 sheet-no-issues = No boards need stock or repair.
+sheet-place-unallocated = Place unallocated parts
+sheet-place-hint = Places every waiting part on the declared sheets, around the parts already placed. Nothing already placed moves. One undo step.
+sheet-place-none = Every part already has a place.
+sheet-place-no-stock = Add a sheet first.
+sheet-replan = Re-plan all
+sheet-replan-hint = Repacks every part that is not locked, using as few sheets as it can. Locked parts stay where they are. One undo step.
+sheet-add-suggested = Add the sheets that are missing
+sheet-group-waiting = { $material } · { $thickness } — { $count ->
+    [one] 1 part waiting
+   *[other] { $count } parts waiting
+}
+sheet-group-no-stock = No sheet of this material and thickness yet.
+sheet-group-full = The sheets of this material are full.
+sheet-group-too-large = { $count ->
+    [one] Too large for any sheet of this material
+   *[other] { $count } parts are too large for any sheet of this material
+}: { $names }
+sheet-group-grain = { $count ->
+    [one] Fits only turned, and its grain does not allow that
+   *[other] { $count } parts fit only turned, and their grain does not allow that
+}: { $names }
+sheet-group-add = { $count ->
+    [one] Add 1 sheet
+   *[other] Add { $count } sheets
+} ({ $size })
+sheet-group-add-hint = Adds the pieces as To purchase, the same size as the biggest sheet of this material you have (or its standard size), then places the waiting parts. One undo step.
+sheet-group-no-size = There is no sheet size to copy yet: add one sheet and set its size.
+sheet-group-parts = { $count ->
+    [one] Show the waiting part
+   *[other] Show the { $count } waiting parts
+}
+toast-place-nothing = Nothing to place: every part already has a place.
+toast-placed = { $placed ->
+    [one] Placed 1 part.
+   *[other] Placed { $placed } parts.
+}
+toast-sheets-added = { $sheets ->
+    [one] Added 1 sheet
+   *[other] Added { $sheets } sheets
+} and placed { $placed ->
+    [one] 1 part.
+   *[other] { $placed } parts.
+}
+toast-place-waiting = { $waiting ->
+    [one] 1 part is still waiting; see Needs stock.
+   *[other] { $waiting } parts are still waiting; see Needs stock.
+}
 sheet-no-pieces = No sheets yet. Add a sheet or offcut to start.
 sheet-no-placements = No placements on this piece.
 sheet-unused = Unused · no placements
@@ -411,7 +465,7 @@ optimize-placements = Current placements
 optimize-changes = Placement changes
 optimize-current-unverified = Current layout is incomplete or cutting feasibility is not verified.
 optimize-unverified = Unverified / incomplete
-optimize-no-complete = No complete verified plan found within the search budget. The current layout is unchanged.
+optimize-no-complete = No complete plan found: some parts may not fit the declared sheets. Needs stock, in the left pane, says what is missing. The current layout is unchanged.
 optimize-exhausted = Search limit reached; other feasible alternatives may exist.
 optimize-stale = Manufacturing inputs changed since this search. Start a new search before accepting.
 optimize-blocked = Finish the open dialog or sheet repair before starting or accepting optimization.

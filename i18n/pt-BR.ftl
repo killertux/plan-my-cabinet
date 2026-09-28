@@ -260,10 +260,17 @@ template-setup-datum-hint = As frentes externas avançam antes de Y=0; o fundo s
 template-setup-assumptions-base = Laterais na altura total; base entre laterais; travessas superiores frontal e traseira; fundo sobreposto.
 template-setup-assumptions-wall = Laterais na altura total; topo, base e uma prateleira entre laterais; fundo sobreposto. Fixação na parede e capacidade de carga não especificadas.
 template-setup-assumptions-drawers = Corpo fechado com fundo sobreposto; cada gaveta tem laterais, frente, traseira, fundo aplicado e frente externa separada. Vãos iguais de baixo para cima; os primeiros vãos/frentes recebem eventual resto de 0,001 mm.
-template-setup-fit = Primeiro encaixe no estoque
+template-setup-fit = Posicionada em uma chapa
 template-setup-fit-unknown = Busca de encaixe inconclusiva
 template-setup-unallocated = Não alocada · sem estoque declarado
 template-setup-stock-next = Nenhum estoque é comprado automaticamente. Após gerar, abra Estoque para adicionar chapas e alocar as peças.
+template-setup-sheets = Chapas
+template-setup-add-sheets = Adicionar as chapas que este móvel precisa (A comprar) e posicionar as peças nelas
+template-setup-sheet-line = { $material } · { $thickness }: { $count ->
+    [one] 1 chapa
+   *[other] { $count } chapas
+} de { $size }
+template-setup-sheets-unknown = Sem tamanho padrão de chapa para { $materials }. Adicione as chapas em Estoque depois de gerar; o Plano de corte posiciona as peças.
 template-setup-disclaimer = Apenas geometria inicial · sem escolha de corrediças, instruções de usinagem, capacidade de carga ou encaixe mecânico validado.
 template-setup-review-blocked = Corrija estas entradas antes de gerar:
 template-setup-error-name = Digite um nome de até 256 caracteres.
@@ -339,6 +346,53 @@ sheet-heading = Chapas de estoque 2D
 sheet-priority-cards = CHAPAS · ORDEM DE PRIORIDADE
 sheet-needs-stock = PRECISA DE ESTOQUE
 sheet-no-issues = Nenhuma peça precisa de estoque ou reparo.
+sheet-place-unallocated = Posicionar peças sem chapa
+sheet-place-hint = Posiciona cada peça em espera nas chapas declaradas, em volta das que já estão posicionadas. Nada que já está posicionado se move. Um passo de desfazer.
+sheet-place-none = Todas as peças já têm lugar.
+sheet-place-no-stock = Adicione uma chapa primeiro.
+sheet-replan = Refazer plano
+sheet-replan-hint = Reorganiza todas as peças não travadas, usando o mínimo de chapas possível. Peças travadas ficam onde estão. Um passo de desfazer.
+sheet-add-suggested = Adicionar as chapas que faltam
+sheet-group-waiting = { $material } · { $thickness } — { $count ->
+    [one] 1 peça em espera
+   *[other] { $count } peças em espera
+}
+sheet-group-no-stock = Ainda não há chapa deste material e espessura.
+sheet-group-full = As chapas deste material estão cheias.
+sheet-group-too-large = { $count ->
+    [one] Grande demais para qualquer chapa deste material
+   *[other] { $count } peças são grandes demais para qualquer chapa deste material
+}: { $names }
+sheet-group-grain = { $count ->
+    [one] Só cabe girada, e o veio não permite
+   *[other] { $count } peças só cabem giradas, e o veio não permite
+}: { $names }
+sheet-group-add = { $count ->
+    [one] Adicionar 1 chapa
+   *[other] Adicionar { $count } chapas
+} ({ $size })
+sheet-group-add-hint = Adiciona as peças como A comprar, do tamanho da maior chapa deste material que você tem (ou do tamanho padrão), e posiciona as peças em espera. Um passo de desfazer.
+sheet-group-no-size = Ainda não há tamanho de chapa para copiar: adicione uma chapa e defina o tamanho.
+sheet-group-parts = { $count ->
+    [one] Mostrar a peça em espera
+   *[other] Mostrar as { $count } peças em espera
+}
+toast-place-nothing = Nada a posicionar: todas as peças já têm lugar.
+toast-placed = { $placed ->
+    [one] 1 peça posicionada.
+   *[other] { $placed } peças posicionadas.
+}
+toast-sheets-added = { $sheets ->
+    [one] 1 chapa adicionada
+   *[other] { $sheets } chapas adicionadas
+} e { $placed ->
+    [one] 1 peça posicionada.
+   *[other] { $placed } peças posicionadas.
+}
+toast-place-waiting = { $waiting ->
+    [one] 1 peça ainda em espera; veja Precisa de estoque.
+   *[other] { $waiting } peças ainda em espera; veja Precisa de estoque.
+}
 sheet-no-pieces = Nenhuma chapa. Adicione uma chapa ou sobra para começar.
 sheet-no-placements = Nenhuma peça alocada nesta chapa.
 sheet-unused = Sem uso · nenhuma peça alocada
@@ -411,7 +465,7 @@ optimize-placements = Posições atuais
 optimize-changes = Posições alteradas
 optimize-current-unverified = A disposição atual está incompleta ou sua viabilidade de corte não foi verificada.
 optimize-unverified = Não verificado / incompleto
-optimize-no-complete = Nenhum plano completo e verificado encontrado no limite da busca. A disposição atual não mudou.
+optimize-no-complete = Nenhum plano completo encontrado: algumas peças podem não caber nas chapas declaradas. Precisa de estoque, no painel à esquerda, diz o que falta. A disposição atual não mudou.
 optimize-exhausted = Limite de busca atingido; outras alternativas viáveis podem existir.
 optimize-stale = Os dados de fabricação mudaram desde a busca. Inicie outra busca antes de aceitar.
 optimize-blocked = Conclua a janela aberta ou o reparo da chapa antes de iniciar ou aceitar a otimização.

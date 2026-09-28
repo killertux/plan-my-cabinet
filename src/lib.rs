@@ -24,13 +24,13 @@ pub use catalog::{
     template_setup,
 };
 pub use editing::{
-    assembly_edit, board_commands, board_dimensions, color_commands, commands, edit_drafts,
-    material_changes, placement, sheet_edit, stock_commands,
+    assembly_edit, auto_place, board_commands, board_dimensions, color_commands, commands,
+    edit_drafts, material_changes, placement, sheet_edit, stock_commands,
 };
 pub use model::{dimension_input, domain, kerf_date, material_presets, measurements, money, units};
 pub use optimize::{
     allocation_diagnostics, candidate_generation, candidate_ranking, cut_tree, first_fit,
-    optimization_worker,
+    optimization_worker, sheet_packer,
 };
 pub use output::{document_layout, export, pdf_export, workshop_document};
 pub use read_models::{cost_estimate, design_read_models, receipt_read_models, stock_read_models};

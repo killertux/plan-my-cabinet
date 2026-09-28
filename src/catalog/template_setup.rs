@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use uuid::Uuid;
 
+use crate::auto_place::{AddedSheets, add_needed_sheets};
 use crate::commands::{EditError, ProjectEditor};
 use crate::domain::{BoardGrain, DomainError, Material, Project, SrgbColor};
 use crate::first_fit::{FirstFit, allocate_new_board};
@@ -140,8 +141,11 @@ pub struct TemplateReview {
     pub datums: TemplateDatums,
     pub materials: Vec<Material>,
     pub colors: BTreeMap<Uuid, SrgbColor>,
-    /// In candidate board order; a fresh Welcome project has no declared stock.
+    /// In candidate board order. Without `add_sheets` a fresh project has no
+    /// declared stock, so nothing fits.
     pub fits: Vec<(FirstFit, Option<crate::domain::Allocation>)>,
+    /// The sheets `add_sheets` would add, per material and thickness.
+    pub sheets: Vec<AddedSheets>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,6 +169,9 @@ pub struct TemplateSetup {
     pub roles: BTreeMap<MaterialRole, Uuid>,
     pub dimensions: BTreeMap<TemplateField, ProposedLength>,
     pub drawer_count: Option<usize>,
+    /// Add the sheets the generated boards need, as To purchase, and place
+    /// the boards on them. Only materials with a known sheet size get sheets.
+    pub add_sheets: bool,
 }
 
 impl TemplateSetup {
@@ -183,6 +190,7 @@ impl TemplateSetup {
             roles: BTreeMap::new(),
             dimensions: BTreeMap::new(),
             drawer_count: None,
+            add_sheets: false,
         }
     }
 
@@ -380,6 +388,12 @@ impl TemplateSetup {
                 .cloned();
             fits.push((fit, allocation));
         }
+        let sheets = if self.add_sheets {
+            add_needed_sheets(&mut disposable)
+        } else {
+            Vec::new()
+        };
+        placed_fits(&disposable, &candidate.boards, &mut fits);
         disposable
             .validate()
             .map_err(|e| vec![SetupError::InvalidProject(e)])?;
@@ -389,6 +403,7 @@ impl TemplateSetup {
             materials,
             colors,
             fits,
+            sheets,
         })
     }
 
@@ -416,6 +431,7 @@ impl TemplateSetup {
             .map(|(id, color)| (remap[&id], color))
             .collect();
         let assembly_id = review.candidate.assemblies[0].id;
+        let add_sheets = self.add_sheets;
         let mut fits = Vec::new();
         editor
             .transact(|p| -> Result<(), ()> {
@@ -427,6 +443,14 @@ impl TemplateSetup {
                     p.boards.push(board);
                     fits.push((id, allocate_new_board(p, id)));
                 }
+                if add_sheets {
+                    add_needed_sheets(p);
+                    for (id, fit) in &mut fits {
+                        if let Some(allocation) = p.allocations.iter().find(|a| a.board_id == *id) {
+                            *fit = FirstFit::Allocated(allocation.id);
+                        }
+                    }
+                }
                 Ok(())
             })
             .map_err(GenerateError::Edit)?;
@@ -435,6 +459,20 @@ impl TemplateSetup {
             assembly_id,
             fits,
         })
+    }
+}
+
+/// Placements made after the per-board first fit (by `add_sheets`) replace
+/// its "no fit" results.
+fn placed_fits(
+    project: &Project,
+    boards: &[crate::domain::Board],
+    fits: &mut [(FirstFit, Option<crate::domain::Allocation>)],
+) {
+    for (board, fit) in boards.iter().zip(fits.iter_mut()) {
+        if let Some(allocation) = project.allocations.iter().find(|a| a.board_id == board.id) {
+            *fit = (FirstFit::Allocated(allocation.id), Some(allocation.clone()));
+        }
     }
 }
 

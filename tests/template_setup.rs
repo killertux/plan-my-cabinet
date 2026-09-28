@@ -260,3 +260,60 @@ fn seeding_never_replaces_materials_already_in_the_setup() {
     assert_eq!(stage.materials.len(), before);
     assert_eq!(stage.roles, roles);
 }
+
+#[test]
+fn add_sheets_buys_standard_sheets_and_places_every_board_in_one_undo() {
+    use plan_my_cabinet::allocation_diagnostics::{Status, diagnose};
+    use plan_my_cabinet::domain::StockSource;
+    let mut stage = TemplateSetup::new(TemplateKind::Drawers, "Drawers", Currency::Brl, Unit::Mm);
+    for (field, value) in [
+        (TemplateField::Width, 600),
+        (TemplateField::Depth, 560),
+        (TemplateField::Height, 720),
+        (TemplateField::BoxDepth, 500),
+        (TemplateField::SideClearance, 13),
+        (TemplateField::RearClearance, 20),
+        (TemplateField::VerticalClearance, 8),
+        (TemplateField::FrontReveal, 3),
+        (TemplateField::FrontGap, 3),
+    ] {
+        stage.dimensions.insert(field, mm(value));
+    }
+    stage.seed_standard_materials(Language::En);
+    stage.drawer_count = Some(3);
+    stage.add_sheets = true;
+    let review = stage.review().unwrap();
+    // 15 mm MDF, 3 mm HDF and 18 mm MDF: one standard sheet each.
+    assert_eq!(review.sheets.len(), 3);
+    assert!(review.sheets.iter().all(|s| s.sheet.count == 1));
+    assert!(
+        review
+            .fits
+            .iter()
+            .all(|(fit, allocation)| matches!(fit, FirstFit::Allocated(_)) && allocation.is_some())
+    );
+    let mut generated = stage.generate().unwrap();
+    assert!(
+        generated
+            .fits
+            .iter()
+            .all(|(_, fit)| matches!(fit, FirstFit::Allocated(_)))
+    );
+    let project = generated.editor.project();
+    assert_eq!(project.stock.len(), 3);
+    assert!(
+        project
+            .stock
+            .iter()
+            .all(|s| s.source == StockSource::ToPurchase)
+    );
+    assert!(
+        diagnose(project)
+            .iter()
+            .all(|d| d.status == Status::AllocatedValid)
+    );
+    // Boards and sheets arrive together, as the one generation step.
+    assert_eq!(generated.editor.undo(), Ok(true));
+    assert!(generated.editor.project().boards.is_empty());
+    assert!(generated.editor.project().stock.is_empty());
+}

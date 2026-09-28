@@ -225,6 +225,9 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::Unallocate, R::CutPlan),
         (A::ToggleAllocationLock, R::CutPlan),
         (A::SelectSheetBoard, R::CutPlan),
+        (A::PlaceUnallocated, R::CutPlan),
+        (A::ReplanSheets, R::CutPlan),
+        (A::AddSuggestedSheets, R::CutPlan),
         (A::StartOptimization, R::CutPlan),
         (A::CancelOptimization, R::CutPlan),
         (A::AcceptOptimization, R::CutPlan),
@@ -569,4 +572,75 @@ fn real_entry_points_open_original_forms_and_view_choices_are_not_edits() {
     assert_eq!(app.localizer.language(), Language::PtBr);
     assert_eq!(app.editor.project(), &original);
     assert!(!app.editor.is_dirty());
+}
+
+#[test]
+fn missing_sheets_are_added_and_parts_placed_in_one_undo_step() {
+    use plan_my_cabinet::allocation_diagnostics::{Status, diagnose};
+    use plan_my_cabinet::board_commands::{NewBoard, NewMaterial};
+    let mut app = DesktopApp::default();
+    let mm = |n: i64| Length::from_micrometres(n * 1000);
+    // Named like a standard preset, so its sheet size is known.
+    let material = app
+        .editor
+        .create_material(NewMaterial {
+            name: "White MDF".into(),
+            thickness: mm(15),
+            grain: BoardGrain::Unrestricted,
+        })
+        .unwrap();
+    for name in ["Side", "Side", "Top", "Bottom", "Shelf"] {
+        app.editor
+            .create_board(NewBoard {
+                name: name.into(),
+                material_id: material,
+                length: mm(1300),
+                width: mm(900),
+                pose: Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+            })
+            .unwrap();
+    }
+    assert!(app.editor.project().allocations.is_empty());
+    // Nothing to place on yet: the command runs and reports what is waiting.
+    app.invoke(Request::new(ActionId::PlaceUnallocated))
+        .unwrap();
+    assert_eq!(app.toasts.texts().len(), 1);
+    let before = app.editor.project().clone();
+    app.invoke(
+        Request::with(ActionId::AddSuggestedSheets, Target::Material(material))
+            .argument(Argument::Length(mm(15))),
+    )
+    .unwrap();
+    let project = app.editor.project();
+    assert_eq!(project.stock.len(), 2);
+    assert!(
+        diagnose(project)
+            .iter()
+            .all(|d| d.status == Status::AllocatedValid)
+    );
+    assert_eq!(
+        app.toasts.texts().last().copied(),
+        Some("Added 2 sheets and placed 5 parts.")
+    );
+    app.invoke(Request::new(ActionId::ReplanSheets)).unwrap();
+    assert!(
+        diagnose(app.editor.project())
+            .iter()
+            .all(|d| d.status == Status::AllocatedValid)
+    );
+    app.invoke(Request::new(ActionId::Undo)).unwrap();
+    app.invoke(Request::new(ActionId::Undo)).unwrap();
+    assert_eq!(app.editor.project().stock, before.stock);
+    assert_eq!(app.editor.project().allocations, before.allocations);
+    // A material with nothing waiting has no suggestion to apply.
+    assert_eq!(
+        app.invoke(
+            Request::with(
+                ActionId::AddSuggestedSheets,
+                Target::Material(Uuid::new_v4())
+            )
+            .argument(Argument::Length(mm(15)))
+        ),
+        Err(Unavailable::MissingTarget)
+    );
 }
