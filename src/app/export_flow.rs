@@ -535,8 +535,10 @@ impl DesktopApp {
                     self.selection.choose(Some(id), false);
                 }
             }
+            // Confirming (not editing) the kerf is what clears the warning;
+            // the confirmation dialog shows the value it confirms.
             HandoffFix::Kerf => {
-                self.invoke_or_report(Request::new(A::EditKerf));
+                self.invoke_or_report(Request::new(A::ConfirmKerf));
             }
             HandoffFix::CutFee => {
                 self.invoke_or_report(Request::new(A::EditCutFee));

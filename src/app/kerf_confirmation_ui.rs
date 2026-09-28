@@ -218,6 +218,23 @@ mod tests {
     }
 
     #[test]
+    fn handoff_kerf_fix_opens_the_confirmation_that_clears_it() {
+        let ctx = egui::Context::default();
+        theme::install_fonts(&ctx);
+        let mut app = DesktopApp::default();
+        let kerf = app.editor.project().cutting_kerf;
+        app.apply_handoff_fix(HandoffFix::Kerf);
+        assert!(app.modals.kerf_confirmation().is_some());
+        frame(&mut app, &ctx, Default::default());
+        app.modals.kerf_confirmation_mut().unwrap().acknowledged = true;
+        frame(&mut app, &ctx, key(egui::Key::Tab));
+        frame(&mut app, &ctx, key(egui::Key::Tab)); // Confirm
+        frame(&mut app, &ctx, key(egui::Key::Enter));
+        assert!(app.modals.kerf_confirmation().is_none());
+        assert_eq!(app.editor.project().confirmed_shop_kerf, Some(kerf));
+    }
+
+    #[test]
     fn explicit_kerf_confirmation_is_cancel_safe_stale_safe_and_undoable() {
         for language in [Language::En, Language::PtBr] {
             let ctx = egui::Context::default();
