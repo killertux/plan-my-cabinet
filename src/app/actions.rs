@@ -32,6 +32,7 @@ pub(crate) enum ActionId {
     PositionBoard,
     PlaceFace,
     DuplicateBoard,
+    RenameObject,
     EditDimensions,
     SetGrain,
     NewStock,
@@ -179,6 +180,7 @@ registry! {
     PositionBoard => ("placement-numeric", Design, "position board", "posicionar peça"),
     PlaceFace => ("placement-face", Design, "place face to face", "posicionar face a face"),
     DuplicateBoard => ("board-duplicate", Design, "duplicate board", "duplicar peça"),
+    RenameObject => ("object-rename", Design, "rename board assembly name", "renomear peça conjunto nome"),
     EditDimensions => ("board-edit-dimension", Design, "edit dimension", "editar dimensão"),
     SetGrain => ("board-grain", Design, "grain direction", "sentido veio"),
     NewStock => ("stock-new", Stock, "new stock sheet", "nova chapa estoque"),
@@ -736,6 +738,9 @@ impl DesktopApp {
             A::NewStock if matches!(request.target, T::Material(id) if !project.materials.iter().any(|m| m.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
+            A::RenameObject if !matches!(request.target, T::Object(id) if project.boards.iter().any(|b| b.id == id) || project.assemblies.iter().any(|a| a.id == id) || project.hardware.iter().any(|h| h.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
             A::SelectObject | A::ToggleVisibility if !matches!(request.target, T::Object(id) if project.boards.iter().any(|b| b.id == id) || project.assemblies.iter().any(|a| a.id == id) || project.hardware.iter().any(|h| h.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
@@ -1027,6 +1032,19 @@ impl DesktopApp {
                     return Err(Unavailable::PendingEdit);
                 }
             }
+            (A::RenameObject, T::Object(id)) => {
+                match self.request_scene_selection(Some(id), false) {
+                    pending_navigation::Outcome::Blocked(_) => {
+                        return Err(Unavailable::PendingEdit);
+                    }
+                    pending_navigation::Outcome::Prompt { .. } => {}
+                    pending_navigation::Outcome::Navigated
+                    | pending_navigation::Outcome::Stayed => {
+                        self.design.rename =
+                            assembly_ui::RenameDraft::start(self.editor.project(), id);
+                    }
+                }
+            }
             (A::ToggleVisibility, T::Object(id)) => {
                 if self.selection.visible(self.editor.project(), id) {
                     self.selection.hidden.insert(id);
@@ -1071,9 +1089,11 @@ impl DesktopApp {
                 };
                 pose.translation_mm[0] += 25.0;
                 match self.editor.duplicate_board_with_fit(id, pose) {
-                    Ok((_, fit)) => {
+                    Ok((copy, fit)) => {
                         self.design.board_action_error = false;
                         self.design.first_fit_notice = Some(fit);
+                        // Show the copy in the inspector, ready to be renamed.
+                        let _ = self.request_scene_selection(Some(copy), false);
                     }
                     Err(_) => self.design.board_action_error = true,
                 }

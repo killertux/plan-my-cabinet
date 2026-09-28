@@ -19,6 +19,42 @@ pub(crate) enum Operation {
     Duplicate,
 }
 
+/// Inline rename of the inspected board, assembly or hardware item.
+pub(crate) struct RenameDraft {
+    pub(crate) id: Uuid,
+    text: String,
+    focus: bool,
+}
+
+impl RenameDraft {
+    pub(crate) fn start(project: &Project, id: Uuid) -> Option<Self> {
+        let name = project
+            .boards
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| &b.name)
+            .or_else(|| {
+                project
+                    .assemblies
+                    .iter()
+                    .find(|a| a.id == id)
+                    .map(|a| &a.name)
+            })
+            .or_else(|| {
+                project
+                    .hardware
+                    .iter()
+                    .find(|h| h.id == id)
+                    .map(|h| &h.name)
+            })?;
+        Some(Self {
+            id,
+            text: name.clone(),
+            focus: true,
+        })
+    }
+}
+
 pub(crate) struct AssemblyDialog {
     operation: Operation,
     ids: Vec<Uuid>,
@@ -1334,6 +1370,17 @@ impl DesktopApp {
                         }
                         ui.separator();
                     }
+                    let rename = Request::with(A::RenameObject, Target::Object(row.id));
+                    if ui
+                        .add_enabled(
+                            self.action_availability(rename).is_ok(),
+                            egui::Button::new(A::RenameObject.label(&self.localizer)),
+                        )
+                        .clicked()
+                    {
+                        ui.close();
+                        self.invoke_or_report(rename);
+                    }
                     self.hierarchy_menu(ui, false);
                 });
             }
@@ -1545,14 +1592,18 @@ impl DesktopApp {
         });
     }
 
+    /// `rename` is the object whose name the title shows; clicking the title
+    /// (or F2, or the Rename action) edits it in place.
     fn inspector_header(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         icon: icons::Icon,
         title: &str,
+        rename: Option<Uuid>,
         id_text: &str,
         subline: &str,
     ) {
+        let modal = self.modal_open();
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 14,
@@ -1569,13 +1620,28 @@ impl DesktopApp {
                         egui::vec2(title_width, 22.0),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    theme_widgets::semibold(ui, title, 15.0)
-                                        .color(theme_widgets::TEXT),
-                                )
-                                .truncate(),
-                            );
+                            let editing = rename.filter(|&id| {
+                                !modal && self.design.rename.as_ref().is_some_and(|d| d.id == id)
+                            });
+                            if let Some(id) = editing {
+                                self.show_rename_field(ui, id);
+                                return;
+                            }
+                            let label = egui::Label::new(
+                                theme_widgets::semibold(ui, title, 15.0).color(theme_widgets::TEXT),
+                            )
+                            .truncate();
+                            let Some(id) = rename.filter(|_| !modal) else {
+                                ui.add(label);
+                                return;
+                            };
+                            let response = ui
+                                .add(label.sense(egui::Sense::click()))
+                                .on_hover_cursor(egui::CursorIcon::Text)
+                                .on_hover_text(self.localizer.text("object-rename-hint"));
+                            if response.clicked() {
+                                self.design.rename = RenameDraft::start(self.editor.project(), id);
+                            }
                         },
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1591,6 +1657,51 @@ impl DesktopApp {
                 }
             });
         theme_widgets::divider(ui);
+    }
+
+    fn show_rename_field(&mut self, ui: &mut egui::Ui, id: Uuid) {
+        let Some(draft) = self.design.rename.as_mut() else {
+            return;
+        };
+        let edit_id = egui::Id::new(("rename-object", id));
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut draft.text)
+                .id(edit_id)
+                .font(theme_widgets::weighted_font(
+                    ui,
+                    15.0,
+                    theme::Typeface::SansSemibold,
+                ))
+                .margin(egui::Margin::symmetric(4, 1))
+                .desired_width(ui.available_width()),
+        );
+        if draft.focus {
+            if response.has_focus() {
+                // Select the whole name once focused, so typing replaces it.
+                let mut state =
+                    egui::text_edit::TextEditState::load(ui.ctx(), edit_id).unwrap_or_default();
+                state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(0),
+                        egui::text::CCursor::new(draft.text.chars().count()),
+                    )));
+                state.store(ui.ctx(), edit_id);
+                draft.focus = false;
+            } else {
+                response.request_focus();
+            }
+            return;
+        }
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if response.lost_focus() || (escape && response.has_focus()) {
+            let text = std::mem::take(&mut draft.text);
+            self.design.rename = None;
+            // Escape or an empty name keeps the old name.
+            if !escape && !text.trim().is_empty() {
+                let _ = self.editor.rename_object(id, &text);
+            }
+        }
     }
 
     fn inspector_actions(&mut self, ui: &mut egui::Ui, actions: &[(A, Target)]) {
@@ -1634,6 +1745,27 @@ impl DesktopApp {
             top: 2,
             bottom: 16,
         });
+        let inspected = match &model.inspector {
+            DesignInspector::Board(board) => Some(board.id),
+            DesignInspector::Assembly(assembly) => Some(assembly.id),
+            DesignInspector::Hardware(hardware) => Some(hardware.id),
+            _ => None,
+        };
+        if self
+            .design
+            .rename
+            .as_ref()
+            .is_some_and(|d| Some(d.id) != inspected)
+        {
+            self.design.rename = None;
+        }
+        if let Some(id) = inspected
+            && self.design.rename.is_none()
+            && !ui.ctx().egui_wants_keyboard_input()
+            && ui.input(|i| i.key_pressed(egui::Key::F2) && !i.modifiers.any())
+        {
+            self.invoke_or_report(Request::with(A::RenameObject, Target::Object(id)));
+        }
         match &model.inspector {
             DesignInspector::None => {
                 body.show(ui, |ui| {
@@ -1703,6 +1835,7 @@ impl DesktopApp {
                     ui,
                     icons::Icon::Board,
                     &board.name,
+                    Some(board.id),
                     &short_id('b', board.id),
                     &subline,
                 );
@@ -2022,6 +2155,7 @@ impl DesktopApp {
                     ui,
                     icons::Icon::Assembly,
                     &assembly.name,
+                    Some(assembly.id),
                     &short_id('a', assembly.id),
                     &format!(
                         "{} · {}",
@@ -2088,6 +2222,7 @@ impl DesktopApp {
                     ui,
                     icons::Icon::Layers,
                     &self.localizer.format("design-multi-count", Some(&args)),
+                    None,
                     "",
                     "",
                 );
@@ -2131,6 +2266,7 @@ impl DesktopApp {
                     ui,
                     icons::Icon::Hinge,
                     &hardware.name,
+                    Some(hardware.id),
                     &short_id('h', hardware.id),
                     &self.localizer.text("hardware-kind"),
                 );

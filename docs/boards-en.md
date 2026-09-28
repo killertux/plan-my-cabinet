@@ -66,8 +66,11 @@ allocation conflict is reported, not repaired by a silent reassignment.
 
 **Duplicate board** copies dimensions, material and grain settings but creates
 a distinct physical part with a new ID. The desktop action offsets the copy's
-pose by 25 mm along X. It can retain the same displayed name, so use the ID
-shown beneath each list entry to distinguish them. Editing one does not edit
+pose by 25 mm along X and selects it. The copy keeps the original's name
+until you rename it: click the name at the top of the inspector (or press
+`F2`, or choose **Rename** in the Outliner's right-click menu), type the new
+name and press `Enter`. `Escape` keeps the old name. Assemblies and hardware
+are renamed the same way, and a rename is one undo step. Editing one does not edit
 the other; the copy does not inherit a stock allocation. Select board-row
 checkboxes and use **Edit selected dimensions** to apply one local dimension
 to several boards. The dialog shows **Mixed values** if their current values
@@ -109,7 +112,8 @@ independent cut-feasibility certificate.
 
 Opening a dialog moves focus to its first control. `Tab` (and `Shift+Tab` to
 go back) stays inside the dialog until it closes. Press `Space` on a focused button or
-checkbox. There are no special New board, duplicate, or edit shortcuts. The
+checkbox. `F2` renames the selected board; there are no special New board,
+duplicate, or edit shortcuts. The
 following uses exact millimetre values so no rounding prompt appears; type
 the unit suffix to make the input unambiguous. On macOS use `Command+A`, or
 on Linux `Ctrl+A`, to replace all text in a focused input.

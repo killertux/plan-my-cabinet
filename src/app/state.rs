@@ -123,6 +123,7 @@ pub(crate) struct DesignState {
     pub(crate) measurement_frame: Frame,
     pub(crate) board_action_error: bool,
     pub(crate) first_fit_notice: Option<FirstFit>,
+    pub(crate) rename: Option<assembly_ui::RenameDraft>,
     pub(crate) scene_active_seen: Option<Uuid>,
     pub(crate) stock_snapshot: Option<((Uuid, u64), StockReadModel)>,
 }
@@ -137,6 +138,7 @@ impl Default for DesignState {
             measurement_frame: Frame::World,
             board_action_error: false,
             first_fit_notice: None,
+            rename: None,
             scene_active_seen: None,
             stock_snapshot: None,
         }

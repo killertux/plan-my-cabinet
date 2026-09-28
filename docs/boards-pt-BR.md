@@ -67,8 +67,11 @@ realocação silenciosa.
 
 **Duplicar peça** copia dimensões, material e fibras, mas cria uma peça física
 com outro ID. Na interface atual, a cópia recebe deslocamento de 25 mm no eixo
-X. Pode manter o mesmo nome exibido: diferencie as linhas pelo ID mostrado
-abaixo de cada uma. Editar uma não altera a outra; a cópia não herda alocação
+X e fica selecionada. A cópia mantém o nome da original até você renomeá-la:
+clique no nome no topo do inspetor (ou pressione `F2`, ou escolha **Renomear**
+no menu do botão direito da Estrutura), digite o novo nome e pressione `Enter`.
+`Esc` mantém o nome antigo. Conjuntos e ferragens são renomeados do mesmo
+jeito, e cada renomeação é um passo de desfazer. Editar uma não altera a outra; a cópia não herda alocação
 de estoque. Marque as caixas das linhas e use **Editar dimensões selecionadas**
 para alterar uma dimensão local de várias peças. O diálogo mostra **Valores
 diferentes** quando necessário, lista as peças e referências individuais e
@@ -112,7 +115,8 @@ comprovação independente da viabilidade dos cortes.
 
 Ao abrir um diálogo, o foco vai para o primeiro controle. `Tab` (ou
 `Shift+Tab` para voltar) permanece no diálogo até fechá-lo. `Espaço` aciona botões e caixas com
-foco. Não há atalhos específicos para criar, duplicar ou editar peças. Os
+foco. `F2` renomeia a peça selecionada; não há atalhos específicos para
+criar, duplicar ou editar peças. Os
 valores abaixo são exatos em milímetros e não pedem arredondamento; digite a
 unidade para evitar ambiguidade. Para substituir o texto inteiro no campo com
 foco, use `Command+A` no macOS ou `Ctrl+A` no Linux.

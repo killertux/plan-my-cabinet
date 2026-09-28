@@ -21,6 +21,12 @@ pub enum CreationError {
     InvalidField(BoardField, UnitError),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenameError {
+    EmptyName,
+    MissingObject(Uuid),
+}
+
 pub struct NewMaterial {
     pub name: String,
     pub thickness: Length,
@@ -135,6 +141,28 @@ impl ProjectEditor {
         })?;
         Ok((id, fit))
     }
+
+    /// Rename a board, assembly or hardware item. Surrounding whitespace is
+    /// dropped; an unchanged name records no undo step.
+    pub fn rename_object(&mut self, id: Uuid, name: &str) -> Result<bool, EditError<RenameError>> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(EditError::Command(RenameError::EmptyName));
+        }
+        self.transact(|project| {
+            let slot = if let Some(board) = project.boards.iter_mut().find(|b| b.id == id) {
+                &mut board.name
+            } else if let Some(assembly) = project.assemblies.iter_mut().find(|a| a.id == id) {
+                &mut assembly.name
+            } else if let Some(item) = project.hardware.iter_mut().find(|h| h.id == id) {
+                &mut item.name
+            } else {
+                return Err(RenameError::MissingObject(id));
+            };
+            name.clone_into(slot);
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +212,37 @@ mod tests {
         editor.redo().unwrap();
         assert_eq!(editor.project().boards[1].id, second);
         editor.project().validate().unwrap();
+    }
+
+    #[test]
+    fn renaming_a_copy_leaves_the_original_and_undoes() {
+        let mut editor = ProjectEditor::new(Project::new("Cabinet", Currency::Brl)).unwrap();
+        let material = editor
+            .create_material(NewMaterial {
+                name: "Plywood".into(),
+                thickness: mm(18),
+                grain: BoardGrain::Length,
+            })
+            .unwrap();
+        let original = editor.create_board(board(material)).unwrap();
+        let pose = editor.project().board(original).unwrap().pose;
+        let copy = editor.duplicate_board(original, pose).unwrap();
+        assert!(editor.rename_object(copy, "  Right side ").unwrap());
+        assert_eq!(editor.project().board(copy).unwrap().name, "Right side");
+        assert_eq!(editor.project().board(original).unwrap().name, "Side");
+        assert!(!editor.rename_object(copy, "Right side").unwrap());
+        editor.undo().unwrap();
+        assert_eq!(editor.project().board(copy).unwrap().name, "Side");
+        let before = editor.project().clone();
+        assert!(matches!(
+            editor.rename_object(copy, "   "),
+            Err(EditError::Command(RenameError::EmptyName))
+        ));
+        assert!(matches!(
+            editor.rename_object(Uuid::new_v4(), "Top"),
+            Err(EditError::Command(RenameError::MissingObject(_)))
+        ));
+        assert_eq!(editor.project(), &before);
     }
 
     #[test]

@@ -4432,3 +4432,55 @@ fn dragging_a_face_handle_previews_live_and_commits_one_undoable_resize() {
         board.length
     );
 }
+
+#[test]
+fn inspector_rename_replaces_name_on_enter_and_escape_keeps_it() {
+    let mut app = navigation_app();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let size = egui::vec2(1440.0, 900.0);
+    let key = |key| Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    let id = app.editor.project().boards[1].id;
+    let original = app.editor.project().boards[1].name.clone();
+    let revision = app.editor.project().revision;
+
+    app.invoke(Request::with(A::RenameObject, Target::Object(id)))
+        .unwrap();
+    assert_eq!(app.selection.active, Some(id));
+    // One frame to focus the field, one to select the whole name.
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    responsive_frame(
+        &mut app,
+        &ctx,
+        size,
+        vec![Event::Text("Right side copy".into()), key(Key::Enter)],
+    );
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    assert!(app.design.rename.is_none());
+    assert_eq!(app.editor.project().boards[1].name, "Right side copy");
+    assert_eq!(app.editor.project().revision, revision + 1);
+
+    // F2 reopens the field; Escape leaves the name alone.
+    responsive_frame(&mut app, &ctx, size, vec![key(Key::F2)]);
+    assert!(app.design.rename.is_some());
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    responsive_frame(
+        &mut app,
+        &ctx,
+        size,
+        vec![Event::Text("zzz".into()), key(Key::Escape)],
+    );
+    responsive_frame(&mut app, &ctx, size, vec![]);
+    assert!(app.design.rename.is_none());
+    assert_eq!(app.editor.project().boards[1].name, "Right side copy");
+    app.editor.undo().unwrap();
+    assert_eq!(app.editor.project().boards[1].name, original);
+}
