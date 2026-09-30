@@ -6,7 +6,7 @@ use eframe::egui::{
     self, Color32, ImageSource, Vec2,
     load::{ImagePoll, SizeHint, TexturePoll},
 };
-use icons::{Icon, icon, install_loaders};
+use icons::{APP_ICONS, Icon, icon, install_loaders};
 
 fn bytes(symbol: Icon) -> egui::load::Bytes {
     let ImageSource::Bytes { bytes, .. } = symbol.source() else {
@@ -19,7 +19,11 @@ fn bytes(symbol: Icon) -> egui::load::Bytes {
 fn geometry_matches_original_handoff() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_dir = root.join("design_handoff_egui_redesign/assets/icons");
-    let names: std::collections::BTreeSet<_> = Icon::ALL.map(Icon::name).into_iter().collect();
+    let names: std::collections::BTreeSet<_> = Icon::ALL
+        .map(Icon::name)
+        .into_iter()
+        .filter(|name| !APP_ICONS.contains(name))
+        .collect();
     let source_names: std::collections::BTreeSet<_> = std::fs::read_dir(source_dir.clone())
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -34,7 +38,10 @@ fn geometry_matches_original_handoff() {
             .collect::<std::collections::BTreeSet<_>>(),
         source_names
     );
-    for symbol in Icon::ALL {
+    for symbol in Icon::ALL
+        .into_iter()
+        .filter(|s| !APP_ICONS.contains(&s.name()))
+    {
         let source =
             std::fs::read_to_string(source_dir.join(format!("{}.svg", symbol.name()))).unwrap();
         // Remove only the non-rendering credential envelope, whose signed bytes
@@ -119,7 +126,7 @@ fn embedded_assets_resolve_and_rasterize_at_every_reference_size() {
 fn gpu_raster_proves_all_icons_and_state_colors() {
     use eframe::{egui_wgpu, wgpu};
     const WIDTH: u32 = 1152; // 256-byte-aligned RGBA rows
-    const HEIGHT: u32 = 960;
+    const HEIGHT: u32 = 1008;
     const CELL: usize = 24;
     const STATE_WIDTH: usize = 9 * CELL;
     let colors = [
@@ -296,5 +303,32 @@ fn gpu_raster_proves_all_icons_and_state_colors() {
             });
             file.write_all(&rgb).unwrap();
         }
+    }
+}
+
+#[test]
+fn app_icons_follow_the_handoff_style() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let style = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" \
+        stroke=\"#fff\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">";
+    for symbol in Icon::ALL
+        .into_iter()
+        .filter(|s| APP_ICONS.contains(&s.name()))
+    {
+        // Drawn for the app, so no handoff source exists for it.
+        assert!(
+            !root
+                .join(format!(
+                    "design_handoff_egui_redesign/assets/icons/{}.svg",
+                    symbol.name()
+                ))
+                .exists()
+        );
+        let svg = String::from_utf8(bytes(symbol).to_vec()).unwrap();
+        assert!(svg.starts_with(style), "{symbol:?}: {svg}");
+        assert!(
+            !svg.contains("fill=\"#") && !svg.contains("transform"),
+            "{symbol:?}"
+        );
     }
 }

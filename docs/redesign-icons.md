@@ -115,3 +115,13 @@ Apple M5, Metal. Initial contact sheet:
 This is actual shader/readback evidence. A separate native widget-gallery
 capture with installed fonts and accessible buttons was reviewed on macOS
 arm64/Metal; redesigned workspace comparison remains pending.
+
+## Icons drawn for the app
+
+Icons added after the handoff are listed in `APP_ICONS` and live only in
+`assets/icons/`. They follow the handoff style exactly: a 24 × 24 view box,
+`stroke-width="1.7"`, round caps and joins, no fills or transforms (checked by
+`app_icons_follow_the_handoff_style`); the geometry test still compares the 40
+handoff icons with their signed sources.
+
+- `band`: edge band unrolling along a board's edge (the Band edges tool).

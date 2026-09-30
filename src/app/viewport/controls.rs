@@ -186,7 +186,7 @@ pub(super) fn show(
                         (
                             Request::new(A::ViewBand),
                             tool.mode == ToolMode::Band,
-                            Icon::Board,
+                            Icon::Band,
                         ),
                     ] {
                         let allowed = availability(request, tool);

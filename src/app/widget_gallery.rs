@@ -88,7 +88,7 @@ pub fn show(ui: &mut egui::Ui) {
                     });
                 });
                 w::card().show(&mut cols[2], |ui| {
-                    w::section_header(ui, "All 40 bundled icons");
+                    w::section_header(ui, "All 41 bundled icons");
                     for chunk in Icon::ALL.chunks(4) {
                         ui.horizontal(|ui| {
                             for &symbol in chunk {
@@ -121,7 +121,7 @@ mod tests {
         w::apply_visuals(&ctx);
         let mut result = ctx.run_ui(egui::RawInput::default(), show);
         assert!(!result.shapes.is_empty());
-        assert_eq!(Icon::ALL.len(), 40);
+        assert_eq!(Icon::ALL.len(), 41);
         let nodes = &result
             .platform_output
             .accesskit_update
