@@ -1698,3 +1698,66 @@ catalog-kind-short-slide = Slide
 catalog-kind-short-foot = Foot
 catalog-kind-short-other = Record
 catalog-unused-short = unused
+
+## Edge banding
+banding-title = Edge banding
+banding-not-accepted = { $material } is { $kind } · no edge banding
+banding-none-accepted = Only MDF and MDP boards take edge banding.
+banding-band = Band
+banding-new-band = New band…
+banding-preset-auto = Automatic
+banding-preset-none = None
+banding-preset-front = Front
+banding-preset-all = All 4
+banding-front = front
+banding-hint = Click an edge to band it or take its band off · A = automatic
+banding-auto-free = { $length } edge · automatic: free edge: { $band }
+banding-auto-joined = { $length } edge · automatic: against { $board }: no band
+banding-auto-partly = { $length } edge · automatic: only partly against { $board }: { $band }
+banding-auto-no-default = { $length } edge · automatic: the material has no default band
+banding-manual-on = { $length } edge · set by hand: { $band }
+banding-manual-off = { $length } edge · set by hand: no band
+banding-back-to-auto = Back to automatic
+banding-short-band = The { $band } band is lower than the { $thickness } board.
+banding-no-default = Automatic banding needs a default band on { $material }.
+banding-set-default = Choose a default band
+banding-mixed = { $count } of { $total }
+banding-edge-min-y = Bottom edge
+banding-edge-max-y = Top edge
+banding-edge-min-x = Left edge
+banding-edge-max-x = Right edge
+banding-skipped = { $count ->
+    [one] 1 board takes no banding and was left as it is.
+   *[other] { $count } boards take no banding and were left as they are.
+}
+banding-removed = { $count ->
+    [one] 1 edge lost its banding.
+   *[other] { $count } edges lost their banding.
+}
+banding-toggle = Band edge
+banding-set = Set edge banding
+banding-preset = Banding preset
+edge-bands-title = Edge bands
+edge-bands-empty = No edge bands yet. Press + to add the tape your shop uses.
+edge-band-new = New edge band
+edge-band-edit = Edit edge band
+edge-band-remove = Remove edge band
+edge-band-unused = unused
+edge-band-name = Name
+edge-band-thickness = Thickness
+edge-band-height = Height
+edge-band-color = Colour
+edge-band-hint = Name it as your shop lists it, for example "Fita Branca 1x22". The height should be at least the board thickness.
+material-kind = Type
+material-kind-mdf = MDF
+material-kind-mdp = MDP
+material-kind-hdf = HDF
+material-kind-plywood = Plywood
+material-kind-solid = Solid wood
+material-kind-other = Other
+material-kind-no-banding = { $kind } takes no edge banding.
+material-default-band = Default edge band
+material-default-band-hint = Automatic banding puts this band on every edge not joined to another board.
+material-no-band = No band
+viewport-band = Band edges
+viewport-band-hint = Click a board edge to band it or take its band off · Alt-click for automatic · drag to orbit

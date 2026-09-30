@@ -115,6 +115,7 @@ struct Item {
     geometry: Geometry,
     face: [f32; 3],
     edge: [f32; 3],
+    bands: [Option<[f32; 3]>; 4],
 }
 
 enum Geometry {
@@ -134,7 +135,13 @@ impl Item {
         let mut mesh = Mesh::default();
         match &self.geometry {
             Geometry::Box(corners) => {
-                mesh.box_mesh(corners.map(|p| relative(p, target)), self.face, self.edge);
+                mesh.box_mesh_banded(
+                    corners.map(|p| relative(p, target)),
+                    self.face,
+                    self.edge,
+                    self.bands,
+                    None,
+                );
             }
             Geometry::Solid(solid) => mesh.add_solid(solid, target, self.face, self.edge),
         }
@@ -145,6 +152,7 @@ impl Item {
 fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<Item> {
     let posed = |id: Uuid| style.poses.and_then(|p| p.get(&id).copied());
     let mut out = Vec::new();
+    let bands = crate::render::mesh::band_colors(project);
     for board in &project.boards {
         if !selection.visible(project, board.id) {
             continue;
@@ -176,6 +184,7 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
             geometry: Geometry::Box(corners),
             face,
             edge,
+            bands: bands.get(&board.id).copied().unwrap_or([None; 4]),
         });
     }
     if style.show_hardware {
@@ -203,6 +212,7 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
                     [0.66, 0.70, 0.69]
                 },
                 edge: [0.35, 0.38, 0.38],
+                bands: [None; 4],
             });
         }
         for solid in solids(project, selection, style.poses) {
@@ -222,6 +232,7 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
                 geometry: Geometry::Solid(Box::new(solid)),
                 face,
                 edge,
+                bands: [None; 4],
             });
         }
     }

@@ -145,7 +145,42 @@ pub(super) fn interact_with_selection(
                 action = Some(DragAction::Preview(drag.board_id, pose));
             }
         }
+        if tool.mode == ToolMode::Band {
+            tool.band_hover = response
+                .hover_pos()
+                .filter(|_| !ui.input(|i| i.pointer.any_down()))
+                .and_then(|pointer| super::pick_edge(project, camera, pointer, rect, selection));
+            if let Some((board, _)) = tool.band_hover {
+                let accepts = project
+                    .board(board)
+                    .and_then(|b| project.material(b.material_id))
+                    .is_some_and(|m| m.kind.accepts_banding());
+                ui.ctx().set_cursor_icon(if accepts {
+                    egui::CursorIcon::PointingHand
+                } else {
+                    egui::CursorIcon::NotAllowed
+                });
+                super::set_hover(ui.ctx(), Some(board));
+            } else {
+                super::set_hover(ui.ctx(), None);
+            }
+            if !preview_active
+                && response.clicked_by(egui::PointerButton::Primary)
+                && let Some(pointer) = response.interact_pointer_pos()
+                && let Some((board, edge)) =
+                    super::pick_edge(project, camera, pointer, rect, selection)
+            {
+                interaction.band = Some(super::BandClick {
+                    board,
+                    edge,
+                    reset: ui.input(|i| i.modifiers.alt),
+                });
+            }
+        } else {
+            tool.band_hover = None;
+        }
         if tool.drag.is_none()
+            && tool.mode != ToolMode::Band
             && !resizing
             && tool.resize_hover.is_none()
             && !ui.input(|i| i.pointer.any_down())
@@ -164,6 +199,7 @@ pub(super) fn interact_with_selection(
             }
         }
         if !preview_active
+            && tool.mode != ToolMode::Band
             && response.clicked_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()
         {

@@ -88,7 +88,7 @@ impl ProjectEditor {
         self.transact(|project| {
             project.materials.push(Material {
                 default_band: None,
-                kind: Default::default(),
+                kind: crate::domain::MaterialKind::infer(&input.name),
                 id,
                 name: input.name,
                 default_thickness: input.thickness,
@@ -112,7 +112,7 @@ impl ProjectEditor {
         self.transact(|project| {
             project.materials.push(Material {
                 default_band: None,
-                kind: Default::default(),
+                kind: crate::domain::MaterialKind::infer(&input.name),
                 id,
                 name: input.name,
                 default_thickness: input.thickness,

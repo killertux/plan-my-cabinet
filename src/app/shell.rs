@@ -598,6 +598,7 @@ impl DesktopApp {
                     (Workspace::Design, viewport::ToolMode::Measure) => {
                         Some("viewport-measure-hint")
                     }
+                    (Workspace::Design, viewport::ToolMode::Band) => Some("viewport-band-hint"),
                     _ => None,
                 };
                 if self.preferences.navigation_hints
@@ -1108,6 +1109,12 @@ impl DesktopApp {
             });
         self.design.move_tool.hardware_only = self.session.active == Workspace::Hardware;
         self.design.move_tool.drag_enabled = self.dirty_fitting().is_none();
+        // The Band tool belongs to Design; Hardware has only Navigate and Move.
+        if self.session.active == Workspace::Hardware
+            && self.design.move_tool.mode == viewport::ToolMode::Band
+        {
+            self.design.move_tool.mode = viewport::ToolMode::Navigate;
+        }
         let surface = ui.allocate_ui_with_layout(
             ui.available_size(),
             egui::Layout::top_down(egui::Align::Min),
@@ -1147,6 +1154,23 @@ impl DesktopApp {
         }
         if self.design.move_tool.take_grid_edit_request() {
             self.invoke_or_report(Request::new(A::EditGrid));
+        }
+        if let Some(click) = action.band {
+            if self.selection.active != Some(click.board) {
+                self.request_scene_selection(Some(click.board), false);
+            }
+            let request = if click.reset {
+                Request::with(A::SetBanding, Target::Board(click.board)).argument(
+                    Argument::EdgeSetting {
+                        edge: click.edge,
+                        value: plan_my_cabinet::domain::EdgeBanding::Auto,
+                    },
+                )
+            } else {
+                Request::with(A::ToggleBanding, Target::Board(click.board))
+                    .argument(Argument::Edge(click.edge))
+            };
+            self.invoke_or_report(request);
         }
         if let Some(proposal) = action.selection {
             let project = self.editor.project();
@@ -1473,6 +1497,7 @@ impl DesktopApp {
         self.show_kerf_confirmation(ui.ctx());
         self.show_stock_dialog(ui.ctx());
         self.show_cut_fee_dialog(ui.ctx());
+        self.show_edge_band_dialog(ui.ctx());
         self.show_currency_dialog(ui.ctx());
         self.show_assembly_dialog(ui.ctx());
         self.show_hardware_dialog(ui.ctx());

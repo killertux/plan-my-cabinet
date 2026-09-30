@@ -25,6 +25,8 @@ pub struct MoveTool {
     /// Set by the host each frame: false while an inspector position draft
     /// is unsaved, so a drag can't race the typed values.
     pub drag_enabled: bool,
+    /// The board edge under the pointer while the Band tool is active.
+    pub band_hover: Option<(Uuid, plan_my_cabinet::domain::BoardEdge)>,
     resize: Option<resize::ResizeDrag>,
     resize_hover: Option<(usize, bool)>,
     grid_edit_requested: bool,
@@ -39,6 +41,8 @@ pub enum ToolMode {
     Navigate,
     Move,
     Measure,
+    /// Click a board edge to band it or take its band off.
+    Band,
 }
 
 /// Opt-in, capture-only transient drag state. Never persisted or accepted.
@@ -66,6 +70,7 @@ impl Default for MoveTool {
             resize_enabled: false,
             hardware_only: false,
             drag_enabled: true,
+            band_hover: None,
             resize: None,
             resize_hover: None,
             grid_edit_requested: false,
@@ -111,6 +116,16 @@ pub struct ViewportInteraction {
     pub drag: Option<DragAction>,
     pub selection: Option<SelectionProposal>,
     pub resize: Option<ResizeAction>,
+    pub band: Option<BandClick>,
+}
+
+/// A Band tool click on a board edge. `reset` (Alt-click) puts the edge back
+/// to automatic instead of flipping it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BandClick {
+    pub board: Uuid,
+    pub edge: plan_my_cabinet::domain::BoardEdge,
+    pub reset: bool,
 }
 
 impl MoveTool {
@@ -264,6 +279,7 @@ pub(crate) fn apply_control(
         (A::ViewNavigate, _) => tool.mode = ToolMode::Navigate,
         (A::ViewMove, _) => tool.mode = ToolMode::Move,
         (A::ViewMeasure, _) => tool.mode = ToolMode::Measure,
+        (A::ViewBand, _) => tool.mode = ToolMode::Band,
         (A::ViewFrame, _) => {
             if let Some(b) = bounds_visible(project, &selection.ids, selection) {
                 camera.frame(b, camera.viewport_aspect);
@@ -322,6 +338,68 @@ fn board_hit(
         }
     }
     best
+}
+
+/// Near a board's outline, the broad face counts as its edge: edge faces are
+/// thin, so the Band tool accepts a click this far in from the edge.
+const EDGE_REACH_MM: f64 = 25.0;
+
+/// The board edge under the pointer: its thin edge face, or the broad face
+/// near that edge. Boards hide boards behind them.
+pub(crate) fn pick_edge(
+    project: &Project,
+    camera: &Camera,
+    pointer: egui::Pos2,
+    rect: egui::Rect,
+    selection: &Selection,
+) -> Option<(Uuid, plan_my_cabinet::domain::BoardEdge)> {
+    use plan_my_cabinet::domain::BoardEdge;
+    let ray = camera.ray(pointer, rect);
+    let (distance, id, face, pose, dimensions) = project
+        .boards
+        .iter()
+        .filter(|board| selection.visible(project, board.id))
+        .filter_map(|board| {
+            let pose = world_pose(project, board)?;
+            let dimensions = board
+                .blank_dimensions()
+                .map(|v| v.micrometres() as f64 / 1000.0);
+            let (distance, face) = board_hit(ray, pose, dimensions)?;
+            Some((distance, board.id, face, pose, dimensions))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))?;
+    let edge = match face {
+        0 => BoardEdge::MinX,
+        1 => BoardEdge::MaxX,
+        2 => BoardEdge::MinY,
+        3 => BoardEdge::MaxY,
+        _ => {
+            let hit: [f64; 3] =
+                std::array::from_fn(|i| ray.origin[i] + ray.direction[i] * distance);
+            let q = pose.rotation;
+            let inverse = plan_my_cabinet::units::Quaternion {
+                w: q.w,
+                x: -q.x,
+                y: -q.y,
+                z: -q.z,
+            };
+            let local = inverse.rotate(std::array::from_fn(|i| hit[i] - pose.translation_mm[i]));
+            let reach = EDGE_REACH_MM
+                .min(dimensions[0] / 3.0)
+                .min(dimensions[1] / 3.0);
+            [
+                (local[0], BoardEdge::MinX),
+                (dimensions[0] - local[0], BoardEdge::MaxX),
+                (local[1], BoardEdge::MinY),
+                (dimensions[1] - local[1], BoardEdge::MaxY),
+            ]
+            .into_iter()
+            .filter(|(d, _)| *d <= reach)
+            .min_by(|a, b| a.0.total_cmp(&b.0))?
+            .1
+        }
+    };
+    Some((id, edge))
 }
 
 #[cfg(test)]

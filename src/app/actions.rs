@@ -36,6 +36,12 @@ pub(crate) enum ActionId {
     RenameObject,
     EditDimensions,
     SetGrain,
+    ToggleBanding,
+    SetBanding,
+    ApplyBandingPreset,
+    NewEdgeBand,
+    EditEdgeBand,
+    RemoveEdgeBand,
     NewStock,
     EditStock,
     DuplicateStock,
@@ -102,6 +108,7 @@ pub(crate) enum ActionId {
     ViewNavigate,
     ViewMove,
     ViewMeasure,
+    ViewBand,
     ViewFrame,
     ViewPreset,
     ViewProjection,
@@ -191,6 +198,12 @@ registry! {
     RenameObject => ("object-rename", Design, "rename board assembly name", "renomear peça conjunto nome"),
     EditDimensions => ("board-edit-dimension", Design, "edit dimension", "editar dimensão"),
     SetGrain => ("board-grain", Design, "grain direction", "sentido veio"),
+    ToggleBanding => ("banding-toggle", Design, "band edge tape edge banding", "fita de borda colocar tirar"),
+    SetBanding => ("banding-set", Design, "edge banding automatic set", "fita de borda automática definir"),
+    ApplyBandingPreset => ("banding-preset", Design, "edge banding preset all front none automatic", "fita de borda todas frente nenhuma automática"),
+    NewEdgeBand => ("edge-band-new", Design, "new edge band tape", "nova fita de borda"),
+    EditEdgeBand => ("edge-band-edit", Design, "edit edge band tape", "editar fita de borda"),
+    RemoveEdgeBand => ("edge-band-remove", Design, "remove delete edge band tape", "remover excluir fita de borda"),
     NewStock => ("stock-new", Stock, "new stock sheet", "nova chapa estoque"),
     EditStock => ("stock-edit", Stock, "edit stock", "editar estoque"),
     DuplicateStock => ("stock-duplicate", Stock, "duplicate copy sheet offcut stock", "duplicar copiar chapa sobra estoque"),
@@ -257,6 +270,7 @@ registry! {
     ViewNavigate => ("viewport-navigate", Design, "navigate orbit camera", "navegar orbitar câmera"),
     ViewMove => ("viewport-move", Design, "move board tool", "mover peça ferramenta"),
     ViewMeasure => ("viewport-measure", Design, "measure bounding dimensions", "medir dimensões envolventes"),
+    ViewBand => ("viewport-band", Design, "edge banding tool tape edges", "ferramenta fita de borda bordas"),
     ViewFrame => ("viewport-frame", Design, "frame selection camera", "enquadrar seleção câmera"),
     ViewPreset => ("viewport-preset", Design, "isometric front right top camera", "isométrica frontal direita superior câmera"),
     ViewProjection => ("viewport-projection", Design, "perspective orthographic camera", "perspectiva ortográfica câmera"),
@@ -276,7 +290,9 @@ pub(crate) fn viewport_availability(
         return Err(Unavailable::ModalOpen);
     }
     match request.id {
-        A::ViewNavigate | A::ViewMove | A::ViewMeasure if preview_active || dragging => {
+        A::ViewNavigate | A::ViewMove | A::ViewMeasure | A::ViewBand
+            if preview_active || dragging =>
+        {
             Err(Unavailable::Busy)
         }
         A::ViewFrame | A::ViewPreset | A::ViewProjection if dragging => Err(Unavailable::Busy),
@@ -294,6 +310,7 @@ pub(crate) fn viewport_availability(
         A::ViewNavigate
         | A::ViewMove
         | A::ViewMeasure
+        | A::ViewBand
         | A::ViewFrame
         | A::ViewPreset
         | A::ViewProjection => Ok(()),
@@ -442,6 +459,8 @@ pub(crate) enum Target {
     Door(Uuid),
     /// A drawer's slide pair.
     Slide(Uuid),
+    /// An edge band record.
+    Band(Uuid),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -464,8 +483,17 @@ pub(crate) enum Argument {
     Angle(f64),
     Preset(viewport::Preset),
     Projection(viewport::Projection),
-    StockPriority { target: usize, subset: bool },
+    StockPriority {
+        target: usize,
+        subset: bool,
+    },
     Length(plan_my_cabinet::units::Length),
+    Edge(plan_my_cabinet::domain::BoardEdge),
+    EdgeSetting {
+        edge: plan_my_cabinet::domain::BoardEdge,
+        value: plan_my_cabinet::domain::EdgeBanding,
+    },
+    BandingPreset(plan_my_cabinet::banding::BandingPreset),
 }
 
 impl Request {
@@ -531,6 +559,9 @@ pub(crate) enum Unavailable {
     NoDialog,
     StockInUse,
     CatalogInUse,
+    BandInUse,
+    NeedsBand,
+    NoBanding,
 }
 
 impl Unavailable {
@@ -550,6 +581,20 @@ impl Unavailable {
             (Language::PtBr, Self::NoUndo) => "Nada para desfazer",
             (Language::En, Self::NoRedo) => "Nothing to redo",
             (Language::PtBr, Self::NoRedo) => "Nada para refazer",
+            (Language::En, Self::BandInUse) => {
+                "Boards or materials still use this band; change them first"
+            }
+            (Language::PtBr, Self::BandInUse) => {
+                "Peças ou materiais ainda usam esta fita; altere-os primeiro"
+            }
+            (Language::En, Self::NeedsBand) => "Create an edge band first",
+            (Language::PtBr, Self::NeedsBand) => "Crie uma fita de borda primeiro",
+            (Language::En, Self::NoBanding) => {
+                "This board's material takes no edge banding (only MDF and MDP do)"
+            }
+            (Language::PtBr, Self::NoBanding) => {
+                "O material desta peça não leva fita de borda (só MDF e MDP levam)"
+            }
             (Language::En, Self::CatalogInUse) => {
                 "Hinges, slides or feet still use this model; remove them first"
             }
@@ -716,6 +761,38 @@ impl DesktopApp {
             }
             A::SetGrain if !matches!(request.argument, Argument::Grain(_)) => {
                 Err(Unavailable::MissingTarget)
+            }
+            A::ToggleBanding if !matches!((request.target, request.argument), (T::Board(id), Argument::Edge(_)) if project.boards.iter().any(|b| b.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ToggleBanding | A::SetBanding | A::ApplyBandingPreset
+                if !self.banding_targets(request.target).iter().any(|id| {
+                    project
+                        .board(*id)
+                        .and_then(|b| project.material(b.material_id))
+                        .is_some_and(|m| m.kind.accepts_banding())
+                }) =>
+            {
+                if self.banding_targets(request.target).is_empty() {
+                    Err(Unavailable::NoSelection)
+                } else {
+                    Err(Unavailable::NoBanding)
+                }
+            }
+            A::ToggleBanding if matches!(request.target, T::Board(id) if self.click_band(id).is_none()) => {
+                Err(Unavailable::NeedsBand)
+            }
+            A::SetBanding if !matches!(request.argument, Argument::EdgeSetting { .. }) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ApplyBandingPreset if !matches!(request.argument, Argument::BandingPreset(_)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::EditEdgeBand | A::RemoveEdgeBand if !matches!(request.target, T::Band(id) if project.edge_band(id).is_some()) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::RemoveEdgeBand if matches!(request.target, T::Band(id) if { let (b, m) = plan_my_cabinet::banding::band_usage(project, id); !b.is_empty() || !m.is_empty() }) => {
+                Err(Unavailable::BandInUse)
             }
             A::SetMeasurementFrame if matches!(request.argument, Argument::Frame(Frame::Object(target)) if !project.boards.iter().any(|b| b.id == target) && !project.assemblies.iter().any(|a| a.id == target)) => {
                 Err(Unavailable::MissingTarget)
@@ -940,6 +1017,7 @@ impl DesktopApp {
                 | A::ViewNavigate
                 | A::ViewMove
                 | A::ViewMeasure
+                | A::ViewBand
                 | A::ViewFrame
                 | A::ViewPreset
                 | A::ViewProjection
@@ -1162,6 +1240,55 @@ impl DesktopApp {
                 {
                     self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
                 }
+            }
+            (A::ToggleBanding, T::Board(id)) => {
+                let (Argument::Edge(edge), Some(band)) = (request.argument, self.click_band(id))
+                else {
+                    return Err(Unavailable::NeedsBand);
+                };
+                let result = self.editor.toggle_edge_banding(id, edge, band);
+                self.report_edit(result);
+            }
+            (A::SetBanding, target) => {
+                if let Argument::EdgeSetting { edge, value } = request.argument {
+                    let boards = self.banding_targets(target);
+                    let result = self.editor.set_edge_banding(&boards, &[edge], value);
+                    self.report_banding(result);
+                }
+            }
+            (A::ApplyBandingPreset, target) => {
+                if let Argument::BandingPreset(preset) = request.argument {
+                    let boards = self.banding_targets(target);
+                    let band = boards.first().and_then(|id| self.click_band(*id));
+                    if band.is_none()
+                        && matches!(
+                            preset,
+                            plan_my_cabinet::banding::BandingPreset::Front
+                                | plan_my_cabinet::banding::BandingPreset::AllFour
+                        )
+                    {
+                        return Err(Unavailable::NeedsBand);
+                    }
+                    let result = self.editor.apply_banding_preset(&boards, preset, band);
+                    self.report_banding(result);
+                }
+            }
+            (A::NewEdgeBand, _) => self
+                .modals
+                .set_edge_band(Some(banding_ui::EdgeBandDialog::new(locale))),
+            (A::EditEdgeBand, T::Band(id)) => {
+                let Some(band) = self.editor.project().edge_band(id) else {
+                    return Err(Unavailable::MissingTarget);
+                };
+                self.modals
+                    .set_edge_band(Some(banding_ui::EdgeBandDialog::edit(band, locale)));
+            }
+            (A::RemoveEdgeBand, T::Band(id)) => {
+                let result = self.editor.remove_edge_band(id);
+                if result.is_ok() && self.design.banding_band == Some(id) {
+                    self.design.banding_band = None;
+                }
+                self.report_edit(result);
             }
             (A::NewStock, T::Material(id)) => {
                 self.modals

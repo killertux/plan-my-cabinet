@@ -1490,6 +1490,10 @@ impl DesktopApp {
             }
         });
         theme_widgets::divider(ui);
+        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+            self.show_edge_band_list(ui);
+        });
+        theme_widgets::divider(ui);
         let holding: std::collections::HashSet<Uuid> = self
             .editor
             .project()
@@ -1945,6 +1949,7 @@ impl DesktopApp {
                                 .argument(Argument::Grain(grain)),
                         );
                     }
+                    self.show_banding_section(ui, &[board.id]);
                     theme_widgets::inspector_heading(
                         ui,
                         &self.localizer.text("design-dimensions-title"),
@@ -2249,6 +2254,17 @@ impl DesktopApp {
                                 }
                             }
                         });
+                    }
+                    let boards: Vec<Uuid> = self
+                        .editor
+                        .project()
+                        .boards
+                        .iter()
+                        .filter(|b| self.selection.ids.contains(&b.id))
+                        .map(|b| b.id)
+                        .collect();
+                    if !boards.is_empty() {
+                        self.show_banding_section(ui, &boards);
                     }
                     self.inspector_actions(
                         ui,

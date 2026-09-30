@@ -557,6 +557,9 @@ pub(super) fn paint(
     } else {
         super::hovered(ui.ctx())
     };
+    let band_hover = tool
+        .band_hover
+        .filter(|_| tool.mode == super::ToolMode::Band);
     let (mesh, radius) = scene_with_hover(
         project,
         camera,
@@ -565,6 +568,7 @@ pub(super) fn paint(
         capture_pose.as_ref().or(poses),
         material_tint,
         hover,
+        band_hover,
     );
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,

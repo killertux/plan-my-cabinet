@@ -70,7 +70,7 @@ pub fn project() -> Project {
     ] {
         p.materials.push(Material {
             default_band: None,
-            kind: Default::default(),
+            kind: crate::domain::MaterialKind::infer(name),
             id,
             name: name.into(),
             default_thickness: mm(thickness),

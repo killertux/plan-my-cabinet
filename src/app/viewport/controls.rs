@@ -183,6 +183,11 @@ pub(super) fn show(
                             tool.mode == ToolMode::Measure,
                             Icon::Measure,
                         ),
+                        (
+                            Request::new(A::ViewBand),
+                            tool.mode == ToolMode::Band,
+                            Icon::Board,
+                        ),
                     ] {
                         let allowed = availability(request, tool);
                         let label = request.id.label(&localizer);

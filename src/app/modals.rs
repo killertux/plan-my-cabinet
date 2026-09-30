@@ -12,6 +12,7 @@ use crate::{
     BatchDialog, BoardDimensionDialog, BoardMaterialDialog, CreationDialog, GridDialog,
     MaterialEditDialog,
     assembly_ui::AssemblyDialog,
+    banding_ui::EdgeBandDialog,
     catalog_ui::CatalogDialog,
     currency_ui::CurrencyDialog,
     door_joint_ui::{DoorDialog, RemovalDialog},
@@ -115,5 +116,6 @@ modals! {
     Door(DoorDialog) => door, door_mut, take_door, set_door;
     Slide(SlideDialog) => slide, slide_mut, take_slide, set_slide;
     Removal(RemovalDialog) => removal, removal_mut, take_removal, set_removal;
+    EdgeBand(EdgeBandDialog) => edge_band, edge_band_mut, take_edge_band, set_edge_band;
     ProjectName(ProjectNameDialog) => project_name, project_name_mut, take_project_name, set_project_name;
 }

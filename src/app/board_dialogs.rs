@@ -85,6 +85,9 @@ pub(crate) struct CreationDialog {
     pub(crate) grain: BoardGrain,
     pub(crate) grain_override: Option<BoardGrain>,
     pub(crate) color: Option<SrgbColor>,
+    /// A new material's type; `None` follows the name ("MDF Branco" is MDF).
+    pub(crate) material_kind: Option<plan_my_cabinet::domain::MaterialKind>,
+    pub(crate) default_band: Option<Uuid>,
     pub(crate) preview: Option<(BoardPreviewKey, BoardPreview)>,
     pub(crate) error: bool,
 }
@@ -195,6 +198,8 @@ impl CreationDialog {
             grain: BoardGrain::Length,
             grain_override: None,
             color: None,
+            material_kind: None,
+            default_band: None,
             preview: None,
             error: false,
         }
@@ -1649,12 +1654,14 @@ impl DesktopApp {
             && current
             && let Some(material_id) = draft.material_id
         {
+            let banded = plan_my_cabinet::banding::banded_edges(self.editor.project());
             match self
                 .editor
                 .assign_board_material(draft.board_id, material_id, draft.anchor)
             {
                 Ok(conflicts) => {
                     self.cut_plan.material_conflicts = conflicts;
+                    self.note_removed_banding(banded);
                     self.chromes.board_material.close(ctx);
                     return;
                 }
@@ -1677,6 +1684,7 @@ impl DesktopApp {
         let unit = self.editor.project().display_unit;
         let locale = dialog_locale(&self.localizer);
         let mut preview: Option<MaterialChangePreview> = None;
+        let mut banding_change = None;
         let title = self.localizer.text("material-edit");
         let cancel_label = self.localizer.text("cancel");
         let confirm_label = self.localizer.text("material-save-action");
@@ -1771,6 +1779,22 @@ impl DesktopApp {
                     .copied();
                 if creation_color_swatches(ui, &self.localizer, &mut color) {
                     let _ = self.editor.set_material_color(draft.id, color);
+                }
+                // Type and default band apply at once, like the colour: they
+                // change banding only, never sizes or placements.
+                if let Some(material) = self.editor.project().material(draft.id).cloned() {
+                    form::gap(ui);
+                    let (mut kind, mut band) = (material.kind, material.default_band);
+                    if crate::banding_ui::material_banding_fields(
+                        ui,
+                        &self.localizer,
+                        self.editor.project(),
+                        "material-edit",
+                        &mut kind,
+                        &mut band,
+                    ) {
+                        banding_change = Some((kind, band));
+                    }
                 }
                 if valid {
                     match self.editor.preview_material_change(
@@ -1962,6 +1986,12 @@ impl DesktopApp {
                 )
             },
         );
+        if let Some((kind, band)) = banding_change {
+            let before = plan_my_cabinet::banding::banded_edges(self.editor.project());
+            let result = self.editor.set_material_banding(draft.id, kind, band);
+            self.report_edit(result);
+            self.note_removed_banding(before);
+        }
         draft.focus_on_open = false;
         let cancel = modal.action == ModalAction::Cancel;
         let confirm = modal.action == ModalAction::Confirm;
@@ -2430,6 +2460,22 @@ impl DesktopApp {
                     });
                     form::gap(ui);
                     creation_color_swatches(ui, &self.localizer, &mut draft.color);
+                    form::gap(ui);
+                    let mut kind = draft.material_kind.unwrap_or_else(|| {
+                        plan_my_cabinet::domain::MaterialKind::infer(&draft.name)
+                    });
+                    let before = kind;
+                    crate::banding_ui::material_banding_fields(
+                        ui,
+                        &self.localizer,
+                        self.editor.project(),
+                        "material-create",
+                        &mut kind,
+                        &mut draft.default_band,
+                    );
+                    if kind != before {
+                        draft.material_kind = Some(kind);
+                    }
                     thickness
                 };
                 if draft.error {
@@ -2477,9 +2523,14 @@ impl DesktopApp {
                 if self
                     .editor
                     .transact(|project| -> Result<(), ()> {
+                        let kind = draft.material_kind.unwrap_or_else(|| {
+                            plan_my_cabinet::domain::MaterialKind::infer(&draft.name)
+                        });
                         project.materials.push(plan_my_cabinet::domain::Material {
-                            default_band: None,
-                            kind: Default::default(),
+                            default_band: draft.default_band.filter(|band| {
+                                kind.accepts_banding() && project.edge_band(*band).is_some()
+                            }),
+                            kind,
                             id,
                             name: draft.name.clone(),
                             default_thickness: thickness,

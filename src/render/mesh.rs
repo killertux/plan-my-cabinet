@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use crate::domain::{Board, HardwareKind, Project};
+use crate::domain::{Board, BoardEdge, HardwareKind, Project};
 use crate::placement::{BoardFace, Side};
 use crate::render::camera::*;
 
@@ -26,6 +26,20 @@ impl Mesh {
     }
 
     pub fn box_mesh(&mut self, corners: [[f32; 3]; 8], color: [f32; 3], edge: [f32; 3]) {
+        self.box_mesh_banded(corners, color, edge, [None; 4], None);
+    }
+
+    /// A board box whose edge faces (in `BoardEdge::ALL` order) may carry
+    /// edge band: a banded face takes the band colour and a marker line along
+    /// its middle. `marked` outlines one edge face (the Band tool's hover).
+    pub fn box_mesh_banded(
+        &mut self,
+        corners: [[f32; 3]; 8],
+        color: [f32; 3],
+        edge: [f32; 3],
+        bands: [Option<[f32; 3]>; 4],
+        marked: Option<BoardEdge>,
+    ) {
         // `board_corners` uses bit-coded XYZ indexes (2 = min-X/max-Y,
         // 3 = max-X/max-Y). The quad topology below uses perimeter order.
         // Convert once before emitting faces and edges; otherwise each broad
@@ -34,19 +48,37 @@ impl Mesh {
             corners[0], corners[1], corners[3], corners[2], corners[4], corners[5], corners[7],
             corners[6],
         ];
-        for (face, shade) in [
-            ([0, 3, 2, 1], 0.55),
-            ([4, 5, 6, 7], 1.0),
-            ([0, 1, 5, 4], 0.75),
-            ([1, 2, 6, 5], 0.85),
-            ([2, 3, 7, 6], 0.68),
-            ([3, 0, 4, 7], 0.8),
-        ] {
+        // Faces in perimeter order, with the board edge each side face is.
+        let faces = [
+            ([0, 3, 2, 1], 0.55, None),
+            ([4, 5, 6, 7], 1.0, None),
+            ([0, 1, 5, 4], 0.75, Some(BoardEdge::MinY)),
+            ([1, 2, 6, 5], 0.85, Some(BoardEdge::MaxX)),
+            ([2, 3, 7, 6], 0.68, Some(BoardEdge::MaxY)),
+            ([3, 0, 4, 7], 0.8, Some(BoardEdge::MinX)),
+        ];
+        for (face, shade, board_edge) in faces {
+            let band = board_edge.and_then(|e| bands[e.index()]);
+            let base = band.unwrap_or(color);
             // Mix toward ambient warmth rather than multiplying sRGB channels to
             // black. This is display shading only; the saved color is unchanged.
-            let shaded = std::array::from_fn(|i| color[i] * shade + 0.12 * (1.0 - shade));
+            let shaded = std::array::from_fn(|i| base[i] * shade + 0.12 * (1.0 - shade));
             for i in [0, 1, 2, 0, 2, 3] {
                 Self::vertex(&mut self.faces, corners[face[i]], shaded);
+            }
+            let mid = |a: usize, b: usize| -> [f32; 3] {
+                std::array::from_fn(|i| (corners[a][i] + corners[b][i]) / 2.0)
+            };
+            // The side face runs from the bottom pair (0,1) to the top pair
+            // (2,3) of its quad: a line through the middle of the thickness.
+            if band.is_some() {
+                self.line(mid(face[0], face[3]), mid(face[1], face[2]), BAND_MARK);
+            }
+            if marked.is_some() && board_edge == marked {
+                for i in 0..4 {
+                    self.line(corners[face[i]], corners[face[(i + 1) % 4]], BAND_HOVER);
+                }
+                self.line(mid(face[0], face[3]), mid(face[1], face[2]), BAND_HOVER);
             }
         }
         for (a, b) in [
@@ -78,6 +110,26 @@ pub fn highlight_color(project: &Project, id: Uuid, selection: &Selection) -> [f
     } else {
         [0.55, 0.51, 0.45]
     }
+}
+
+/// The marker line along a banded edge face.
+pub const BAND_MARK: [f32; 3] = [0.10, 0.58, 0.50];
+/// The Band tool's outline of the edge face under the pointer.
+pub const BAND_HOVER: [f32; 3] = [0.93, 0.30, 0.62];
+
+/// Band colours per board edge, from the effective banding.
+pub fn band_colors(project: &Project) -> HashMap<Uuid, [Option<[f32; 3]>; 4]> {
+    crate::banding_rules::effective(project)
+        .into_iter()
+        .map(|(id, states)| {
+            let colors = states.map(|s| {
+                s.band
+                    .and_then(|band| project.edge_band(band))
+                    .map(|band| band.color.0.map(|c| f32::from(c) / 255.0))
+            });
+            (id, colors)
+        })
+        .collect()
 }
 
 pub const BACKGROUND: [f32; 3] = [236.0 / 255.0, 232.0 / 255.0, 225.0 / 255.0];
@@ -172,9 +224,11 @@ pub fn scene_with_faces(
         poses,
         material_tint,
         None,
+        None,
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Scene state is passed flat, as for the other scene builders.
 pub fn scene_with_hover(
     project: &Project,
     camera: &Camera,
@@ -183,8 +237,10 @@ pub fn scene_with_hover(
     poses: Option<&HashMap<Uuid, crate::units::Pose>>,
     material_tint: bool,
     hovered: Option<Uuid>,
+    band_hover: Option<(Uuid, BoardEdge)>,
 ) -> (Mesh, f64) {
     let hovered: HashSet<Uuid> = hovered.into_iter().collect();
+    let bands = band_colors(project);
     let mut mesh = Mesh::default();
     add_grid(&mut mesh, project, camera);
     for (end, color) in [
@@ -238,7 +294,13 @@ pub fn scene_with_hover(
             } else {
                 highlight_color(project, board.id, selection)
             };
-            mesh.box_mesh(corners, face, edge);
+            mesh.box_mesh_banded(
+                corners,
+                face,
+                edge,
+                bands.get(&board.id).copied().unwrap_or([None; 4]),
+                band_hover.filter(|(id, _)| *id == board.id).map(|(_, e)| e),
+            );
             if let Some((source, source_face, target, target_face)) = faces {
                 let selected = if source == board.id {
                     Some((source_face, [0.15, 0.95, 0.95]))

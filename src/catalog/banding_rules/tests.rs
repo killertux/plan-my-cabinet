@@ -49,7 +49,7 @@ fn banded(project: &Project) -> Vec<(String, [bool; 4])> {
         .collect()
 }
 
-fn row<'a>(rows: &'a [(String, [bool; 4])], name: &str) -> [bool; 4] {
+fn row(rows: &[(String, [bool; 4])], name: &str) -> [bool; 4] {
     rows.iter().find(|(n, _)| n == name).unwrap().1
 }
 

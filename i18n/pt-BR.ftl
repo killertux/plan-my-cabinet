@@ -1701,3 +1701,66 @@ catalog-kind-short-slide = Corrediça
 catalog-kind-short-foot = Pé
 catalog-kind-short-other = Registro
 catalog-unused-short = sem uso
+
+## Fita de borda
+banding-title = Fita de borda
+banding-not-accepted = { $material } é { $kind } · sem fita de borda
+banding-none-accepted = Só peças de MDF e MDP levam fita de borda.
+banding-band = Fita
+banding-new-band = Nova fita…
+banding-preset-auto = Automática
+banding-preset-none = Nenhuma
+banding-preset-front = Frente
+banding-preset-all = Todas
+banding-front = frente
+banding-hint = Toque numa borda para colocar ou tirar a fita · A = automática
+banding-auto-free = Borda de { $length } · automática: borda livre: { $band }
+banding-auto-joined = Borda de { $length } · automática: encostada em { $board }: sem fita
+banding-auto-partly = Borda de { $length } · automática: só parte encostada em { $board }: { $band }
+banding-auto-no-default = Borda de { $length } · automática: o material não tem fita padrão
+banding-manual-on = Borda de { $length } · definida à mão: { $band }
+banding-manual-off = Borda de { $length } · definida à mão: sem fita
+banding-back-to-auto = Voltar ao automático
+banding-short-band = A fita { $band } é mais baixa que a chapa de { $thickness }.
+banding-no-default = A fita automática precisa de uma fita padrão em { $material }.
+banding-set-default = Escolher fita padrão
+banding-mixed = { $count } de { $total }
+banding-edge-min-y = Borda de baixo
+banding-edge-max-y = Borda de cima
+banding-edge-min-x = Borda esquerda
+banding-edge-max-x = Borda direita
+banding-skipped = { $count ->
+    [one] 1 peça não leva fita e ficou como estava.
+   *[other] { $count } peças não levam fita e ficaram como estavam.
+}
+banding-removed = { $count ->
+    [one] 1 borda perdeu a fita.
+   *[other] { $count } bordas perderam a fita.
+}
+banding-toggle = Colocar fita na borda
+banding-set = Definir fita de borda
+banding-preset = Predefinição de fita
+edge-bands-title = Fitas de borda
+edge-bands-empty = Nenhuma fita de borda ainda. Toque em + para adicionar a fita que a sua marcenaria usa.
+edge-band-new = Nova fita de borda
+edge-band-edit = Editar fita de borda
+edge-band-remove = Remover fita de borda
+edge-band-unused = sem uso
+edge-band-name = Nome
+edge-band-thickness = Espessura
+edge-band-height = Altura
+edge-band-color = Cor
+edge-band-hint = Use o nome da lista da marcenaria, por exemplo "Fita Branca 1x22". A altura deve ser pelo menos a espessura da chapa.
+material-kind = Tipo
+material-kind-mdf = MDF
+material-kind-mdp = MDP
+material-kind-hdf = HDF
+material-kind-plywood = Compensado
+material-kind-solid = Madeira maciça
+material-kind-other = Outro
+material-kind-no-banding = { $kind } não leva fita de borda.
+material-default-band = Fita de borda padrão
+material-default-band-hint = A fita automática coloca esta fita em toda borda que não encosta em outra peça.
+material-no-band = Sem fita
+viewport-band = Fita nas bordas
+viewport-band-hint = Toque na borda de uma peça para colocar ou tirar a fita · Alt-toque para automático · arraste para orbitar

@@ -3,6 +3,7 @@
 
 pub(crate) mod actions;
 pub(crate) mod assembly_ui;
+pub(crate) mod banding_ui;
 pub(crate) mod board_dialogs;
 pub(crate) mod capture;
 pub(crate) mod catalog_ui;

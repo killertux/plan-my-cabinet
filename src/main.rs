@@ -60,11 +60,11 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, capture, catalog_ui, command_palette, currency_ui, door_joint_ui,
-    handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
-    pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui, recovery_cleanup_ui,
-    sheet_ui, slide_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host,
-    widget_gallery, workspace_shell, workspace_state,
+    actions, assembly_ui, banding_ui, capture, catalog_ui, command_palette, currency_ui,
+    door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals,
+    optimization_ui, pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui,
+    recovery_cleanup_ui, sheet_ui, slide_ui, state, stock_ui, template_setup_ui, toasts, viewport,
+    welcome_host, widget_gallery, workspace_shell, workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
 use actions::{ActionId as A, Argument, Request, Target};
@@ -745,6 +745,32 @@ fn main() -> std::process::ExitCode {
                     plan_my_cabinet::reference_fixture::HDF_ID,
                     SrgbColor([122, 98, 70]),
                 );
+                // Edge bands the way a shop lists them, as defaults of the
+                // two MDF materials, so automatic banding shows in 3D.
+                for (material, name, color) in [
+                    (
+                        plan_my_cabinet::reference_fixture::WHITE_ID,
+                        "Fita Branca 1x22",
+                        SrgbColor([246, 245, 241]),
+                    ),
+                    (
+                        plan_my_cabinet::reference_fixture::OAK_ID,
+                        "Fita Carvalho 1x22",
+                        SrgbColor([170, 124, 80]),
+                    ),
+                ] {
+                    let band = plan_my_cabinet::domain::EdgeBand {
+                        id: uuid::Uuid::from_u128(material.as_u128() ^ 0xba4d),
+                        name: name.into(),
+                        thickness: plan_my_cabinet::units::Length::from_micrometres(1_000),
+                        height: plan_my_cabinet::units::Length::from_micrometres(22_000),
+                        color,
+                    };
+                    if let Some(m) = fixture.materials.iter_mut().find(|m| m.id == material) {
+                        m.default_band = Some(band.id);
+                    }
+                    fixture.edge_bands.push(band);
+                }
                 if config.empty_project {
                     fixture = Project::new("New cabinet", Currency::Brl);
                     plan_my_cabinet::material_presets::seed_defaults(&mut fixture, config.language);

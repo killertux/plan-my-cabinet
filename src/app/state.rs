@@ -126,6 +126,8 @@ pub(crate) struct DesignState {
     pub(crate) rename: Option<assembly_ui::RenameDraft>,
     pub(crate) scene_active_seen: Option<Uuid>,
     pub(crate) stock_snapshot: Option<((Uuid, u64), StockReadModel)>,
+    /// The band banding clicks and presets use, when the user picked one.
+    pub(crate) banding_band: Option<Uuid>,
 }
 
 impl Default for DesignState {
@@ -141,6 +143,7 @@ impl Default for DesignState {
             rename: None,
             scene_active_seen: None,
             stock_snapshot: None,
+            banding_band: None,
         }
     }
 }
