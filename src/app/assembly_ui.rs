@@ -2328,11 +2328,10 @@ impl DesktopApp {
         let Some(mut draft) = self.modals.take_assembly() else {
             return;
         };
-        let cancel;
-        let accept;
+
         let mut valid = draft.project_id == self.editor.project().id
             && draft.revision == self.editor.project().revision;
-        if !matches!(draft.operation, Operation::Transform) {
+        let (cancel, accept) = if !matches!(draft.operation, Operation::Transform) {
             let project = self.editor.project();
             valid &= match draft.operation {
                 Operation::Group | Operation::Reparent => true,
@@ -2611,8 +2610,10 @@ impl DesktopApp {
                 ctx.memory_mut(|m| m.request_focus(id));
             }
             draft.chrome = chrome;
-            cancel = action == ModalAction::Cancel;
-            accept = action == ModalAction::Confirm;
+            (
+                action == ModalAction::Cancel,
+                action == ModalAction::Confirm,
+            )
         } else {
             let title = self.localizer.text("assembly-transform");
             let mut chrome = std::mem::replace(
@@ -2674,9 +2675,11 @@ impl DesktopApp {
                 },
             );
             draft.chrome = chrome;
-            cancel = result.action == ModalAction::Cancel;
-            accept = result.action == ModalAction::Confirm;
-        }
+            (
+                result.action == ModalAction::Cancel,
+                result.action == ModalAction::Confirm,
+            )
+        };
         draft.focus = false;
         if actions::decision(A::CancelDialog, cancel) {
             draft.chrome.close(ctx);

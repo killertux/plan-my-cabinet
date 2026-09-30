@@ -667,7 +667,13 @@ fn successful_save_captures_committed_scene_and_ignores_preview_geometry() {
         .clone()
         .expect("saved thumbnail");
     let pixels = first[0].thumbnail.as_ref().expect("cached pixels").clone();
-    assert!(pixels.chunks_exact(4).any(|p| p != [236, 232, 225, 255]));
+    assert!(
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|p| *p != [236, 232, 225, 255])
+    );
     app.selection
         .choose(Some(app.editor.project().boards[0].id), false);
     app.editor.begin_preview();

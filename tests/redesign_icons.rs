@@ -289,7 +289,7 @@ fn gpu_raster_proves_all_icons_and_state_colors() {
             .open(path)
             .unwrap();
         write!(file, "P6\n{WIDTH} {HEIGHT}\n255\n").unwrap();
-        for rgba in pixels.chunks_exact(4) {
+        for rgba in pixels.as_chunks::<4>().0 {
             let bg = [0xf4_u32, 0xf1, 0xec];
             let rgb = std::array::from_fn::<_, 3, _>(|i| {
                 (u32::from(rgba[i]) + bg[i] * (255 - u32::from(rgba[3])) / 255).min(255) as u8

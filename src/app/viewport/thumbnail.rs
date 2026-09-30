@@ -44,7 +44,13 @@ mod tests {
         let second = saved_thumbnail(&project).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.len(), WIDTH * HEIGHT * 4);
-        assert!(first.chunks_exact(4).any(|p| p != [236, 232, 225, 255]));
+        assert!(
+            first
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| *p != [236, 232, 225, 255])
+        );
         assert_eq!(live_camera.uniform([192, 120], 4000.0), before);
         assert_eq!(selection.active, Some(project.boards[0].id));
         assert!(selection.hidden.contains(&project.boards[1].id));

@@ -281,12 +281,16 @@ fn capture_snap_uses_real_candidates_and_never_edits_the_fixture() {
             assert!(matches!(drag.snap, Some(DragSnap::Face(_))));
             assert!(
                 mesh.lines
-                    .chunks_exact(6)
+                    .as_chunks::<6>()
+                    .0
+                    .iter()
                     .any(|v| v[3..] == [0.15, 0.95, 0.95])
             );
             assert!(
                 mesh.lines
-                    .chunks_exact(6)
+                    .as_chunks::<6>()
+                    .0
+                    .iter()
                     .any(|v| v[3..] == [1.0, 0.25, 0.8])
             );
         } else {
@@ -671,12 +675,14 @@ fn rectangular_board_faces_have_full_area_and_edges_follow_box_axes() {
     };
     let areas: Vec<_> = mesh
         .faces
-        .chunks_exact(36)
+        .as_chunks::<36>()
+        .0
+        .iter()
         .map(|face| triangle_area(&face[..18]) + triangle_area(&face[18..]))
         .collect();
     assert_eq!(areas, [5000.0, 5000.0, 1800.0, 900.0, 1800.0, 900.0]);
     assert_eq!(mesh.lines.len() / 12, 12);
-    for edge in mesh.lines.chunks_exact(12) {
+    for edge in mesh.lines.as_chunks::<12>().0 {
         let changed_axes = (0..3).filter(|i| edge[*i] != edge[6 + i]).count();
         assert_eq!(changed_axes, 1, "box outline must follow one local axis");
     }
@@ -957,7 +963,9 @@ fn rendered_grid_uses_project_spacing_and_bounded_density() {
     assert!(
         coarse
             .lines
-            .chunks_exact(12)
+            .as_chunks::<12>()
+            .0
+            .iter()
             .any(|line| line[0] == 500.0 && line[6] == 500.0)
     );
     project.grid_spacing = Length::from_micrometres(1);
@@ -967,7 +975,9 @@ fn rendered_grid_uses_project_spacing_and_bounded_density() {
     assert!(fine.lines.len() / 12 <= 202);
     assert!(
         fine.lines
-            .chunks_exact(12)
+            .as_chunks::<12>()
+            .0
+            .iter()
             .any(|line| line[0] == 0.0 && line[6] == 0.0)
     );
 }
@@ -1635,8 +1645,10 @@ fn guarded_camera_actions_match_shader_projection_and_picking_without_project_ed
                 // Evaluate the same uniform and perspective divide used by the native WGSL vertex shader.
                 let uniform = camera.uniform([800, 600], 4000.0);
                 let floats: Vec<f32> = uniform
-                    .chunks_exact(4)
-                    .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|chunk| f32::from_ne_bytes(*chunk))
                     .collect();
                 let relative =
                     std::array::from_fn::<_, 3, _>(|i| (point[i] - camera.target[i]) as f32);

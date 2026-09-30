@@ -33,7 +33,7 @@ impl Raster {
     pub fn new(width: usize, height: usize) -> Self {
         let mut rgba = vec![0_u8; width * height * 4];
         let background = BACKGROUND.map(|c| (c * 255.0).round() as u8);
-        for pixel in rgba.chunks_exact_mut(4) {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
             pixel.copy_from_slice(&[background[0], background[1], background[2], 255]);
         }
         Self {
@@ -310,7 +310,7 @@ pub fn render_scene(
         }
         add_floor_shadow(&mut background, bounds, camera);
     }
-    for triangle in background.shadow.chunks_exact(18) {
+    for triangle in background.shadow.as_chunks::<18>().0 {
         target.triangle(triangle, u32::MAX, false)?;
     }
     for (index, item) in items.iter().enumerate() {
@@ -320,11 +320,11 @@ pub fn render_scene(
             item.face,
             item.edge,
         );
-        for triangle in mesh.faces.chunks_exact(18) {
+        for triangle in mesh.faces.as_chunks::<18>().0 {
             target.triangle(triangle, index as u32, true)?;
         }
     }
-    for line in background.lines.chunks_exact(12) {
+    for line in background.lines.as_chunks::<12>().0 {
         target.line(line, 0.0);
     }
     for item in &items {
@@ -334,7 +334,7 @@ pub fn render_scene(
             item.face,
             item.edge,
         );
-        for line in mesh.lines.chunks_exact(12) {
+        for line in mesh.lines.as_chunks::<12>().0 {
             target.line(line, ss as f32 * 0.6);
         }
     }
@@ -379,7 +379,7 @@ impl<'a> Target<'a> {
 
     fn triangle(&mut self, t: &[f32], object: u32, write_depth: bool) -> Result<(), RenderError> {
         let mut v = [(egui::Pos2::ZERO, 0.0, [0.0_f32; 3]); 3];
-        for (vertex, slot) in t.chunks_exact(6).zip(v.iter_mut()) {
+        for (vertex, slot) in t.as_chunks::<6>().0.iter().zip(v.iter_mut()) {
             // Geometry behind the eye is skipped rather than failing the picture.
             let Some((position, depth)) = self.vertex(vertex) else {
                 return Ok(());

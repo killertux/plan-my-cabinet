@@ -58,18 +58,16 @@ impl DesktopApp {
                     Some(InspectorTarget::Board(id)),
                     draft.preview(&self.editor).is_ok(),
                 )
-            } else if let Some(draft) = self
-                .edit_drafts
-                .existing_pose(self.editor.project().id, id)
-                .filter(|draft| draft.dirty())
-            {
+            } else {
+                let draft = self
+                    .edit_drafts
+                    .existing_pose(self.editor.project().id, id)
+                    .filter(|draft| draft.dirty())?;
                 (
                     EditKind::Preview,
                     Some(InspectorTarget::Board(id)),
                     draft.preview(&self.editor).is_ok(),
                 )
-            } else {
-                return None;
             }
         } else {
             return None;
