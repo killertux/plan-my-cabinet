@@ -65,7 +65,7 @@ impl Default for ReceiptSections {
 }
 
 pub const RECEIPT_METADATA_VERSION: u16 = 1;
-const CURRENT_FINGERPRINT_VERSION: u16 = 5;
+const CURRENT_FINGERPRINT_VERSION: u16 = 6;
 pub const MAX_COMPARISON_ENTRIES: usize = 4096;
 pub const MAX_COMPARISON_BYTES: usize = 512 * 1024;
 
@@ -1068,9 +1068,30 @@ fn fingerprint_version(project: &Project, version: u16) -> ManufacturingFingerpr
         |h| h.id,
         |h| json!([h.id, project.foot_spec(h)]),
     );
-    ManufacturingFingerprint {
+    let v5 = ManufacturingFingerprint {
         wood: v4.wood,
         packet: digest(&json!(["packet-v5", v4.packet, slides, feet])),
+    };
+    if version == 5 {
+        return v5;
+    }
+    // Edge banding is printed per part and changes what the shop orders; the
+    // automatic rule makes it depend on geometry, so hash the effective bands.
+    let states = crate::banding_rules::effective(project);
+    let banding = sorted(
+        &project.boards,
+        |b| b.id,
+        |b| {
+            let bands = states
+                .get(&b.id)
+                .map(|s| s.map(|e| e.band.and_then(|id| project.edge_band(id))));
+            json!([b.id, bands])
+        },
+    );
+    let wood = digest(&json!(["wood-v6", v5.wood, banding]));
+    ManufacturingFingerprint {
+        packet: digest(&json!(["packet-v6", v5.packet, wood])),
+        wood,
     }
 }
 

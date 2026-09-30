@@ -5,6 +5,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
+use plan_my_cabinet::service::banding::*;
 use plan_my_cabinet::service::design::*;
 use plan_my_cabinet::service::fittings::*;
 use plan_my_cabinet::service::hardware::*;
@@ -327,6 +328,49 @@ impl PmcServer {
         Parameters(input): Parameters<SetBoardGrainInput>,
     ) -> Result<CallToolResult, McpError> {
         self.call(move |ws| ws.set_board_grain(input)).await
+    }
+
+    #[tool(
+        description = "Set edge banding on boards: a preset for all four edges (auto, none, front, all_four), or edges (length_1, length_2, width_1, width_2, front, all) with a value (auto, on, off). Only MDF and MDP boards take banding; others are skipped. One undo step."
+    )]
+    async fn set_board_banding(
+        &self,
+        Parameters(input): Parameters<SetBoardBandingInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.set_board_banding(input)).await
+    }
+
+    #[tool(
+        description = "List the project's edge bands with size, color, the materials using each as default, and banded metres."
+    )]
+    async fn list_edge_bands(&self) -> Result<CallToolResult, McpError> {
+        self.call(|ws| ws.list_edge_bands()).await
+    }
+
+    #[tool(
+        description = "Create an edge band (name as the shop lists it, thickness, height, color). Make it a material's default band with update_material."
+    )]
+    async fn create_edge_band(
+        &self,
+        Parameters(input): Parameters<CreateEdgeBandInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.create_edge_band(input)).await
+    }
+
+    #[tool(description = "Rename or resize an edge band, or change its color.")]
+    async fn update_edge_band(
+        &self,
+        Parameters(input): Parameters<UpdateEdgeBandInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.update_edge_band(input)).await
+    }
+
+    #[tool(description = "Remove an edge band that no board or material uses.")]
+    async fn remove_edge_band(
+        &self,
+        Parameters(input): Parameters<EdgeBandRefInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.remove_edge_band(input)).await
     }
 
     #[tool(description = "Rename a board, assembly or hardware item.")]

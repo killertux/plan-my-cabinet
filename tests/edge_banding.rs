@@ -259,3 +259,47 @@ fn files_before_banding_infer_material_kinds_and_band_nothing() {
     assert!(p.edge_bands.is_empty());
     assert!(p.materials.iter().all(|m| m.default_band.is_none()));
 }
+
+#[test]
+fn the_workshop_document_lists_banding_per_part_and_the_band_to_buy() {
+    use plan_my_cabinet::document_layout::Primitive;
+    use plan_my_cabinet::export::{
+        ExportMode, ExportSettings, ReceiptSections, fingerprint, prepare_export,
+    };
+    let mut editor = base_cabinet();
+    let before = fingerprint(editor.project());
+    let prepared = prepare_export(
+        editor.project(),
+        ExportSettings {
+            language: Language::PtBr,
+            units: Unit::Mm,
+        },
+        ExportMode::Draft,
+    )
+    .unwrap();
+    let document = plan_my_cabinet::workshop_document::build_workshop_document(
+        &prepared,
+        ReceiptSections::default(),
+    )
+    .unwrap();
+    let text: Vec<String> = document
+        .pages
+        .iter()
+        .flat_map(|page| &page.primitives)
+        .filter_map(|p| match p {
+            Primitive::Text(run) | Primitive::Notice(run) => Some(run.text.clone()),
+            _ => None,
+        })
+        .collect();
+    let joined = text.join("\n");
+    // The side's bottom, top (width edges) and front (a length edge).
+    assert!(joined.contains("C1 L1 L2 · Fita Branca 1x22"), "{joined}");
+    assert!(joined.contains("Comprar (+10 %)"), "{joined}");
+    // Banding is part of what the printed plan describes.
+    let side = board(editor.project(), "Left side");
+    editor
+        .set_edge_banding(&[side], &[BoardEdge::MinY], EdgeBanding::Off)
+        .unwrap();
+    let after = fingerprint(editor.project());
+    assert_ne!(before.wood, after.wood);
+}

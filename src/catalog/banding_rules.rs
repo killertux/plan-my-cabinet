@@ -78,6 +78,55 @@ pub fn edges_facing(frame: &BoardFrame, direction: [f64; 3]) -> Vec<BoardEdge> {
         .collect()
 }
 
+/// Shop names for a board's edges, as Brazilian cut lists write them: C1
+/// and C2 run along the length, L1 and L2 along the width ("L" and "W" in
+/// English).
+pub fn edge_code(edge: BoardEdge, language: crate::i18n::Language) -> &'static str {
+    use crate::i18n::Language;
+    match (language, edge) {
+        (Language::PtBr, BoardEdge::MinY) => "C1",
+        (Language::PtBr, BoardEdge::MaxY) => "C2",
+        (Language::PtBr, BoardEdge::MinX) => "L1",
+        (Language::PtBr, BoardEdge::MaxX) => "L2",
+        (Language::En, BoardEdge::MinY) => "L1",
+        (Language::En, BoardEdge::MaxY) => "L2",
+        (Language::En, BoardEdge::MinX) => "W1",
+        (Language::En, BoardEdge::MaxX) => "W2",
+    }
+}
+
+/// "C1 C2 · Fita Branca 1x22; L1 · Fita Preta", or `None` without banding.
+pub fn describe(
+    project: &Project,
+    bands: [Option<Uuid>; 4],
+    language: crate::i18n::Language,
+) -> Option<String> {
+    let mut parts: Vec<(Uuid, Vec<&str>)> = Vec::new();
+    for edge in [
+        BoardEdge::MinY,
+        BoardEdge::MaxY,
+        BoardEdge::MinX,
+        BoardEdge::MaxX,
+    ] {
+        if let Some(band) = bands[edge.index()] {
+            match parts.iter_mut().find(|(id, _)| *id == band) {
+                Some((_, codes)) => codes.push(edge_code(edge, language)),
+                None => parts.push((band, vec![edge_code(edge, language)])),
+            }
+        }
+    }
+    (!parts.is_empty()).then(|| {
+        parts
+            .into_iter()
+            .map(|(band, codes)| {
+                let name = project.edge_band(band).map_or("?", |b| b.name.as_str());
+                format!("{} · {name}", codes.join(" "))
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    })
+}
+
 /// The world direction toward the front of a cabinet.
 pub const FRONT: [f64; 3] = [0.0, -1.0, 0.0];
 

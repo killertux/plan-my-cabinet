@@ -120,6 +120,7 @@ pub(crate) fn board_row(
         "width": LengthOut::new(board.width, unit),
         "thickness": LengthOut::new(board.thickness, unit),
         "grain": material.map(|m| grain_name(board.effective_grain(m))),
+        "banding": crate::service::banding::board_banding(project, board.id),
         "world_position": world,
         "cut_plan": {
             "status": status,
@@ -145,6 +146,13 @@ pub struct CreateMaterialInput {
     /// Display color: "#rrggbb" or [r, g, b].
     #[serde(default)]
     pub color: Option<ColorInput>,
+    /// What the sheet is made of; only mdf and mdp take edge banding.
+    /// Default: guessed from the name ("MDF Branco" is mdf).
+    #[serde(default)]
+    pub kind: Option<crate::service::banding::MaterialKindName>,
+    /// Edge band (name or id) automatic banding uses on this material.
+    #[serde(default)]
+    pub default_band: Option<String>,
     #[serde(default)]
     pub expected_revision: Option<u64>,
     #[serde(default)]
@@ -180,6 +188,13 @@ pub struct UpdateMaterialInput {
     pub grain: Option<Grain>,
     #[serde(default)]
     pub color: Option<ColorInput>,
+    /// What the sheet is made of; only mdf and mdp take edge banding.
+    /// Changing to another kind removes banding set by hand.
+    #[serde(default)]
+    pub kind: Option<crate::service::banding::MaterialKindName>,
+    /// Edge band (name or id) automatic banding uses; "" for none.
+    #[serde(default)]
+    pub default_band: Option<String>,
     /// What happens to boards already made of this material.
     #[serde(default)]
     pub dependants: DependantsName,
@@ -771,6 +786,9 @@ impl Workspace {
                     "name": m.name,
                     "thickness": LengthOut::new(m.default_thickness, unit),
                     "grain": grain_name(m.default_grain),
+                    "kind": crate::service::banding::kind_name(m.kind),
+                    "takes_banding": m.kind.accepts_banding(),
+                    "default_band": m.default_band.and_then(|b| project.edge_band(b)).map(|b| b.name.clone()),
                     "color": project.material_colors.get(&m.id).copied().map(color_hex),
                     "boards": project.boards.iter().filter(|b| b.material_id == m.id).count(),
                     "stock_pieces": project.stock.iter().filter(|s| s.material_id == m.id).count(),
@@ -789,6 +807,12 @@ impl Workspace {
         let grain = input
             .grain
             .map_or(BoardGrain::Unrestricted, BoardGrain::from);
+        let default_band = input
+            .default_band
+            .as_deref()
+            .map(|b| self.resolve(Kind::Band, b))
+            .transpose()?;
+        let kind = input.kind.map(crate::domain::MaterialKind::from);
         self.change(input.expected_revision, |editor| {
             let id = editor.create_material_with_color(
                 NewMaterial {
@@ -798,6 +822,11 @@ impl Workspace {
                 },
                 color,
             )?;
+            if kind.is_some() || default_band.is_some() {
+                let material = editor.project().material(id).expect("just created");
+                let kind = kind.unwrap_or(material.kind);
+                editor.set_material_banding(id, kind, default_band)?;
+            }
             Ok((
                 json!({ "material_id": id }),
                 format!("Created material '{}'.", input.name.trim()),
@@ -839,6 +868,21 @@ impl Workspace {
         };
         let grain = input.grain.map_or(material.default_grain, BoardGrain::from);
         let color = input.color.as_ref().map(ColorInput::resolve).transpose()?;
+        let banding = if input.kind.is_some() || input.default_band.is_some() {
+            let band = match input.default_band.as_deref() {
+                None => material.default_band,
+                Some("") => None,
+                Some(reference) => Some(self.resolve(Kind::Band, reference)?),
+            };
+            Some((
+                input
+                    .kind
+                    .map_or(material.kind, crate::domain::MaterialKind::from),
+                band,
+            ))
+        } else {
+            None
+        };
         let choice = match input.dependants {
             DependantsName::Preserve => DependantChoice::Preserve,
             DependantsName::ApplyAll => DependantChoice::ApplyAll,
@@ -878,6 +922,9 @@ impl Workspace {
             let conflicts = editor.apply_material_change(preview, choice)?;
             if let Some(color) = color {
                 editor.set_material_color(id, Some(color))?;
+            }
+            if let Some((kind, band)) = banding {
+                editor.set_material_banding(id, kind, band)?;
             }
             let project = editor.project();
             Ok((

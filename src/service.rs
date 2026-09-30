@@ -2,6 +2,7 @@
 //! `Workspace` method taking a JSON-deserializable input and returning a
 //! serializable result or a [`ServiceError`](error::ServiceError). The MCP
 //! server in the desktop binary is a thin adapter over this module.
+pub mod banding;
 pub mod design;
 pub mod dto;
 pub mod error;
