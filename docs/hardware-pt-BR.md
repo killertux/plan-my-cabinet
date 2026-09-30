@@ -2,14 +2,53 @@
 
 ## Área de Ferragens
 
-O cartão fixo do catálogo mostra os identificadores salvos do kit e do calço,
-a revisão analisada e a fonte. **Explorar registros** abre as referências
-guardadas no projeto, sem atualização automática nem necessidade de rede.
-A árvore relaciona cada porta, a peça fixa e suas dobradiças; instalações sem
-relação e ferragens dimensionadas de referência continuam acessíveis para
-seleção, edição, posicionamento, duplicação e remoção. Um aviso acompanha a
-instalação afetada, não outra dobradiça de nome parecido. A remoção de peças
-relacionadas exige confirmação com os vínculos afetados.
+O painel de Ferragens começa com **Adicionar ferragem ▾** e depois tem uma
+seção por tipo. As seções aparecem sempre, mesmo vazias, e cada uma tem seu
+**+**:
+
+| Seção | Lista | **+** adiciona |
+|---|---|---|
+| **Portas e dobradiças** | Cada porta com suas dobradiças, depois as dobradiças fora de uma porta | Uma porta (na peça selecionada) ou uma dobradiça avulsa |
+| **Gavetas e corrediças** | Uma linha por gaveta com o código da corrediça | Corrediças na gaveta selecionada |
+| **Pés** | Pés de catálogo | Um pé embaixo do móvel selecionado |
+| **Outras ferragens** | Caixas dimensionadas para puxadores, trilhos e afins | Uma caixa de 100 mm que você pode redimensionar e mover |
+| **Modelos do catálogo** | Todos os modelos fixados no projeto: dobradiças, corrediças e pés, com quantos itens usam cada um | Abre o catálogo |
+
+Adicionar cria o item na hora, em um passo de desfazer, e o abre no inspetor
+para você ajustar:
+
+- **Pé.** Usa o último modelo de pé usado, fica embaixo do móvel selecionado a
+  20 mm do canto e desce a própria altura abaixo do chão. O inspetor oferece
+  **Levantar <móvel> N mm**.
+- **Corrediças.** Vão na gaveta da seleção, com a última família usada (TT45
+  por padrão). Se a gaveta já tem corrediças, elas são abertas.
+- **Porta.** A peça selecionada é pendurada na lateral mais próxima, com as
+  dobradiças soltas dela ou um conjunto padrão.
+- **Dobradiça.** Entra na porta da peça selecionada.
+
+Uma janela de escolha só abre quando algo precisa ser escolhido antes: por
+exemplo, corrediças sem nada selecionado, ou um pé quando não há modelo de pé
+disponível.
+
+Todo item abre num inspetor editável, aqui e em **Projeto 3D**. Clique na linha
+dele, no link embaixo de uma peça ou grupo em Projeto 3D, ou (para corrediças e
+dobradiças) no próprio item na vista 3D. Os inspetores são:
+
+| Item | O que dá para mudar |
+|---|---|
+| Pés e outras ferragens | Modelo, grupo, posição e rotação no mundo. Outras ferragens também têm as dimensões. |
+| Corrediças | Modelo e comprimento, que valem na hora; altura e recuo; **Reajustar corrediças** |
+| Dobradiças | Inspetor de montagem abaixo |
+| Portas | Parte móvel, a peça em que ela é pendurada, quais dobradiças ela usa, limite de abertura e **Confirmar de novo**. O **+** adiciona outra dobradiça. |
+| Modelos do catálogo | Dados, fonte e onde o modelo é usado. **Remover modelo** só funciona quando nada o usa. |
+
+Valores digitados seguem a regra de sempre: **Enter** ou **Aplicar** salva,
+**Esc** ou **Descartar** desfaz, e clicar em outro lugar nunca salva. Sair de
+um item com valores não salvos pede confirmação.
+
+Um aviso acompanha a instalação afetada, não outra dobradiça de nome
+parecido. A remoção de peças relacionadas exige confirmação com os vínculos
+afetados.
 
 Selecionar uma instalação liga sua linha da árvore, o inspetor de montagem e
 a referência projetada no visor. Eixo tracejado, marcas de caneco/calço e
@@ -141,8 +180,10 @@ Um par de corrediças liga uma gaveta às duas laterais do móvel ao lado dela.
 A gaveta é um grupo de peças (um conjunto): o modelo **Gavetas** cria um grupo
 por gaveta; numa gaveta que você mesmo montou, agrupe as peças primeiro.
 
-**Ferragens ▸ + ▸ Corrediças…** abre a janela de corrediças. Escolha a gaveta
-(ou selecione antes uma das peças dela) e o modelo de corrediça. O aplicativo
+Selecione uma gaveta (ou uma das peças dela) e toque em **+** em **Gavetas e
+corrediças**. As corrediças são adicionadas na hora e abrem no inspetor, onde
+dá para mudar modelo, comprimento, altura e recuo. Sem nada selecionado, abre
+a janela de corrediças: escolha a gaveta e o modelo. O aplicativo
 encontra as laterais da caixa e as laterais do móvel ao lado, mede as folgas e
 escolhe o maior comprimento que cabe. Ele mostra o código do produto e se a
 corrediça cabe. Você pode escolher o comprimento, a altura na lateral da
@@ -190,11 +231,13 @@ e, para cada gaveta, as distâncias dos furos nas duas peças de cada lado.
 
 # Pés
 
-Pés são ferragens de catálogo posicionadas como qualquer ferragem:
-**Ferragens ▸ + ▸ Pé…**, depois escolha o modelo, o grupo ao qual pertence e
-a posição. A posição é o canto da caixa do pé no chão; a face de fixação fica
-em cima. Pés não são cortados do estoque e não levantam o móvel: suba o móvel
-na altura do pé (para pés de 100 mm, suba 100 mm).
+Pés são ferragens de catálogo. Selecione o móvel e toque em **+** em **Pés**:
+o pé fica embaixo dele, a 20 mm do canto, e abre no inspetor. Ali você muda o
+modelo (a face de fixação fica no lugar), o grupo ao qual pertence e a posição
+no mundo; também dá para arrastá-lo na vista 3D com **Mover peça**. A posição é o
+canto da caixa do pé no chão; a face de fixação fica em cima. Pés não são
+cortados do estoque e não levantam o móvel. Enquanto um pé passa do chão, o
+inspetor oferece **Levantar <móvel> N mm**.
 
 Os pés são desenhados com a forma do produto, para você ver como a peça vai
 ficar: um cone de plástico, um pé cromado com chapa e sapata niveladora, um

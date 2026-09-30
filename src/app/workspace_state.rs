@@ -35,6 +35,40 @@ pub(crate) enum InspectorTarget {
     Installation(Uuid),
     /// A drawer's slide pair.
     Slide(Uuid),
+    /// A foot or other hardware item.
+    Hardware(Uuid),
+    /// A door relationship.
+    Door(Uuid),
+    /// A pinned catalog model.
+    Catalog(Uuid),
+}
+
+impl InspectorTarget {
+    /// Whether the target still exists in `project`.
+    pub(crate) fn exists(self, project: &Project) -> bool {
+        match self {
+            Self::Board(id) => project.boards.iter().any(|b| b.id == id),
+            Self::Sheet(id) => project.stock.iter().any(|s| s.id == id),
+            Self::Material(id) => project.materials.iter().any(|m| m.id == id),
+            Self::Installation(id) => project.hinge_installations.iter().any(|h| h.id == id),
+            Self::Slide(id) => project.slide_installations.iter().any(|s| s.id == id),
+            Self::Hardware(id) => project.hardware.iter().any(|h| h.id == id),
+            Self::Door(id) => project.door_joints.iter().any(|j| j.id == id),
+            Self::Catalog(id) => project.catalog.iter().any(|c| c.id == id),
+        }
+    }
+
+    /// Hardware inspectors (shown in both Design and Hardware).
+    pub(crate) fn is_fitting(self) -> bool {
+        matches!(
+            self,
+            Self::Installation(_)
+                | Self::Slide(_)
+                | Self::Hardware(_)
+                | Self::Door(_)
+                | Self::Catalog(_)
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +78,8 @@ pub(crate) enum Destination {
     Material(Uuid),
     Installation(Uuid),
     BoardAllocation(Uuid),
+    /// Any hardware inspector, opened in the Hardware workspace.
+    Fitting(InspectorTarget),
 }
 
 /// These values belong to this project's UI session, never to its document.
@@ -177,6 +213,13 @@ impl WorkspaceSession {
                 self.inspector = Some(InspectorTarget::Installation(id));
                 self.active = Workspace::Hardware;
             }
+            Destination::Fitting(target) if target.is_fitting() && target.exists(project) => {
+                if let InspectorTarget::Hardware(id) = target {
+                    selection.choose(Some(id), false);
+                }
+                self.inspector = Some(target);
+                self.active = Workspace::Hardware;
+            }
             Destination::BoardAllocation(id) if project.boards.iter().any(|b| b.id == id) => {
                 selection.choose(Some(id), false);
                 self.inspector = Some(InspectorTarget::Board(id));
@@ -212,15 +255,7 @@ impl WorkspaceSession {
         }
         self.design_expanded
             .retain(|id| project.assemblies.iter().any(|a| a.id == *id));
-        self.inspector = self.inspector.filter(|target| match target {
-            InspectorTarget::Board(id) => project.boards.iter().any(|b| b.id == *id),
-            InspectorTarget::Sheet(id) => project.stock.iter().any(|s| s.id == *id),
-            InspectorTarget::Material(id) => project.materials.iter().any(|m| m.id == *id),
-            InspectorTarget::Installation(id) => {
-                project.hinge_installations.iter().any(|h| h.id == *id)
-            }
-            InspectorTarget::Slide(id) => project.slide_installations.iter().any(|s| s.id == *id),
-        });
+        self.inspector = self.inspector.filter(|target| target.exists(project));
         self.focused_sheet = self
             .focused_sheet
             .filter(|id| project.stock.iter().any(|s| s.id == *id));

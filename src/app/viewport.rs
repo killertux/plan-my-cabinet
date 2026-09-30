@@ -19,6 +19,12 @@ pub struct MoveTool {
     /// Set by the host each frame: face handles are offered only when a
     /// resize could be committed (Design, no other edit in progress).
     pub resize_enabled: bool,
+    /// Set by the host each frame: in the Hardware workspace only hardware
+    /// (feet, other hardware) can be dragged, never boards.
+    pub hardware_only: bool,
+    /// Set by the host each frame: false while an inspector position draft
+    /// is unsaved, so a drag can't race the typed values.
+    pub drag_enabled: bool,
     resize: Option<resize::ResizeDrag>,
     resize_hover: Option<(usize, bool)>,
     grid_edit_requested: bool,
@@ -58,6 +64,8 @@ impl Default for MoveTool {
             face_snap: true,
             grid_snap: true,
             resize_enabled: false,
+            hardware_only: false,
+            drag_enabled: true,
             resize: None,
             resize_hover: None,
             grid_edit_requested: false,
@@ -355,8 +363,20 @@ fn pick_visible(
             )?;
             Some((distance, h.id))
         });
+    // Drawer slides and hinges, by the boxes they occupy.
+    let fittings = plan_my_cabinet::render::hardware_mesh::pick_boxes(project, selection, None)
+        .into_iter()
+        .filter_map(|(id, _, boxes)| {
+            boxes
+                .into_iter()
+                .filter_map(|(pose, size)| board_hit(ray, pose, size).map(|(d, _)| d))
+                .min_by(f64::total_cmp)
+                .map(|distance| (distance, id))
+        })
+        .collect::<Vec<_>>();
     boards
         .chain(hardware)
+        .chain(fittings)
         .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
         .map(|(_, id)| id)
 }

@@ -82,6 +82,87 @@ fn bundled_records(status: ReviewStatus) -> &'static [CatalogReference] {
     })
 }
 
+/// What a pinned record describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogKind {
+    Hinge,
+    Slide,
+    Foot,
+    /// A legacy record without usable facts.
+    Other,
+}
+
+pub fn kind(entry: &CatalogReference) -> CatalogKind {
+    match &entry.item {
+        Some(CatalogItem::Slide(_)) => CatalogKind::Slide,
+        Some(CatalogItem::Foot(_)) => CatalogKind::Foot,
+        None if entry.verified_hinge.is_some() => CatalogKind::Hinge,
+        None => CatalogKind::Other,
+    }
+}
+
+/// What uses a pinned record.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CatalogUsage {
+    pub hinges: Vec<Uuid>,
+    pub slides: Vec<Uuid>,
+    /// Hardware items (feet and other catalog hardware).
+    pub hardware: Vec<Uuid>,
+}
+
+impl CatalogUsage {
+    pub fn count(&self) -> usize {
+        self.hinges.len() + self.slides.len() + self.hardware.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.count() == 0
+    }
+}
+
+pub fn usage(project: &Project, id: Uuid) -> CatalogUsage {
+    CatalogUsage {
+        hinges: project
+            .hinge_installations
+            .iter()
+            .filter(|h| h.catalog_id == id)
+            .map(|h| h.id)
+            .collect(),
+        slides: project
+            .slide_installations
+            .iter()
+            .filter(|s| s.catalog_id == id)
+            .map(|s| s.id)
+            .collect(),
+        hardware: project
+            .hardware
+            .iter()
+            .filter(|h| {
+                matches!(h.kind, crate::domain::HardwareKind::Catalog { catalog_id } if catalog_id == id)
+            })
+            .map(|h| h.id)
+            .collect(),
+    }
+}
+
+/// Unpin a record nothing uses, in one step.
+pub fn remove(editor: &mut ProjectEditor, id: Uuid) -> Result<bool, EditError<CatalogEditError>> {
+    editor.transact(|p| {
+        if !p.catalog.iter().any(|c| c.id == id) {
+            return Err(CatalogEditError::MissingEntry);
+        }
+        let used = usage(p, id);
+        if !used.is_empty() {
+            return Err(CatalogEditError::DependentInstallation(format!(
+                "used by {} item(s)",
+                used.count()
+            )));
+        }
+        p.catalog.retain(|c| c.id != id);
+        Ok(())
+    })
+}
+
 /// Pinned slide facts usable for guidance.
 pub fn slide_spec(entry: &CatalogReference) -> Option<&SlideSpec> {
     entry.slide().filter(|s| s.is_consistent())

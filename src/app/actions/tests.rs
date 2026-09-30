@@ -216,6 +216,8 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::EditSlides, R::Hardware),
         (A::DeleteSlides, R::Hardware),
         (A::NewFoot, R::Hardware),
+        (A::RefitSlides, R::Hardware),
+        (A::RemoveCatalog, R::Hardware),
         (A::EditDoor, R::Hardware),
         (A::DeleteDoor, R::Hardware),
         (A::DeleteObject, R::Design),
@@ -289,6 +291,9 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         include_str!("../hinge_ui.rs"),
         include_str!("../door_joint_ui.rs"),
         include_str!("../slide_ui.rs"),
+        include_str!("../hardware_inspector.rs"),
+        include_str!("../hardware_add.rs"),
+        include_str!("../hardware_panel.rs"),
         include_str!("../sheet_ui.rs"),
         include_str!("../optimization_ui.rs"),
         include_str!("../placement_ui.rs"),
@@ -550,7 +555,6 @@ fn real_entry_points_open_original_forms_and_view_choices_are_not_edits() {
         ActionId::NewStock,
         ActionId::EditCutFee,
         ActionId::EditCurrency,
-        ActionId::NewHardware,
         ActionId::NewHinge,
         ActionId::NewDoor,
     ] {
@@ -564,6 +568,18 @@ fn real_entry_points_open_original_forms_and_view_choices_are_not_edits() {
             "{id:?} edited before confirmation"
         );
     }
+    // Other hardware needs no choice: it is added at once, one undo step,
+    // and opened in the inspector.
+    let mut app = DesktopApp::default();
+    let revision = app.editor.project().revision;
+    app.invoke(Request::new(ActionId::NewHardware)).unwrap();
+    assert!(!app.modal_open());
+    assert_eq!(app.editor.project().revision, revision + 1);
+    let added = app.editor.project().hardware[0].id;
+    assert_eq!(
+        app.session.inspector,
+        Some(crate::workspace_state::InspectorTarget::Hardware(added))
+    );
     let mut app = DesktopApp::default();
     let original = app.editor.project().clone();
     for request in [

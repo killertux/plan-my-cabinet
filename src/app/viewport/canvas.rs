@@ -1,6 +1,31 @@
 //! Canvas allocation and pointer/keyboard interaction. Camera projection, rays and drag math live in the parent.
 use super::*;
 
+/// Where a drag starts: a board (unless only hardware may move) or a
+/// hardware item.
+fn drag_start_pose(
+    project: &Project,
+    id: Uuid,
+    hardware_only: bool,
+) -> Option<plan_my_cabinet::units::Pose> {
+    if project.hardware.iter().any(|h| h.id == id) {
+        return plan_my_cabinet::assembly_edit::world_pose(project, id).ok();
+    }
+    if hardware_only {
+        return None;
+    }
+    plan_my_cabinet::placement::world_pose(project, id).ok()
+}
+
+#[cfg(test)]
+pub(super) fn drag_start_pose_for_tests(
+    project: &Project,
+    id: Uuid,
+    hardware_only: bool,
+) -> Option<plan_my_cabinet::units::Pose> {
+    drag_start_pose(project, id, hardware_only)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn interact_with_selection(
     ui: &mut egui::Ui,
@@ -55,6 +80,7 @@ pub(super) fn interact_with_selection(
         if action.is_none()
             && !resizing
             && tool.mode == ToolMode::Move
+            && tool.drag_enabled
             && !preview_active
             && response.drag_started_by(egui::PointerButton::Primary)
             && !ui.input(|i| i.modifiers.shift || i.modifiers.command)
@@ -62,7 +88,7 @@ pub(super) fn interact_with_selection(
             && let Some(start) = ui.input(|i| i.pointer.press_origin())
             && let Some(id) = selection.active
             && pick_visible(project, camera, start, rect, selection) == Some(id)
-            && let Ok(world) = plan_my_cabinet::placement::world_pose(project, id)
+            && let Some(world) = drag_start_pose(project, id, tool.hardware_only)
         {
             tool.drag = Some(MoveDrag {
                 board_id: id,

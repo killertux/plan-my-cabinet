@@ -62,6 +62,7 @@ All cuts are straight, full-length (guillotine) cuts and include the kerf. Grain
 2. `suggest_hinges {"door":"Left door"}` finds the mount, hinge edge and positions without changing anything.
 3. `add_hinges {"door":"Left door"}` pins the bundled hinge if none is pinned, chooses the count (2 up to 900 mm, 3 up to 1500 …), positions (100 mm from each end), and the K/R pair whose R equals the side thickness.
 4. `create_door {"moving":"Left door"}` turns it into a swinging door; `render_door_opening {"door":"Left door","angle_degrees":90}` shows it open.
+5. Pictures draw each hinge as a cup in the door and a plate on the side, and list it in the legend ("Left door hinge 1"). A hinge with a problem is amber; one whose references can't be placed is not drawn. `describe_scene` leaves hinges out, since a cup sits inside the door.
 
 ## Drawer slides
 

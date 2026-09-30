@@ -264,8 +264,10 @@ fn hardware_without_installations_does_not_claim_a_deleted_selection() {
             .as_ref()
             .unwrap()
             .nodes;
-        assert!(nodes.iter().any(|(_, node)| node.value()
-            == Some(app.localizer.text("hardware-no-installations").as_str())));
+        assert!(
+            nodes.iter().any(|(_, node)| node.value()
+                == Some(app.localizer.text("hardware-inspect-empty").as_str()))
+        );
         assert!(!nodes.iter().any(|(_, node)| node.value()
             == Some(app.localizer.text("hinge-selection-missing").as_str())));
     }

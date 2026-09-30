@@ -92,7 +92,7 @@ fn short_face(localizer: &Localizer, face: BoardFace) -> String {
     })
 }
 
-fn board_name(project: &Project, id: Uuid) -> &str {
+pub(crate) fn board_name(project: &Project, id: Uuid) -> &str {
     project
         .boards
         .iter()
@@ -163,15 +163,7 @@ pub(crate) fn field_label(ui: &mut egui::Ui, text: &str) {
     );
 }
 
-/// Frameless 11.5px link-style action with an accessible name.
-fn small_link(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(tw::medium(ui, text, 11.5).color(tw::ACCENT_DARK)).frame(false),
-    )
-}
-
-fn row_icon(
+pub(crate) fn row_icon(
     ui: &mut egui::Ui,
     icon: Icon,
     label: &str,
@@ -473,7 +465,7 @@ fn verified_facts(entry: &CatalogReference) -> Option<&plan_my_cabinet::domain::
 }
 
 /// Pinned-catalog summary card: name, mono SKUs, door range and revision.
-fn catalog_card(ui: &mut egui::Ui, localizer: &Localizer, entry: &CatalogReference) {
+pub(crate) fn catalog_card(ui: &mut egui::Ui, localizer: &Localizer, entry: &CatalogReference) {
     egui::Frame::new()
         .fill(tw::APP)
         .corner_radius(8)
@@ -1051,156 +1043,27 @@ fn reference_diagram(
     }
 }
 
-/// Per-installation draft text for the inspector's Y fields (session only).
-fn y_draft_id(id: Uuid, index: usize) -> egui::Id {
-    egui::Id::new(("hinge-inspector-y", id, index))
+/// What the hinge Y fields asked for this frame.
+#[derive(Default)]
+struct YEvents {
+    changed: [bool; 2],
+    apply: bool,
+    discard: bool,
 }
 
 impl DesktopApp {
-    pub(crate) fn show_pinned_catalog(&mut self, ui: &mut egui::Ui) {
-        let project = self.editor.project();
-        let browse_id = egui::Id::new(("hardware-browse-snapshots", project.id));
-        let mut browse = ui.data(|d| d.get_temp::<bool>(browse_id)).unwrap_or(false);
-        let entries = project.catalog.clone();
-        let selected = match self.session.inspector {
-            Some(InspectorTarget::Installation(id)) => {
-                project.hinge_installations.iter().find(|h| h.id == id)
-            }
-            _ => None,
-        };
-        let pinned = selected
-            .map_or_else(
-                || entries.first(),
-                |hinge| entries.iter().find(|entry| entry.id == hinge.catalog_id),
-            )
-            .cloned();
-        let modal = self.modal_open();
+    /// Menu items to add hardware; each creates it and opens its inspector.
+    pub(crate) fn hardware_add_items(&mut self, ui: &mut egui::Ui, actions: &[A]) {
         let mut run = None;
-        egui::Frame::new()
-            .inner_margin(egui::Margin {
-                left: 14,
-                right: 10,
-                top: 0,
-                bottom: 0,
-            })
-            .show(ui, |ui| {
-                tw::section_bar(ui, &self.localizer.text("hardware-pinned-catalog"), |ui| {
-                    if !entries.is_empty()
-                        && small_link(ui, &self.localizer.text("catalog-browse"), true)
-                            .on_hover_text(self.localizer.text("catalog-heading"))
-                            .clicked()
-                    {
-                        browse = !browse;
-                    }
-                });
-            });
-        egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(8, 0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                if let Some(entry) = &pinned {
-                    catalog_card(ui, &self.localizer, entry);
-                } else {
-                    egui::Frame::new()
-                        .fill(tw::APP)
-                        .corner_radius(8)
-                        .inner_margin(10)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.label(
-                                egui::RichText::new(self.localizer.text("hinge-missing-catalog"))
-                                    .size(12.0)
-                                    .color(tw::WARN_INK),
-                            );
-                            ui.add_space(4.0);
-                            if tw::icon_text_button(
-                                ui,
-                                Icon::Plus,
-                                &self.localizer.text("catalog-add"),
-                                false,
-                                !modal,
-                            )
-                            .clicked()
-                            {
-                                run = Some(Request::new(A::AddCatalog));
-                            }
-                        });
-                }
-                if browse && !entries.is_empty() {
-                    ui.add_space(8.0);
-                    for entry in &entries {
-                        ui.push_id(entry.id, |ui| {
-                            egui::Frame::new()
-                                .fill(tw::CARD)
-                                .stroke(egui::Stroke::new(1.0, tw::BORDER_SOFT))
-                                .corner_radius(8)
-                                .inner_margin(10)
-                                .show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    ui.spacing_mut().item_spacing.y = 4.0;
-                                    snapshot_details(ui, &self.localizer, entry);
-                                    ui.horizontal(|ui| {
-                                        if tw::icon_text_button(
-                                            ui,
-                                            Icon::Redo,
-                                            &self.localizer.text("catalog-update"),
-                                            false,
-                                            !modal,
-                                        )
-                                        .clicked()
-                                        {
-                                            run = Some(Request::with(
-                                                A::UpdateCatalog,
-                                                Target::Catalog(entry.id),
-                                            ));
-                                        }
-                                    });
-                                });
-                            ui.add_space(6.0);
-                        });
-                    }
-                    if tw::icon_text_button(
-                        ui,
-                        Icon::Plus,
-                        &self.localizer.text("catalog-add"),
-                        false,
-                        !modal,
-                    )
-                    .clicked()
-                    {
-                        run = Some(Request::new(A::AddCatalog));
-                    }
-                    if let Some(notice) = &self.hardware.catalog_update_notice {
-                        ui.label(egui::RichText::new(notice).size(11.5).color(tw::MUTED));
-                    }
-                }
-            });
-        ui.add_space(12.0);
-        tw::divider(ui);
-        ui.data_mut(|d| d.insert_temp(browse_id, browse));
-        if let Some(request) = run {
-            self.invoke_or_report(request);
-        }
-    }
-
-    fn hardware_add_menu(&mut self, ui: &mut egui::Ui) {
-        let mut run = None;
-        for action in [
-            A::NewHinge,
-            A::NewDoor,
-            A::NewSlides,
-            A::NewFoot,
-            A::NewHardware,
-            A::AddCatalog,
-        ] {
+        for &action in actions {
             let request = Request::new(action);
             let (icon, key) = match action {
-                A::NewHinge => (Icon::Hinge, "hinge-new"),
-                A::NewDoor => (Icon::Door, "door-add"),
-                A::NewSlides => (Icon::Layers, "slide-new"),
-                A::NewFoot => (Icon::Cube, "foot-new"),
-                A::NewHardware => (Icon::Cube, "hardware-new"),
-                _ => (Icon::Plus, "catalog-add"),
+                A::NewHinge => (Icon::Hinge, "hardware-add-hinge-item"),
+                A::NewDoor => (Icon::Door, "hardware-add-door-item"),
+                A::NewSlides => (Icon::Layers, "hardware-add-slides-item"),
+                A::NewFoot => (Icon::Cube, "hardware-add-foot-item"),
+                A::NewHardware => (Icon::Cube, "hardware-add-other-item"),
+                _ => (Icon::Search, "hardware-browse-catalog-item"),
             };
             if ui
                 .add_enabled(
@@ -1222,12 +1085,7 @@ impl DesktopApp {
         }
     }
 
-    fn show_door_group_row(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: Uuid,
-        first_hinge: Option<Uuid>,
-    ) -> bool {
+    fn show_door_group_row(&mut self, ui: &mut egui::Ui, id: Uuid) -> bool {
         let project = self.editor.project();
         let Some(door) = project.door_joints.iter().find(|d| d.id == id) else {
             return false;
@@ -1248,11 +1106,16 @@ impl DesktopApp {
         let delete = Request::with(A::DeleteDoor, Target::Door(id));
         let preview = Request::with(A::StartMotion, Target::Door(id));
         let mut run = None;
+        let active = self.session.inspector == Some(InspectorTarget::Door(id));
         let (response, ()) = tw::list_row(
             ui,
             egui::Id::new(("hardware-door-row", id)),
             28.0,
-            tw::RowState::Normal,
+            if active {
+                tw::RowState::Active
+            } else {
+                tw::RowState::Normal
+            },
             !modal,
             &label,
             |ui| {
@@ -1344,14 +1207,8 @@ impl DesktopApp {
                 }
             }
         });
-        if run.is_none() {
-            if response.double_clicked() {
-                run = Some(edit);
-            } else if response.clicked()
-                && let Some(first) = first_hinge
-            {
-                self.navigate_session(Destination::Installation(first));
-            }
+        if run.is_none() && (response.clicked() || response.double_clicked()) {
+            self.request_inspect(InspectorTarget::Door(id));
         }
         ui.data_mut(|d| d.insert_temp(collapsed_id, collapsed));
         if let Some(request) = run {
@@ -1494,12 +1351,8 @@ impl DesktopApp {
                 }
             }
         });
-        if run.is_none() {
-            if response.double_clicked() {
-                run = Some(edit);
-            } else if response.clicked() {
-                self.navigate_session(Destination::Installation(id));
-            }
+        if run.is_none() && (response.clicked() || response.double_clicked()) {
+            self.request_inspect(InspectorTarget::Installation(id));
         }
         if let Some(request) = run {
             self.invoke_or_report(request);
@@ -1520,13 +1373,13 @@ impl DesktopApp {
                 let (open, ()) = tw::collapsible_section_bar(
                     ui,
                     egui::Id::new("hardware-doors-section"),
-                    &self.localizer.text("hardware-doors"),
+                    &self.localizer.text("hardware-section-doors"),
                     doors.len() + standalone.len(),
                     |ui| {
                         let plus = tw::ghost_icon_sized(
                             ui,
                             Icon::Plus,
-                            &self.localizer.text("hardware-add-menu"),
+                            &self.localizer.text("hardware-add-door-or-hinge"),
                             tw::MUTED,
                             15.0,
                             24.0,
@@ -1537,7 +1390,7 @@ impl DesktopApp {
                             .align(egui::RectAlign::BOTTOM_END)
                             .show(|ui| {
                                 ui.set_min_width(220.0);
-                                self.hardware_add_menu(ui);
+                                self.hardware_add_items(ui, &[A::NewDoor, A::NewHinge]);
                             });
                     },
                 );
@@ -1553,15 +1406,20 @@ impl DesktopApp {
                         egui::Frame::new()
                             .inner_margin(egui::Margin::symmetric(8, 4))
                             .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(self.localizer.text("hardware-no-hinges"))
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(
+                                            self.localizer.text("hardware-empty-doors"),
+                                        )
                                         .size(12.0)
                                         .color(tw::FAINT),
+                                    )
+                                    .wrap(),
                                 );
                             });
                     }
                     for (id, children) in doors {
-                        let expanded = self.show_door_group_row(ui, id, children.first().copied());
+                        let expanded = self.show_door_group_row(ui, id);
                         if expanded {
                             for child in children {
                                 self.show_hinge_tree_row(ui, child, 16.0);
@@ -1629,38 +1487,6 @@ impl DesktopApp {
         ui.add_space(12.0);
     }
 
-    /// Fixed footer of the Hardware controls pane: "+ Hinge" and "+ Door".
-    pub(crate) fn show_hardware_footer(&mut self, ui: &mut egui::Ui) {
-        let mut run = None;
-        let gap = 6.0;
-        let width = ((ui.available_width() - gap) / 2.0).max(40.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (action, icon, key) in [
-                (A::NewHinge, Icon::Plus, "hardware-add-hinge"),
-                (A::NewDoor, Icon::Door, "hardware-add-door"),
-            ] {
-                let request = Request::new(action);
-                let enabled = self.action_availability(request).is_ok();
-                ui.allocate_ui_with_layout(
-                    egui::vec2(width, 32.0),
-                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| {
-                        if tw::icon_text_button(ui, icon, &self.localizer.text(key), false, enabled)
-                            .on_hover_text(action.label(&self.localizer))
-                            .clicked()
-                        {
-                            run = Some(request);
-                        }
-                    },
-                );
-            }
-        });
-        if let Some(request) = run {
-            self.invoke_or_report(request);
-        }
-    }
-
     /// Commit one inspector edit through the installation update path: one
     /// validated, undoable transaction or no change at all.
     fn apply_installation_edit(
@@ -1683,7 +1509,8 @@ impl DesktopApp {
         installation != before && hinge_installation::update(&mut self.editor, installation).is_ok()
     }
 
-    /// One Y field in the inspector. Returns a validated value to commit.
+    /// One Y field in the inspector, over the shared hinge draft. Enter
+    /// asks to apply, Escape to discard; losing focus keeps the text.
     #[allow(clippy::too_many_arguments)]
     fn inspector_y_field(
         &self,
@@ -1691,24 +1518,20 @@ impl DesktopApp {
         id: Uuid,
         index: usize,
         label: &str,
-        committed: Length,
+        text: &mut String,
         suffix: &str,
         enabled: bool,
-    ) -> Option<Length> {
-        let draft_id = y_draft_id(id, index);
+        events: &mut YEvents,
+    ) {
         let field_id = egui::Id::new(("hinge-inspector-y-field", id, index));
-        let mut text = ui
-            .data(|d| d.get_temp::<String>(draft_id))
-            .unwrap_or_else(|| short_mm(&self.localizer, committed));
-        let invalid = distance(&text).is_none();
-        let mut result = None;
+        let invalid = distance(text).is_none();
         tw::prop_row(ui, label, 84.0, |ui| {
             let width = ui.available_width();
             let response = tw::value_field(
                 ui,
                 field_id,
                 label,
-                &mut text,
+                text,
                 width,
                 Some(suffix),
                 None,
@@ -1716,21 +1539,51 @@ impl DesktopApp {
                 invalid,
             );
             if response.changed() {
-                ui.data_mut(|d| d.insert_temp(draft_id, text.clone()));
+                events.changed[index] = true;
             }
-            if response.lost_focus() {
-                let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                if !escape && let Some(value) = distance(&text).filter(|v| *v != committed) {
-                    result = Some(value);
-                }
-                ui.data_mut(|d| d.remove::<String>(draft_id));
+            let (enter, escape) = ui.input(|i| {
+                (
+                    i.key_pressed(egui::Key::Enter),
+                    i.key_pressed(egui::Key::Escape),
+                )
+            });
+            if (response.has_focus() || response.lost_focus()) && enter {
+                events.apply = true;
+            }
+            if (response.has_focus() || response.lost_focus()) && escape {
+                events.discard = true;
             }
         });
-        result
     }
 
     /// Hardware inspector hook: call with the session's selected Installation ID.
     pub(crate) fn show_selected_installation_inspector(&mut self, ui: &mut egui::Ui, id: Uuid) {
+        // The Y fields edit the shared hinge draft; read it before borrowing
+        // the project for display and write it back afterwards.
+        let target = FittingTarget::Hinge(id);
+        let locale = if self.localizer.language() == Language::En {
+            Locale::En
+        } else {
+            Locale::PtBr
+        };
+        let unit = self.editor.project().display_unit;
+        let mut y_texts = [String::new(), String::new()];
+        let mut y_dirty = false;
+        let mut y_valid = true;
+        let draft_ok = match self.edit_drafts.fitting(&self.editor, target, unit, locale) {
+            Ok(draft) => {
+                for (index, text) in y_texts.iter_mut().enumerate() {
+                    *text = draft.fields[index].text.clone().unwrap_or_else(|| {
+                        short_mm(&self.localizer, draft.fields[index].committed)
+                    });
+                }
+                y_dirty = draft.dirty();
+                y_valid = !y_dirty || draft.preview(&self.editor).is_ok();
+                true
+            }
+            Err(_) => false,
+        };
+        let mut y_events = YEvents::default();
         let project = self.editor.project();
         let Some(installation) = project
             .hinge_installations
@@ -1766,7 +1619,6 @@ impl DesktopApp {
         let delete_enabled = self.action_availability(delete).is_ok();
         let editable = !self.modal_open();
         let mut run = None;
-        let mut commit_y: [Option<Length>; 2] = [None, None];
         let mut commit_pair = None;
         let refit = hinge_installation::fitted(project, &installation).ok();
         let lined_up = refit
@@ -1912,31 +1764,57 @@ impl DesktopApp {
                         run = Some(edit);
                     }
                 });
-                commit_y[0] = self.inspector_y_field(
+                let [door_text, plate_text] = &mut y_texts;
+                self.inspector_y_field(
                     ui,
                     id,
                     0,
                     &localizer.text("hardware-position-y"),
-                    installation.door_y,
+                    door_text,
                     &localizer.text(if installation.side.door_edge.along_axis() == 1 {
                         "hardware-from-y-edge"
                     } else {
                         "hardware-from-x-edge"
                     }),
-                    editable,
+                    editable && draft_ok,
+                    &mut y_events,
                 );
                 let plate_differs =
-                    !lined_up || ui.data(|d| d.get_temp::<String>(y_draft_id(id, 1)).is_some());
+                    !lined_up || *plate_text != short_mm(localizer, installation.mount_y);
                 if plate_differs {
-                    commit_y[1] = self.inspector_y_field(
+                    self.inspector_y_field(
                         ui,
                         id,
                         1,
                         &localizer.text("hardware-plate-y"),
-                        installation.mount_y,
+                        plate_text,
                         "mm",
-                        editable,
+                        editable && draft_ok,
+                        &mut y_events,
                     );
+                }
+                if y_dirty {
+                    ui.horizontal(|ui| {
+                        ui.add_space(84.0);
+                        if tw::primary_button(
+                            ui,
+                            &localizer.text("navigation-apply"),
+                            editable && y_valid,
+                        )
+                        .clicked()
+                        {
+                            y_events.apply = true;
+                        }
+                        if tw::secondary_button_enabled(
+                            ui,
+                            &localizer.text("navigation-discard"),
+                            editable,
+                        )
+                        .clicked()
+                        {
+                            y_events.discard = true;
+                        }
+                    });
                 }
                 let line_up = !lined_up && refit.is_some();
                 if line_up || spacing.is_some() || recommended.is_some() {
@@ -2234,9 +2112,6 @@ impl DesktopApp {
                 i.cup_edge_setback = k;
                 i.overlay = r;
             });
-        } else if let Some(value) = commit_y[0] {
-            // The plate follows the cup.
-            let _ = hinge_installation::move_to(&mut self.editor, id, value);
         } else if let Some(placement) = placement {
             let _ = match placement {
                 Placement::LineUp => refit
@@ -2246,8 +2121,34 @@ impl DesktopApp {
                     hinge_installation::space_evenly(&mut self.editor, installation.door_board_id)
                 }
             };
-        } else if let Some(value) = commit_y[1] {
-            self.apply_installation_edit(id, |i| i.mount_y = value);
+        }
+        self.apply_y_events(target, y_texts, y_events, ui.ctx());
+    }
+
+    /// Write edited Y text into the shared draft, then apply or discard it.
+    fn apply_y_events(
+        &mut self,
+        target: FittingTarget,
+        texts: [String; 2],
+        events: YEvents,
+        ctx: &egui::Context,
+    ) {
+        let project_id = self.editor.project().id;
+        if events.discard {
+            self.edit_drafts.cancel_fitting(project_id, target);
+            ctx.request_repaint();
+            return;
+        }
+        let Some(draft) = self.edit_drafts.existing_fitting_mut(project_id, target) else {
+            return;
+        };
+        for (index, text) in texts.into_iter().enumerate() {
+            if events.changed[index] {
+                draft.fields[index].edit(text);
+            }
+        }
+        if events.apply && draft.dirty() && draft.accept(&mut self.editor).is_ok() {
+            ctx.request_repaint();
         }
     }
 
@@ -2582,68 +2483,6 @@ impl DesktopApp {
         draft.chrome = chrome;
         self.modals.set_hinge(Some(draft));
     }
-}
-
-/// Snapshot details shown when browsing pinned catalog records.
-fn snapshot_details(ui: &mut egui::Ui, localizer: &Localizer, entry: &CatalogReference) {
-    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-    ui.add(egui::Label::new(tw::medium(ui, &entry.name, 12.5).color(tw::TEXT)).wrap());
-    ui.label(
-        tw::mono(
-            format!(
-                "{} · {}",
-                entry.product_id,
-                entry.plate_id.as_deref().unwrap_or("—")
-            ),
-            10.5,
-        )
-        .color(tw::FAINT),
-    );
-    let small = |ui: &mut egui::Ui, text: String| {
-        ui.add(egui::Label::new(egui::RichText::new(text).size(11.0).color(tw::MUTED)).wrap());
-    };
-    small(
-        ui,
-        format!(
-            "{} {}",
-            localizer.text("hardware-rev-short"),
-            short_revision(&entry.revision)
-        ),
-    );
-    if let Some(facts) = verified_facts(entry) {
-        small(
-            ui,
-            format!(
-                "K/R {}",
-                facts
-                    .overlay_by_cup_edge
-                    .iter()
-                    .map(|p| format!(
-                        "{}/{}",
-                        short_mm(localizer, p.cup_edge_setback),
-                        short_mm(localizer, p.overlay)
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(" · ")
-            ),
-        );
-        small(
-            ui,
-            format!("{} · PDF {}", facts.attribution, facts.pdf_page),
-        );
-    } else {
-        ui.label(
-            egui::RichText::new(localizer.text("hinge-evidence-unavailable"))
-                .size(11.0)
-                .color(tw::WARN_INK),
-        );
-    }
-    ui.hyperlink_to(
-        egui::RichText::new(localizer.text("hinge-source-review"))
-            .size(11.0)
-            .color(tw::ACCENT_DARK),
-        &entry.source,
-    );
 }
 #[cfg(test)]
 mod tests;

@@ -612,6 +612,53 @@ pub fn suggest(
     })
 }
 
+/// Detect the drawer's sides and propose the longest length of `lengths`
+/// that fits. With a single length that does not fit, propose it anyway
+/// (centred) so the checks can explain why.
+pub fn propose(
+    project: &Project,
+    drawer: Uuid,
+    lengths: &[CatalogReference],
+) -> Result<Suggestion, SlideEditError> {
+    let detected = detect(project, drawer).map_err(SlideEditError::Fit)?;
+    match suggest(project, detected.clone(), lengths) {
+        Err(SlideEditError::NoLengthFits) if lengths.len() == 1 => {
+            let catalog = lengths[0].clone();
+            let height = Length::from_micrometres(
+                detected.geometry[0]
+                    .box_height
+                    .min(detected.geometry[1].box_height)
+                    .micrometres()
+                    / 2,
+            );
+            let setback = catalog.slide().map_or(Length::ZERO, |s| s.front_setback);
+            let installation = SlideInstallation {
+                id: Uuid::new_v4(),
+                catalog_id: catalog.id,
+                drawer_root_id: detected.drawer_root,
+                drawer_sides: detected.drawer_sides,
+                cabinet_sides: detected.cabinet_sides,
+                sides: detected.sides(),
+                height,
+                setback,
+            };
+            let mut scratch = project.clone();
+            if !scratch.catalog.iter().any(|c| c.id == catalog.id) {
+                scratch.catalog.push(catalog.clone());
+            }
+            let status = diagnose(&scratch, &installation);
+            Ok(Suggestion {
+                detected,
+                catalog,
+                height,
+                setback,
+                status,
+            })
+        }
+        other => other,
+    }
+}
+
 fn hole_distances(holes: &[crate::domain::SlideHole], start: i64) -> Vec<Length> {
     holes
         .iter()
@@ -966,6 +1013,37 @@ pub fn update(
 ) -> Result<bool, EditError<SlideEditError>> {
     check_inputs(&installation).map_err(EditError::Command)?;
     editor.transact(|p| {
+        if !p
+            .catalog
+            .iter()
+            .any(|c| c.id == installation.catalog_id && c.slide().is_some())
+        {
+            return Err(SlideEditError::NotASlide);
+        }
+        let slot = p
+            .slide_installations
+            .iter_mut()
+            .find(|s| s.id == installation.id)
+            .ok_or(SlideEditError::MissingInstallation)?;
+        *slot = installation;
+        Ok(())
+    })
+}
+
+/// Pin `pin` (when given and not already pinned) and replace an
+/// installation, in one step.
+pub fn update_with_catalog(
+    editor: &mut ProjectEditor,
+    pin: Option<CatalogReference>,
+    installation: SlideInstallation,
+) -> Result<bool, EditError<SlideEditError>> {
+    check_inputs(&installation).map_err(EditError::Command)?;
+    editor.transact(|p| {
+        if let Some(pin) = pin
+            && !p.catalog.iter().any(|c| c.id == pin.id)
+        {
+            p.catalog.push(pin);
+        }
         if !p
             .catalog
             .iter()

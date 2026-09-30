@@ -20,7 +20,7 @@ use plan_my_cabinet::commands::ProjectEditor;
 use plan_my_cabinet::design_read_models::{DesignReadModel, DesignView};
 use plan_my_cabinet::dimension_input::{InputError, Locale, format_length, parse_length};
 use plan_my_cabinet::domain::{Board, BoardGrain, Project, SrgbColor, validate_grid_spacing};
-use plan_my_cabinet::edit_drafts::EditDrafts;
+use plan_my_cabinet::edit_drafts::{EditDrafts, FittingTarget};
 use plan_my_cabinet::export::{
     ExportIssue, ExportMode, ExportSettings, ExportStatus, OutputError, Overwrite, ReceiptSections,
     ReviewPreparationError, ReviewedPacket, ReviewedPacketKey, SheetIssue, write_reviewed_pdf,

@@ -335,6 +335,78 @@ pub fn confirm(
     })
 }
 
+/// Add `hinges` and a door relationship over them (plus `existing` hinge
+/// ids already in the project) in one undoable step.
+pub fn create_with_hinges(
+    editor: &mut ProjectEditor,
+    id: Uuid,
+    root: Uuid,
+    mount: Uuid,
+    hinges: Vec<crate::domain::HingeInstallation>,
+    existing: Vec<Uuid>,
+) -> Result<bool, EditError<JointError>> {
+    editor.transact(|p| {
+        let mut ids = existing;
+        for hinge in hinges {
+            ids.push(hinge.id);
+            p.hinge_installations.push(hinge);
+        }
+        let proposal = preview(p, id, root, mount, ids)?;
+        p.door_joints.retain(|j| j.id != id);
+        p.door_joints.push(proposal.joint);
+        Ok(())
+    })
+}
+
+/// Add one hinge to an existing door relationship in one step.
+pub fn add_hinge(
+    editor: &mut ProjectEditor,
+    joint_id: Uuid,
+    hinge: crate::domain::HingeInstallation,
+) -> Result<bool, EditError<JointError>> {
+    editor.transact(|p| {
+        let joint = p
+            .door_joints
+            .iter()
+            .find(|j| j.id == joint_id)
+            .cloned()
+            .ok_or(JointError::MissingJoint)?;
+        let mut ids = joint.hinge_installation_ids.clone();
+        ids.push(hinge.id);
+        p.hinge_installations.push(hinge);
+        let proposal = preview(
+            p,
+            joint.id,
+            joint.moving_root_id,
+            joint.mounting_board_id,
+            ids,
+        )?;
+        p.door_joints.retain(|j| j.id != joint_id);
+        p.door_joints.push(proposal.joint);
+        Ok(())
+    })
+}
+
+/// Change a relationship's moving part, mount or hinges (and re-capture its
+/// closed pose and axis) in one step.
+pub fn reconfigure(
+    editor: &mut ProjectEditor,
+    joint_id: Uuid,
+    root: Uuid,
+    mount: Uuid,
+    hinge_ids: Vec<Uuid>,
+) -> Result<bool, EditError<JointError>> {
+    editor.transact(|p| {
+        if !p.door_joints.iter().any(|j| j.id == joint_id) {
+            return Err(JointError::MissingJoint);
+        }
+        let proposal = preview(p, joint_id, root, mount, hinge_ids)?;
+        p.door_joints.retain(|j| j.id != joint_id);
+        p.door_joints.push(proposal.joint);
+        Ok(())
+    })
+}
+
 pub fn remove(editor: &mut ProjectEditor, id: Uuid) -> Result<bool, EditError<JointError>> {
     editor.transact(|p| {
         let index = p

@@ -247,6 +247,13 @@ fn legend(project: &Project, scene: &Raster) -> Vec<LegendEntry> {
                         .find(|s| s.id == *id)
                         .map(|s| (slide_name(project, s), "slide"))
                 })
+                .or_else(|| {
+                    project
+                        .hinge_installations
+                        .iter()
+                        .find(|h| h.id == *id)
+                        .map(|h| (hinge_name(project, h), "hinge"))
+                })
                 .unwrap_or_default();
             let numbered = pixels >= MIN_LABEL_PIXELS;
             if numbered {
@@ -261,6 +268,26 @@ fn legend(project: &Project, scene: &Raster) -> Vec<LegendEntry> {
             }
         })
         .collect()
+}
+
+/// "Left door hinge 2": the door board and the hinge's order along it.
+pub fn hinge_name(project: &Project, hinge: &crate::domain::HingeInstallation) -> String {
+    let door = project
+        .board(hinge.door_board_id)
+        .map_or_else(String::new, |b| b.name.clone());
+    let mut on_door: Vec<_> = project
+        .hinge_installations
+        .iter()
+        .filter(|h| h.door_board_id == hinge.door_board_id)
+        .map(|h| (h.door_y, h.id))
+        .collect();
+    on_door.sort();
+    let n = on_door
+        .iter()
+        .position(|(_, id)| *id == hinge.id)
+        .unwrap_or(0)
+        + 1;
+    format!("{door} hinge {n}")
 }
 
 /// "Drawer 1 slides (0073.045500SX)".

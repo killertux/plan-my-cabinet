@@ -177,9 +177,10 @@ fn inspector_text(app: &mut DesktopApp, id: Uuid) -> String {
 
 fn tree_text(app: &mut DesktopApp) -> String {
     let ctx = egui::Context::default();
+    let catalog = app.editor.project().catalog[0].id;
     let output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        app.show_pinned_catalog(ui);
-        app.show_hinge_list(ui);
+        app.show_hardware_panel(ui);
+        app.show_fitting_inspector(ui, InspectorTarget::Catalog(catalog));
     });
     let text = output
         .shapes

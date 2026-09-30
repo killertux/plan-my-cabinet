@@ -31,9 +31,23 @@ fn pictures_are_deterministic_sized_and_labelled() {
     let second = render_picture(&project, &request).unwrap();
     assert_eq!(first.png, second.png);
     assert_eq!(png_size(&first.png), (800, 600));
+    let hinges = project
+        .hinge_installations
+        .iter()
+        .filter(|h| {
+            plan_my_cabinet::hinge_installation::diagnose(&project, h)
+                .references
+                .is_some()
+        })
+        .count();
+    assert!(hinges > 0, "the fixture's hinges are drawn");
     assert_eq!(
         first.legend.len(),
-        project.boards.len() + project.hardware.len()
+        project.boards.len() + project.hardware.len() + hinges
+    );
+    assert_eq!(
+        first.legend.iter().filter(|e| e.kind == "hinge").count(),
+        hinges
     );
     assert!(first.legend.iter().filter(|e| e.number.is_some()).count() >= 5);
     dump("iso.png", &first.png);
@@ -358,4 +372,60 @@ mod hardware {
         .unwrap();
         dump("feet-small.png", &picture.png);
     }
+}
+
+#[test]
+fn hinges_are_drawn_on_the_door_and_the_side() {
+    let project = reference_fixture::project();
+    let hinge = &project.hinge_installations[0];
+    let keep = [hinge.door_board_id, hinge.mounting_board_id];
+    let hidden: HashSet<_> = project
+        .boards
+        .iter()
+        .map(|b| b.id)
+        .filter(|id| !keep.contains(id))
+        .collect();
+    let picture = render_picture(
+        &project,
+        &PictureRequest {
+            view: View::Angles {
+                yaw_degrees: 60.0,
+                pitch_degrees: 20.0,
+            },
+            hidden: hidden.clone(),
+            width: 800,
+            height: 600,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    dump("hinge-inside.png", &picture.png);
+    let hinges = picture.legend.iter().filter(|e| e.kind == "hinge");
+    assert!(hinges.clone().count() >= 2, "{:?}", picture.legend);
+    assert!(hinges.clone().any(|e| e.number.is_some()));
+    // Framed on one hinge: cup and plate fill the picture.
+    let close = render_picture(
+        &project,
+        &PictureRequest {
+            view: View::Angles {
+                yaw_degrees: 60.0,
+                pitch_degrees: 20.0,
+            },
+            hidden,
+            frame: HashSet::from([hinge.id]),
+            width: 800,
+            height: 600,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    dump("hinge-close.png", &close.png);
+    assert!(
+        close
+            .legend
+            .iter()
+            .any(|e| e.id == hinge.id && e.visible_percent > 5.0),
+        "{:?}",
+        close.legend
+    );
 }

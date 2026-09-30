@@ -1922,3 +1922,61 @@ fn placeholder_is_rendered_pickable_and_hidden_independently() {
     assert!(hidden.faces.is_empty());
     assert!(hidden.shadow.is_empty());
 }
+
+#[test]
+fn hinges_are_picked_in_3d_and_only_hardware_drags_in_hardware() {
+    use plan_my_cabinet::render::hardware_mesh::{SolidKind, pick_boxes};
+    let project = plan_my_cabinet::reference_fixture::project();
+    let hinge = project.hinge_installations[0].clone();
+    // Look at the inside of the door: the cup rim stands proud of its face.
+    let selection = Selection {
+        hidden: project
+            .boards
+            .iter()
+            .map(|b| b.id)
+            .filter(|id| *id != hinge.door_board_id)
+            .collect(),
+        ..Default::default()
+    };
+    let boxes = pick_boxes(&project, &selection, None);
+    let (_, kind, cup) = boxes.iter().find(|(id, _, _)| *id == hinge.id).unwrap();
+    assert_eq!(*kind, SolidKind::Hinge);
+    let (pose, size) = cup[0];
+    let centre = pose
+        .transform_point([size[0] / 2.0, size[1] / 2.0, size[2] / 2.0])
+        .unwrap();
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let found = [Preset::Front, Preset::Isometric, Preset::Right, Preset::Top]
+        .into_iter()
+        .any(|preset| {
+            let mut camera = Camera::default();
+            camera.set_preset(preset);
+            camera.yaw += std::f64::consts::PI;
+            camera.target = centre;
+            camera.distance = 400.0;
+            let pointer = camera.project(centre, rect).unwrap();
+            pick_visible(&project, &camera, pointer, rect, &selection) == Some(hinge.id)
+        });
+    assert!(found, "the hinge cup can be clicked from inside the door");
+
+    // A foot is dragged like a board: preview, then one undo step.
+    let mut editor = plan_my_cabinet::commands::ProjectEditor::new(project).unwrap();
+    let foot = editor
+        .create_placeholder(
+            "Foot".into(),
+            [Length::from_micrometres(40_000); 3],
+            None,
+            Pose::new([0.0, 0.0, -40.0], Quaternion::IDENTITY).unwrap(),
+        )
+        .unwrap();
+    assert!(canvas::drag_start_pose_for_tests(editor.project(), foot, true).is_some());
+    assert!(
+        canvas::drag_start_pose_for_tests(
+            editor.project(),
+            plan_my_cabinet::reference_fixture::LEFT_SIDE_ID,
+            true
+        )
+        .is_none(),
+        "boards do not drag in the Hardware workspace"
+    );
+}

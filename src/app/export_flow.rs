@@ -504,7 +504,9 @@ impl DesktopApp {
             } => Some(HandoffFix::Navigate(Destination::Installation(
                 *installation_id,
             ))),
-            ExportIssue::Slide { id, .. } => Some(HandoffFix::Hardware(*id)),
+            ExportIssue::Slide { id, .. } => Some(HandoffFix::Navigate(Destination::Fitting(
+                InspectorTarget::Slide(*id),
+            ))),
             ExportIssue::InvalidWood(_) => None,
         }
     }

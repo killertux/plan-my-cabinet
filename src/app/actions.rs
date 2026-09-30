@@ -57,6 +57,8 @@ pub(crate) enum ActionId {
     EditSlides,
     DeleteSlides,
     NewFoot,
+    RefitSlides,
+    RemoveCatalog,
     DeleteObject,
     StartMotion,
     CloseMotion,
@@ -210,6 +212,8 @@ registry! {
     EditSlides => ("slide-edit", Hardware, "edit drawer slides length", "editar corrediças comprimento"),
     DeleteSlides => ("slide-delete", Hardware, "remove drawer slides", "remover corrediças"),
     NewFoot => ("foot-new", Hardware, "add foot leg", "adicionar pé"),
+    RefitSlides => ("slide-refit", Hardware, "refit redetect drawer slides", "reajustar corrediças"),
+    RemoveCatalog => ("catalog-remove", Hardware, "remove unpin catalog model", "remover modelo catálogo"),
     DeleteObject => ("door-delete-object", Design, "delete selected object", "excluir objeto"),
     StartMotion => ("door-motion-start", Hardware, "preview door motion", "prévia movimento porta"),
     CloseMotion => ("door-motion-exit", Hardware, "close door preview", "fechar prévia porta"),
@@ -526,6 +530,7 @@ pub(crate) enum Unavailable {
     ExportNotReady,
     NoDialog,
     StockInUse,
+    CatalogInUse,
 }
 
 impl Unavailable {
@@ -545,6 +550,12 @@ impl Unavailable {
             (Language::PtBr, Self::NoUndo) => "Nada para desfazer",
             (Language::En, Self::NoRedo) => "Nothing to redo",
             (Language::PtBr, Self::NoRedo) => "Nada para refazer",
+            (Language::En, Self::CatalogInUse) => {
+                "Hinges, slides or feet still use this model; remove them first"
+            }
+            (Language::PtBr, Self::CatalogInUse) => {
+                "Dobradiças, corrediças ou pés ainda usam este modelo; remova-os primeiro"
+            }
             (Language::En, Self::StockInUse) => {
                 "Parts are placed on this piece; move or unallocate them first"
             }
@@ -791,7 +802,13 @@ impl DesktopApp {
             A::EditDoor | A::DeleteDoor if !matches!(request.target, T::Door(id) if project.door_joints.iter().any(|j| j.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::EditSlides | A::DeleteSlides if !matches!(request.target, T::Slide(id) if project.slide_installations.iter().any(|s| s.id == id)) => {
+            A::RemoveCatalog if !matches!(request.target, T::Catalog(id) if project.catalog.iter().any(|c| c.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::RemoveCatalog if matches!(request.target, T::Catalog(id) if !plan_my_cabinet::hardware_catalog::usage(project, id).is_empty()) => {
+                Err(Unavailable::CatalogInUse)
+            }
+            A::EditSlides | A::DeleteSlides | A::RefitSlides if !matches!(request.target, T::Slide(id) if project.slide_installations.iter().any(|s| s.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
             A::StartMotion if !matches!(request.target, T::Door(id) | T::Slide(id) if door_joint_ui::motion_limit(project, id).is_some()) => {
@@ -1223,12 +1240,15 @@ impl DesktopApp {
                         self.editor.project(),
                     )));
             }
-            (A::NewHardware, _) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, None))),
-            (A::EditHardware, T::Object(id)) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, Some(id)))),
+            (A::NewHardware, _) => {
+                if !self.add_placeholder_now() {
+                    self.modals
+                        .set_hardware(Some(hardware_ui::HardwareDialog::new(self, None)));
+                }
+            }
+            (A::EditHardware, T::Object(id)) => {
+                self.request_inspect(InspectorTarget::Hardware(id));
+            }
             (A::DuplicateHardware, T::Object(id)) => {
                 if let Ok(copy) = self.editor.duplicate_placeholder(id) {
                     self.selection.choose(Some(copy), false);
@@ -1241,9 +1261,12 @@ impl DesktopApp {
                         door_joint_ui::DoorRemoval::Hardware(id),
                     )));
             }
-            (A::NewHinge, _) => self
-                .modals
-                .set_hinge(Some(hinge_ui::HingeDialog::new(self, None))),
+            (A::NewHinge, _) => {
+                if !self.add_hinge_now() {
+                    self.modals
+                        .set_hinge(Some(hinge_ui::HingeDialog::new(self, None)));
+                }
+            }
             (A::EditHinge, T::Hinge(id)) => self
                 .modals
                 .set_hinge(Some(hinge_ui::HingeDialog::new(self, Some(id)))),
@@ -1251,18 +1274,24 @@ impl DesktopApp {
                 let result = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
                 self.report_edit(result);
             }
-            (A::NewDoor, _) => self
-                .modals
-                .set_door(Some(door_joint_ui::DoorDialog::new(self, None))),
-            (A::EditDoor, T::Door(id)) => self
-                .modals
-                .set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id)))),
-            (A::NewSlides, _) => self
-                .modals
-                .set_slide(Some(slide_ui::SlideDialog::new(self, None))),
-            (A::EditSlides, T::Slide(id)) => self
-                .modals
-                .set_slide(Some(slide_ui::SlideDialog::new(self, Some(id)))),
+            (A::NewDoor, _) => {
+                if !self.add_door_now() {
+                    self.modals
+                        .set_door(Some(door_joint_ui::DoorDialog::new(self, None)));
+                }
+            }
+            (A::EditDoor, T::Door(id)) => {
+                self.request_inspect(InspectorTarget::Door(id));
+            }
+            (A::NewSlides, _) => {
+                if !self.add_slides_now() {
+                    self.modals
+                        .set_slide(Some(slide_ui::SlideDialog::new(self, None)));
+                }
+            }
+            (A::EditSlides, T::Slide(id)) => {
+                self.request_inspect(InspectorTarget::Slide(id));
+            }
             (A::DeleteSlides, T::Slide(id)) => {
                 let result = plan_my_cabinet::slide_installation::remove(&mut self.editor, id);
                 if matches!(self.hardware.door_motion, Some((active, _)) if active == id) {
@@ -1270,9 +1299,34 @@ impl DesktopApp {
                 }
                 self.report_edit(result);
             }
-            (A::NewFoot, _) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new_foot(self))),
+            (A::RefitSlides, T::Slide(id)) => {
+                let project = self.editor.project();
+                let refitted = project
+                    .slide_installations
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or(Unavailable::MissingTarget)
+                    .and_then(|s| {
+                        plan_my_cabinet::slide_installation::refitted(project, s)
+                            .map_err(|_| Unavailable::InvalidHardware)
+                    })?;
+                let result =
+                    plan_my_cabinet::slide_installation::update(&mut self.editor, refitted);
+                self.report_edit(result);
+            }
+            (A::RemoveCatalog, T::Catalog(id)) => {
+                let result = plan_my_cabinet::hardware_catalog::remove(&mut self.editor, id);
+                if result.is_ok() && self.session.inspector == Some(InspectorTarget::Catalog(id)) {
+                    self.session.inspector = None;
+                }
+                self.report_edit(result);
+            }
+            (A::NewFoot, _) => {
+                if !self.add_foot_now() {
+                    // No foot model yet: browse the catalog for one.
+                    self.open_catalog_dialog();
+                }
+            }
             (A::DeleteDoor, T::Door(id)) => {
                 self.modals
                     .set_removal(Some(door_joint_ui::RemovalDialog::new(

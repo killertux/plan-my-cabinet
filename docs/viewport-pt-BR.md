@@ -59,6 +59,15 @@ Os encaixes só auxiliam a colocação: a pose gravada é independente do destin
 Mover depois a peça de destino não leva a peça colocada junto, a menos que
 ambas pertençam a um conjunto movido. Nenhum encaixe cria dobradiça ou junta mecânica.
 
+As ferragens também fazem parte da cena. Clique num pé ou em outra ferragem
+para selecioná-lo como uma peça e arraste-o com **Mover peça** (um movimento
+desfazível, só com encaixe na grade). Clique numa corrediça ou dobradiça para
+abri-la no inspetor sem sair da área. As dobradiças aparecem como um caneco na
+porta e um calço na lateral, em âmbar quando têm algum problema; mostram onde
+a dobradiça fica, não onde furar. Em **Ferragens**, Mover arrasta só
+ferragens, nunca peças. Mover fica pausado enquanto o inspetor tem posições
+não salvas.
+
 Na linha da peça, **Pose numérica** abre uma prévia com o referencial
 explícito **Local do pai** ou **Mundo**. A posição usa mm (sufixos de unidade são
 aceitos); a rotação usa graus em X, Y e Z. Coordenadas derivadas abaixo de
