@@ -1336,8 +1336,40 @@ pub enum OutputError {
     PreparationBlocked,
     OverwriteRequired,
     Pdf(PdfExportError),
+    /// A part-list format could not be built or encoded.
+    Format(crate::formats::FormatError),
     Write(SaveError),
     Verify(ExportError),
+}
+
+/// Commit bytes at `path` atomically: replace only with `Overwrite::Confirm`,
+/// otherwise refuse an existing file. Shared by every export format.
+pub fn write_file(path: &Path, bytes: &[u8], overwrite: Overwrite) -> Result<(), OutputError> {
+    commit_bytes(path, bytes, overwrite, &NoFailure)
+}
+
+fn commit_bytes(
+    path: &Path,
+    bytes: &[u8],
+    overwrite: Overwrite,
+    stages: &impl SaveStages,
+) -> Result<(), OutputError> {
+    if path.symlink_metadata().is_ok() && overwrite != Overwrite::Confirm {
+        return Err(OutputError::OverwriteRequired);
+    }
+    match overwrite {
+        Overwrite::Confirm => atomic_write_with_stages(path, bytes, stages, || {}),
+        Overwrite::Decline => atomic_write_new_with_stages(path, bytes, stages, || {}),
+    }
+    .map_err(|error| match error {
+        SaveError::Io(ref io_error)
+            if overwrite == Overwrite::Decline
+                && io_error.kind() == io::ErrorKind::AlreadyExists =>
+        {
+            OutputError::OverwriteRequired
+        }
+        other => OutputError::Write(other),
+    })
 }
 
 /// Render an owned snapshot and commit it in the destination directory. A
@@ -1435,22 +1467,7 @@ fn write_bytes_with_stages(
     }
     // Recheck immediately before committing, including destinations created
     // while rendering. The UI must request confirmation again in that case.
-    if path.symlink_metadata().is_ok() && overwrite != Overwrite::Confirm {
-        return Err(OutputError::OverwriteRequired);
-    }
-    match overwrite {
-        Overwrite::Confirm => atomic_write_with_stages(path, &bytes, stages, || {}),
-        Overwrite::Decline => atomic_write_new_with_stages(path, &bytes, stages, || {}),
-    }
-    .map_err(|error| match error {
-        SaveError::Io(ref io_error)
-            if overwrite == Overwrite::Decline
-                && io_error.kind() == io::ErrorKind::AlreadyExists =>
-        {
-            OutputError::OverwriteRequired
-        }
-        other => OutputError::Write(other),
-    })?;
+    commit_bytes(path, &bytes, overwrite, stages)?;
     let hash = format!("{:x}", Sha256::digest(&bytes));
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

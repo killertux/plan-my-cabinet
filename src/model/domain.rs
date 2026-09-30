@@ -548,6 +548,9 @@ pub struct Project {
     pub slide_installations: Vec<SlideInstallation>,
     #[serde(default)]
     pub export_records: Vec<ExportRecord>,
+    /// Part-list files written for shops (CorteCloud and later formats).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_exports: Vec<crate::formats::FileExportRecord>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -681,6 +684,7 @@ impl Project {
             door_joints: Vec::new(),
             slide_installations: Vec::new(),
             export_records: Vec::new(),
+            file_exports: Vec::new(),
         }
     }
 
@@ -980,6 +984,11 @@ impl Project {
             }
         }
         for record in &self.export_records {
+            if record.project_id != self.id || !record.is_valid() {
+                return Err(DomainError::InvalidExportRecord);
+            }
+        }
+        for record in &self.file_exports {
             if record.project_id != self.id || !record.is_valid() {
                 return Err(DomainError::InvalidExportRecord);
             }

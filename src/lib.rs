@@ -36,7 +36,10 @@ pub use optimize::{
     allocation_diagnostics, candidate_generation, candidate_ranking, cut_tree, first_fit,
     optimization_worker, sheet_packer,
 };
-pub use output::{document_layout, export, hardware_lines, pdf_export, workshop_document};
+pub use output::{
+    document_layout, export, formats, hardware_lines, machining, part_list, pdf_export,
+    workshop_document,
+};
 pub use read_models::{cost_estimate, design_read_models, receipt_read_models, stock_read_models};
 pub use storage::{local_preferences, persistence, recent_projects, recovery, user_dirs};
 pub use ui::{icons, settings_ui, theme, theme_widgets, welcome_ui};

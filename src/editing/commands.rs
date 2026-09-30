@@ -100,6 +100,19 @@ impl ProjectEditor {
         Ok(())
     }
 
+    /// Record a part-list file (CorteCloud and later formats) once written.
+    /// Like PDF receipts, it is history: undo never removes it.
+    pub fn record_file_export(
+        &mut self,
+        record: crate::formats::FileExportRecord,
+    ) -> Result<(), ExportError> {
+        if record.project_id != self.project.id || !record.is_valid() {
+            return Err(ExportError::WrongProject);
+        }
+        self.project.file_exports.push(record);
+        Ok(())
+    }
+
     /// Change only the project-local editing grid; existing poses remain untouched.
     /// Callers convert text to an exact or explicitly confirmed `Length` first.
     pub fn set_grid_spacing(&mut self, spacing: Length) -> Result<bool, EditError<UnitError>> {
@@ -215,6 +228,7 @@ impl ProjectEditor {
         // Revision belongs to the editor, not to callers or preview data.
         candidate.revision = self.project.revision;
         candidate.export_records = self.project.export_records.clone();
+        candidate.file_exports = self.project.file_exports.clone();
         for (&id, alias) in &self.project.stock_aliases {
             if candidate.stock.iter().any(|piece| piece.id == id)
                 && candidate.stock_aliases.get(&id) != Some(alias)
@@ -318,6 +332,7 @@ impl ProjectEditor {
         let mut before = before.clone();
         before.revision = revision;
         before.export_records = self.project.export_records.clone();
+        before.file_exports = self.project.file_exports.clone();
         before.next_stock_s_alias = before
             .next_stock_s_alias
             .max(self.project.next_stock_s_alias);
@@ -343,6 +358,7 @@ impl ProjectEditor {
         let mut after = after.clone();
         after.revision = revision;
         after.export_records = self.project.export_records.clone();
+        after.file_exports = self.project.file_exports.clone();
         after.next_stock_s_alias = after
             .next_stock_s_alias
             .max(self.project.next_stock_s_alias);

@@ -35,6 +35,9 @@ pub struct SlideHole {
     pub offset: Length,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diameter: Option<Length>,
+    /// Pilot depth, when the manufacturer gives one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<Length>,
 }
 
 /// One purchasable slide pair (one length of a family), side mounted.
