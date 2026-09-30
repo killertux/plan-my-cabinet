@@ -1764,3 +1764,57 @@ material-default-band-hint = A fita automática coloca esta fita em toda borda q
 material-no-band = Sem fita
 viewport-band = Fita nas bordas
 viewport-band-hint = Toque na borda de uma peça para colocar ou tirar a fita · Alt-toque para automático · arraste para orbitar
+
+## Exportação de arquivos (CorteCloud)
+export-format = Formato
+export-format-pdf = PDF da oficina
+export-format-pdf-description = Para imprimir: peças, chapas e passos de corte, orientação das ferragens.
+export-format-cortecloud = CorteCloud
+export-format-cortecloud-description = Pedir peças cortadas, com fita e furadas a uma marcenaria. Ela escolhe as chapas e faz o plano de corte.
+cortecloud-summary = O que o arquivo lista
+cortecloud-parts = { $parts ->
+    [one] 1 peça
+   *[other] { $parts } peças
+} em { $groups ->
+    [one] 1 linha
+   *[other] { $groups } linhas
+}
+cortecloud-banded = { $banded ->
+    [one] 1 peça
+   *[other] { $banded } peças
+} com fita de borda · { $metres } m de fita
+cortecloud-drilled = { $drilled ->
+    [one] 1 peça furada
+   *[other] { $drilled } peças furadas
+} · { $holes ->
+    [one] 1 furo
+   *[other] { $holes } furos
+}
+cortecloud-left-out = Ficou de fora
+cortecloud-omit-issues = { $name }: { $holes } furos de ferragem com problemas
+cortecloud-omit-review = { $name }: { $holes } furos; a porta precisa de revisão
+cortecloud-omit-pilot = { $name }: { $holes } furos de parafuso sem medida de pré-furo
+cortecloud-no-boards = Adicione peças para exportar uma lista.
+cortecloud-invalid-design = O projeto tem um problema a corrigir antes de exportar.
+cortecloud-nothing = Nada para exportar ainda.
+cortecloud-pilots = Pré-furos de parafuso
+cortecloud-pilots-enable = Pedir à marcenaria os pré-furos de parafuso
+cortecloud-pilot-diameter = Diâmetro
+cortecloud-pilot-depth = Profundidade
+cortecloud-pilots-hint = Os catálogos raramente dão a medida do pré-furo de calços e corrediças. Sem medida, esses furos ficam para você fazer.
+cortecloud-import = Como importar
+cortecloud-import-steps = No CorteCloud: Novo serviço › Serviço Completo › Carregar arquivo Cortecloud. Depois vincule cada material e fita ao estoque da marcenaria.
+cortecloud-verify-note = Confira a primeira importação na prévia do CorteCloud: furos e fitas devem estar onde o app mostra.
+cortecloud-last-current = Última exportação: { $file } · confere com o projeto
+cortecloud-last-outdated = Última exportação: { $file } · o projeto mudou desde então
+cortecloud-export-button = Exportar para o CorteCloud…
+cortecloud-saved = { $file } salvo
+cortecloud-failed = Não foi possível gravar o arquivo. Escolha outra pasta e tente de novo.
+cortecloud-preview-title = Peças no arquivo do CorteCloud
+cortecloud-col-quantity = Qtde.
+cortecloud-col-part = Peça
+cortecloud-col-cabinet = Móvel
+cortecloud-col-size = C × L × E
+cortecloud-col-material = Material
+cortecloud-col-banding = Fita
+cortecloud-col-holes = Furos

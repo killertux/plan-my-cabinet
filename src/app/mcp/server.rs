@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use base64::Engine as _;
 use plan_my_cabinet::service::banding::*;
 use plan_my_cabinet::service::design::*;
+use plan_my_cabinet::service::exports::*;
 use plan_my_cabinet::service::fittings::*;
 use plan_my_cabinet::service::hardware::*;
 use plan_my_cabinet::service::project::*;
@@ -371,6 +372,26 @@ impl PmcServer {
         Parameters(input): Parameters<EdgeBandRefInput>,
     ) -> Result<CallToolResult, McpError> {
         self.call(move |ws| ws.remove_edge_band(input)).await
+    }
+
+    #[tool(
+        description = "Preview a part list for a shop (format cortecloud-json): parts with quantity, cabinet, material, size, banding and hole count, what drilling is left out and why, and the file itself. Needs only a valid design, no cut plan."
+    )]
+    async fn get_part_list(
+        &self,
+        Parameters(input): Parameters<PartListInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.get_part_list(input)).await
+    }
+
+    #[tool(
+        description = "Write the design as a file for a shop (format cortecloud-json: import in CorteCloud with Serviço Completo › Carregar arquivo Cortecloud). Refuses to replace a file unless overwrite is true. Records a receipt; not an undo step."
+    )]
+    async fn export_design(
+        &self,
+        Parameters(input): Parameters<ExportDesignInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.export_design(input)).await
     }
 
     #[tool(description = "Rename a board, assembly or hardware item.")]

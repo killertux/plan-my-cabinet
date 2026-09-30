@@ -64,6 +64,17 @@ when another board sits flat against it (at least half of the edge face, gap
 
 Sizes stay finished sizes, band included; the shop deducts the tape.
 
+## Ordering parts from a shop (CorteCloud)
+
+`get_part_list` previews the parts a shop would cut: identical boards grouped
+with a quantity, the cabinet, material, size, banding and holes (hinge cups;
+screw pilots when sized), plus what drilling is left out and why.
+`export_design` writes the CorteCloud file (`format: "cortecloud-json"`). It
+needs only a valid design: no sheets, cut plan or kerf, because the shop nests
+the parts. Pass `screw_pilot` (diameter and depth) to have hinge-plate and
+slide screws drilled. The user imports the file in CorteCloud with
+*Serviço Completo › Carregar arquivo Cortecloud* and links materials and bands.
+
 ## Cut planning
 
 1. Boards are placed on stock automatically when created, if a sheet of their material and thickness has room.

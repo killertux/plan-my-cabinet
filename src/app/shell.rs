@@ -1012,6 +1012,12 @@ impl DesktopApp {
                     self.invoke_or_report(Request::new(A::NewBoard));
                 }
             }
+            Workspace::Handoff
+                if self.file_export.format()
+                    != plan_my_cabinet::formats::ExportFormat::WorkshopPdf =>
+            {
+                self.show_file_export_preview(ui);
+            }
             Workspace::Handoff => {
                 let packet = self.handoff.candidate.as_ref().and_then(|(key, result)| {
                     (key == &self.export_key())
@@ -1303,6 +1309,7 @@ impl DesktopApp {
     pub(crate) fn show_workspace(&mut self, ui: &mut egui::Ui) {
         self.tick_project_files(ui.ctx());
         self.poll_pdf_export(ui.ctx());
+        self.poll_file_export(ui.ctx());
         self.tick_export_preparation(ui.ctx());
         // Worker completion belongs to the app session, not the Cut plan pane.
         // Its candidate is still only applied after explicit review there.

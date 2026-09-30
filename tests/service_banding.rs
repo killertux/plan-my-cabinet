@@ -118,3 +118,52 @@ fn templates_band_free_edges_and_tools_change_them() {
     assert_eq!(refused.code, ErrorCode::InvalidArgument);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_part_list_previews_and_writes_a_cortecloud_file() {
+    let dir = std::env::temp_dir().join(format!("pmcab-export-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ws = Workspace::new(WorkspaceConfig {
+        catalog_dir: Some(dir.join("catalogs")),
+        user_data_dir: Some(dir.clone()),
+        ..Default::default()
+    });
+    ws.generate_template(input(json!({
+        "kind": "base",
+        "name": "Base",
+        "dimensions": { "width": 600, "depth": 560, "height": 720 }
+    })))
+    .unwrap();
+    let preview = ws.get_part_list(input(json!({}))).unwrap();
+    let parts = preview["parts"].as_array().unwrap();
+    assert!(!parts.is_empty(), "{preview:#}");
+    let side = parts.iter().find(|p| p["name"] == "Left side").unwrap();
+    assert_eq!(side["cabinet"], "Base");
+    assert_eq!(side["banding"]["length_1"], "White band 1x22");
+    assert_eq!(
+        preview["file_preview"]["parts"].as_array().unwrap().len(),
+        parts.len()
+    );
+
+    let path = dir.join("base-cortecloud.json");
+    let revision = ws.get_project().unwrap().revision;
+    let written = ws
+        .export_design(input(json!({ "path": path.to_str().unwrap() })))
+        .unwrap();
+    assert!(
+        written.committed && !written.changed,
+        "a receipt is not an edit"
+    );
+    assert_eq!(ws.get_project().unwrap().revision, revision);
+    let file: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(file["parts"].as_array().unwrap().len(), parts.len());
+    let refused = ws
+        .export_design(input(json!({ "path": path.to_str().unwrap() })))
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Conflict);
+    ws.export_design(input(
+        json!({ "path": path.to_str().unwrap(), "overwrite": true }),
+    ))
+    .unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}

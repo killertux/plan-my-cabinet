@@ -6,6 +6,7 @@ pub mod banding;
 pub mod design;
 pub mod dto;
 pub mod error;
+pub mod exports;
 pub mod fittings;
 pub mod hardware;
 pub mod project;

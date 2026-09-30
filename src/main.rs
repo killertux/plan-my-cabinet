@@ -61,10 +61,11 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 mod app;
 use app::{
     actions, assembly_ui, banding_ui, capture, catalog_ui, command_palette, currency_ui,
-    door_joint_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals,
-    optimization_ui, pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui,
-    recovery_cleanup_ui, sheet_ui, slide_ui, state, stock_ui, template_setup_ui, toasts, viewport,
-    welcome_host, widget_gallery, workspace_shell, workspace_state,
+    door_joint_ui, file_export_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui,
+    modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_name_ui,
+    project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, slide_ui, state, stock_ui,
+    template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
+    workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
 use actions::{ActionId as A, Argument, Request, Target};
@@ -176,6 +177,7 @@ struct DesktopApp {
     template: state::TemplateHost,
     settings: state::SettingsHost,
     handoff: state::HandoffState,
+    file_export: file_export_ui::FileExportState,
 }
 
 impl Default for DesktopApp {
@@ -221,6 +223,7 @@ impl Default for DesktopApp {
             template: state::TemplateHost::default(),
             settings: state::SettingsHost::default(),
             handoff: state::HandoffState::default(),
+            file_export: file_export_ui::FileExportState::default(),
         }
     }
 }
@@ -427,6 +430,10 @@ impl DesktopApp {
             || (self.template.setup.is_some() && !self.template.guard_pending)
             || self.modals.is_open()
             || matches!(self.handoff.activity, Some(ExportActivity::Confirming(..)))
+            || matches!(
+                self.file_export.flow,
+                Some(file_export_ui::FileFlow::Confirming(..))
+            )
     }
 
     fn modal_open(&self) -> bool {
@@ -785,6 +792,10 @@ fn main() -> std::process::ExitCode {
                 if config.workspace == Workspace::Stock && !config.empty_project {
                     app.session.stock_piece =
                         Some(plan_my_cabinet::reference_fixture::WHITE_STOCK_ID);
+                }
+                // Opt-in: review a part-list format instead of the PDF.
+                if let Ok(id) = std::env::var("PMCAB_CAPTURE_EXPORT_FORMAT") {
+                    app.file_export.format = plan_my_cabinet::formats::ExportFormat::from_id(&id);
                 }
                 if config.workspace == Workspace::Handoff {
                     let packet = Arc::new(

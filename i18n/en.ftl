@@ -1761,3 +1761,57 @@ material-default-band-hint = Automatic banding puts this band on every edge not 
 material-no-band = No band
 viewport-band = Band edges
 viewport-band-hint = Click a board edge to band it or take its band off · Alt-click for automatic · drag to orbit
+
+## File exports (CorteCloud)
+export-format = Format
+export-format-pdf = Workshop PDF
+export-format-pdf-description = Print for your shop or yourself: parts, sheets and cut steps, hardware guidance.
+export-format-cortecloud = CorteCloud
+export-format-cortecloud-description = Order cut, banded and drilled parts from a shop. The shop picks the sheets and plans the cuts.
+cortecloud-summary = What the file lists
+cortecloud-parts = { $parts ->
+    [one] 1 part
+   *[other] { $parts } parts
+} in { $groups ->
+    [one] 1 line
+   *[other] { $groups } lines
+}
+cortecloud-banded = { $banded ->
+    [one] 1 part
+   *[other] { $banded } parts
+} with edge band · { $metres } m of band
+cortecloud-drilled = { $drilled ->
+    [one] 1 part
+   *[other] { $drilled } parts
+} drilled · { $holes ->
+    [one] 1 hole
+   *[other] { $holes } holes
+}
+cortecloud-left-out = Left out
+cortecloud-omit-issues = { $name }: { $holes } holes of hardware with issues
+cortecloud-omit-review = { $name }: { $holes } holes; the door needs review
+cortecloud-omit-pilot = { $name }: { $holes } screw holes with no pilot size
+cortecloud-no-boards = Add boards to export a part list.
+cortecloud-invalid-design = The design has a problem to fix before it can be exported.
+cortecloud-nothing = Nothing to export yet.
+cortecloud-pilots = Screw pilot holes
+cortecloud-pilots-enable = Ask the shop to drill screw pilots
+cortecloud-pilot-diameter = Diameter
+cortecloud-pilot-depth = Depth
+cortecloud-pilots-hint = Catalogs rarely give pilot sizes for hinge plates and slides. Without a size those holes are left for you to drill.
+cortecloud-import = How to import
+cortecloud-import-steps = In CorteCloud: Novo serviço › Serviço Completo › Carregar arquivo Cortecloud. Then link each material and band to the shop's stock.
+cortecloud-verify-note = Check the first import in CorteCloud's preview: holes and bands should be where the app shows them.
+cortecloud-last-current = Last exported: { $file } · matches the design
+cortecloud-last-outdated = Last exported: { $file } · the design changed since
+cortecloud-export-button = Export for CorteCloud…
+cortecloud-saved = Saved { $file }
+cortecloud-failed = Could not write the file. Choose another folder and try again.
+cortecloud-preview-title = Parts in the CorteCloud file
+cortecloud-col-quantity = Qty
+cortecloud-col-part = Part
+cortecloud-col-cabinet = Cabinet
+cortecloud-col-size = C × L × T
+cortecloud-col-material = Material
+cortecloud-col-banding = Band
+cortecloud-col-holes = Holes

@@ -11,6 +11,7 @@ pub(crate) mod command_palette;
 pub(crate) mod currency_ui;
 pub(crate) mod door_joint_ui;
 pub(crate) mod export_flow;
+pub(crate) mod file_export_ui;
 pub(crate) mod handoff_ui;
 pub(crate) mod hardware_add;
 pub(crate) mod hardware_inspector;

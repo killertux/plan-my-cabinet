@@ -87,6 +87,8 @@ pub(crate) enum ActionId {
     ConfirmKerf,
     OpenHandoff,
     ExportPdf,
+    SetExportFormat,
+    ExportFile,
     ReplacePdf,
     CancelExport,
     DirtySave,
@@ -249,6 +251,8 @@ registry! {
     ConfirmKerf => ("export-confirm-kerf", Handoff, "confirm cutting kerf", "confirmar espessura corte"),
     OpenHandoff => ("shell-export", Handoff, "review export handoff", "revisar exportação entrega"),
     ExportPdf => ("export-choose", Handoff, "export pdf", "exportar pdf"),
+    SetExportFormat => ("export-format", Handoff, "export format pdf cortecloud", "formato exportação pdf cortecloud"),
+    ExportFile => ("cortecloud-export-button", Handoff, "export cortecloud json shop order cut", "exportar cortecloud json pedido marcenaria corte"),
     ReplacePdf => ("export-replace", Dialog, "replace pdf", "substituir pdf"),
     CancelExport => ("cancel", Dialog, "cancel export", "cancelar exportação"),
     DirtySave => ("project-save", Dialog, "save unsaved changes", "salvar alterações"),
@@ -494,6 +498,7 @@ pub(crate) enum Argument {
         value: plan_my_cabinet::domain::EdgeBanding,
     },
     BandingPreset(plan_my_cabinet::banding::BandingPreset),
+    Format(plan_my_cabinet::formats::ExportFormat),
 }
 
 impl Request {
@@ -932,6 +937,27 @@ impl DesktopApp {
             {
                 Err(Unavailable::ExportNotReady)
             }
+            A::SetExportFormat if !matches!(request.argument, Argument::Format(_)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ExportFile
+                if matches!(
+                    request.argument,
+                    Argument::Format(plan_my_cabinet::formats::ExportFormat::WorkshopPdf)
+                ) =>
+            {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ExportFile if self.file_export.flow.is_some() => Err(Unavailable::Busy),
+            A::ExportFile
+                if plan_my_cabinet::part_list::build(
+                    project,
+                    &self.file_export_options().machining,
+                )
+                .is_err() =>
+            {
+                Err(Unavailable::ExportNotReady)
+            }
             A::ExportPdf if self.handoff.activity.is_some() => Err(Unavailable::Busy),
             A::ExportPdf if self.current_reviewed_packet().is_none() => {
                 Err(Unavailable::ExportNotReady)
@@ -1029,6 +1055,7 @@ impl DesktopApp {
                 | A::SetExportMode
                 | A::SetExportLanguage
                 | A::SetExportUnits
+                | A::SetExportFormat
                 | A::ToggleVisibility
         ) && self.resolve_draft_before_action(request)?
         {
@@ -1551,6 +1578,19 @@ impl DesktopApp {
                 ) {
                     return Err(Unavailable::ModalOpen);
                 }
+            }
+            (A::SetExportFormat, _) => {
+                if let Argument::Format(format) = request.argument {
+                    self.file_export.format = Some(format);
+                    self.handoff.message = None;
+                }
+            }
+            (A::ExportFile, _) => {
+                let format = match request.argument {
+                    Argument::Format(format) => format,
+                    _ => self.file_export.format(),
+                };
+                self.start_file_export(format);
             }
             (A::ExportPdf, _) => {
                 let (tx, rx) = mpsc::channel();

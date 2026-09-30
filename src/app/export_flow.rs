@@ -558,6 +558,11 @@ impl DesktopApp {
     }
 
     pub(crate) fn show_export_options(&mut self, ui: &mut egui::Ui) {
+        self.show_format_choice(ui);
+        if self.file_export.format() != plan_my_cabinet::formats::ExportFormat::WorkshopPdf {
+            self.show_file_export_options(ui);
+            return;
+        }
         let heading = |ui: &mut egui::Ui, text: String| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
@@ -898,6 +903,10 @@ impl DesktopApp {
 
     /// Pinned footer: explicit review step, the export action and its status.
     pub(crate) fn show_export_footer(&mut self, ui: &mut egui::Ui) {
+        if self.file_export.format() != plan_my_cabinet::formats::ExportFormat::WorkshopPdf {
+            self.show_file_export_footer(ui);
+            return;
+        }
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 8.0;
         let width = ui.available_width();
