@@ -26,6 +26,7 @@ use crate::pdf_export::{PdfExportError, render_document_pdf, render_pdf};
 use crate::persistence::{
     NoFailure, SaveError, SaveStages, atomic_write_new_with_stages, atomic_write_with_stages,
 };
+use crate::slide_installation::{SlideIssue, SlideReferences};
 use crate::units::Length;
 use crate::units::Unit;
 use crate::workshop_document::{WorkshopDocumentError, build_workshop_document};
@@ -64,7 +65,7 @@ impl Default for ReceiptSections {
 }
 
 pub const RECEIPT_METADATA_VERSION: u16 = 1;
-const CURRENT_FINGERPRINT_VERSION: u16 = 4;
+const CURRENT_FINGERPRINT_VERSION: u16 = 5;
 pub const MAX_COMPARISON_ENTRIES: usize = 4096;
 pub const MAX_COMPARISON_BYTES: usize = 512 * 1024;
 
@@ -368,6 +369,11 @@ pub enum ExportIssue {
         id: Id,
         installation_id: Id,
     },
+    Slide {
+        id: Id,
+        name: String,
+        reason: SlideIssue,
+    },
     InvalidWood(DomainError),
 }
 
@@ -395,6 +401,14 @@ pub struct ExportInstallationGuidance {
     pub references: InstallationReferences,
 }
 
+/// Hole references for one drawer's slides.
+#[derive(Clone, Debug)]
+pub struct ExportSlideGuidance {
+    pub id: Id,
+    pub drawer_name: String,
+    pub references: SlideReferences,
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedExport {
     pub snapshot: ExportSnapshot,
@@ -404,6 +418,8 @@ pub struct PreparedExport {
     /// Renderers must omit numeric installation diagrams for these hardware IDs.
     pub withheld_installation_guidance: Vec<Id>,
     pub installation_guidance: Vec<ExportInstallationGuidance>,
+    /// Drawer slides without issues; the others are in `withheld_installation_guidance`.
+    pub slide_guidance: Vec<ExportSlideGuidance>,
     /// One fresh, independently checked full-span sequence for each used stock.
     pub witnesses: Vec<(Id, CutTree)>,
     /// PDF/layout adapters must repeat this on every draft layout page.
@@ -677,7 +693,7 @@ pub fn prepare_export_with_budget(
                 {
                     HardwareIssue::InvalidReference
                 }
-                Some(entry) if !crate::hardware_catalog::is_verified(entry) => {
+                Some(entry) if !crate::hardware_catalog::is_usable(entry) => {
                     HardwareIssue::UnverifiedInstallation
                 }
                 Some(_) => continue,
@@ -749,6 +765,38 @@ pub fn prepare_export_with_budget(
         }
         withheld_installation_guidance.push(installation.id);
     }
+    let mut slide_guidance = Vec::new();
+    for installation in &project.slide_installations {
+        let status = crate::slide_installation::diagnose(project, installation);
+        let drawer_name = project
+            .assemblies
+            .iter()
+            .find(|a| a.id == installation.drawer_root_id)
+            .map(|a| a.name.clone())
+            .or_else(|| {
+                project
+                    .board(installation.drawer_root_id)
+                    .map(|b| b.name.clone())
+            })
+            .unwrap_or_else(|| installation.drawer_root_id.to_string());
+        for reason in &status.issues {
+            notices.push(ExportIssue::Slide {
+                id: installation.id,
+                name: drawer_name.clone(),
+                reason: reason.clone(),
+            });
+        }
+        match status.references {
+            Some(references) if status.issues.is_empty() => {
+                slide_guidance.push(ExportSlideGuidance {
+                    id: installation.id,
+                    drawer_name,
+                    references,
+                });
+            }
+            _ => withheld_installation_guidance.push(installation.id),
+        }
+    }
     if mode == ExportMode::ShopReady && !wood_issues.is_empty() {
         return Err(ShopReadyBlocked {
             issues: wood_issues,
@@ -768,6 +816,7 @@ pub fn prepare_export_with_budget(
         notices,
         withheld_installation_guidance,
         installation_guidance,
+        slide_guidance,
         witnesses,
         preview_watermark: (mode == ExportMode::Draft).then_some("DRAFT / NOT FOR CUTTING"),
     })
@@ -982,7 +1031,7 @@ fn fingerprint_version(project: &Project, version: u16) -> ManufacturingFingerpr
             HardwareKind::Placeholder { .. } => json!([h.id, Value::Null]),
         },
     );
-    ManufacturingFingerprint {
+    let v4 = ManufacturingFingerprint {
         wood: v3.wood,
         packet: digest(&json!([
             "packet-v4",
@@ -990,6 +1039,38 @@ fn fingerprint_version(project: &Project, version: u16) -> ManufacturingFingerpr
             hardware_guidance,
             project.confirmed_shop_kerf == Some(project.cutting_kerf)
         ])),
+    };
+    if version == 4 {
+        return v4;
+    }
+    // Drawer slides and feet are printed with their pinned facts, and slide
+    // holes depend on where the drawer and carcass sides sit.
+    let slides = sorted(
+        &project.slide_installations,
+        |s| s.id,
+        |s| {
+            let entry = project.catalog.iter().find(|c| c.id == s.catalog_id);
+            let boards: Vec<_> = s
+                .drawer_sides
+                .iter()
+                .chain(&s.cabinet_sides)
+                .map(|id| crate::assembly_edit::world_pose(project, *id).ok())
+                .collect();
+            json!([
+                s,
+                entry.map(|c| json!([c.name, c.product_id, c.source, c.revision, c.item])),
+                boards
+            ])
+        },
+    );
+    let feet = sorted(
+        &project.hardware,
+        |h| h.id,
+        |h| json!([h.id, project.foot_spec(h)]),
+    );
+    ManufacturingFingerprint {
+        wood: v4.wood,
+        packet: digest(&json!(["packet-v5", v4.packet, slides, feet])),
     }
 }
 
@@ -1553,6 +1634,7 @@ mod tests {
             installation_dimensions: std::collections::HashMap::from([("cup".into(), mm(11))]),
             verified_hinge: None,
             origin: None,
+            item: None,
         });
         p.hardware.push(Hardware {
             id: Uuid::new_v4(),

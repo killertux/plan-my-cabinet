@@ -324,6 +324,8 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
     } else {
         // Version 2 predates catalog packs: its hinge snapshots have no origin,
         // arm (all were full overlay) or inset depth, which default exactly.
+        // Version 3 predates slides and feet: no catalog items and no slide
+        // installations, which also default exactly.
         project.schema_version = SCHEMA_VERSION;
         validate(&project)?;
     }
@@ -498,6 +500,7 @@ mod tests {
             installation_dimensions: HashMap::from([("cup_depth".into(), mm(11))]),
             verified_hinge: None,
             origin: None,
+            item: None,
         });
         p.hardware.push(Hardware {
             id: Uuid::new_v4(),
@@ -820,8 +823,8 @@ mod tests {
             assert!(editor.preview().is_some());
         }
         assert!(matches!(
-            prepare_bytes(b"{\"schema_version\":4}"),
-            Err(PersistenceError::UnsupportedVersion(4))
+            prepare_bytes(b"{\"schema_version\":5}"),
+            Err(PersistenceError::UnsupportedVersion(5))
         ));
         assert!(matches!(
             prepare_bytes(b"{\"schema_version\":4294967296}"),

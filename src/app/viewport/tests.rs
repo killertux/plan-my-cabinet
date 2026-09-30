@@ -1,6 +1,6 @@
 use super::*;
 use plan_my_cabinet::commands::ProjectEditor;
-use plan_my_cabinet::domain::{Assembly, Board, BoardGrain, Material};
+use plan_my_cabinet::domain::{Assembly, Board, BoardGrain, HardwareKind, Material};
 use plan_my_cabinet::i18n::Language;
 use plan_my_cabinet::measurements::{Frame, Scope};
 use plan_my_cabinet::money::Currency;

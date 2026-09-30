@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -22,16 +22,37 @@ pub const PACK_SCHEMA: u32 = 1;
 pub const MAX_PACK_BYTES: usize = 1024 * 1024;
 
 /// Packs compiled into the application, reviewed against the cited sources.
-pub const BUNDLED: &[(&str, &str)] = &[("fgvtn.toml", include_str!("../../catalogs/fgvtn.toml"))];
+pub const BUNDLED: &[(&str, &str)] = &[
+    ("fgvtn.toml", include_str!("../../catalogs/fgvtn.toml")),
+    (
+        "fgvtn-slides.toml",
+        include_str!("../../catalogs/fgvtn-slides.toml"),
+    ),
+    (
+        "generic-feet.toml",
+        include_str!("../../catalogs/generic-feet.toml"),
+    ),
+];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+mod hardware;
+pub use hardware::{
+    FootFamily, FootVariant, RawClearance, RawFoot, RawFootVariant, RawGlide, RawHole, RawHoleAt,
+    RawSection, RawShape, RawSlide, RawSlideVariant, SlideFamily, SlideVariant, color_text,
+    parse_color, snapshot_foot, snapshot_slide,
+};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewStatus {
+    #[default]
     Reviewed,
     Draft,
+    /// Representative dimensions of a common product type, not taken from a
+    /// manufacturer sheet. Labelled as such wherever it is shown.
+    Generic,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mounting {
     Clip,
@@ -81,7 +102,14 @@ pub enum IssueKind {
     KOutsideRange,
     OpeningAngle(u16),
     NoVariants,
+    ClearanceRange,
+    TravelTooLong,
+    HoleOutsideMember,
+    UnknownShape(String),
+    ShapeGeometry,
+    InvalidColor(String),
     // Warnings.
+    HolesNotIncreasing,
     NotMonotonic,
     NoOpeningAngle,
     Draft,
@@ -91,9 +119,11 @@ pub enum IssueKind {
 impl IssueKind {
     pub fn severity(&self) -> Severity {
         match self {
-            Self::NotMonotonic | Self::NoOpeningAngle | Self::Draft | Self::ShadowsBundled => {
-                Severity::Warning
-            }
+            Self::NotMonotonic
+            | Self::NoOpeningAngle
+            | Self::Draft
+            | Self::ShadowsBundled
+            | Self::HolesNotIncreasing => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -118,6 +148,13 @@ impl IssueKind {
             Self::KOutsideRange => "k-outside-range",
             Self::OpeningAngle(_) => "opening-angle",
             Self::NoVariants => "no-variants",
+            Self::ClearanceRange => "clearance-range",
+            Self::TravelTooLong => "travel-too-long",
+            Self::HoleOutsideMember => "hole-outside-member",
+            Self::UnknownShape(_) => "unknown-shape",
+            Self::ShapeGeometry => "shape-geometry",
+            Self::InvalidColor(_) => "invalid-color",
+            Self::HolesNotIncreasing => "holes-not-increasing",
             Self::NotMonotonic => "not-monotonic",
             Self::NoOpeningAngle => "no-opening-angle",
             Self::Draft => "draft",
@@ -133,7 +170,9 @@ impl IssueKind {
             Self::InvalidId(id)
             | Self::DuplicateId(id)
             | Self::DuplicateCode(id)
-            | Self::UnknownSource(id) => Some(id.clone()),
+            | Self::UnknownSource(id)
+            | Self::UnknownShape(id)
+            | Self::InvalidColor(id) => Some(id.clone()),
             Self::Missing(field) => Some((*field).into()),
             Self::InvalidLength(value) => Some(value.clone()),
             Self::OpeningAngle(degrees) => Some(format!("{degrees}°")),
@@ -167,7 +206,16 @@ impl fmt::Display for PackIssue {
             IssueKind::KNotIncreasing => "K values must be strictly increasing",
             IssueKind::KOutsideRange => "K is not smaller than the cup diameter",
             IssueKind::OpeningAngle(_) => "opening angle must be between 1 and 180",
-            IssueKind::NoVariants => "hinge has no variants",
+            IssueKind::NoVariants => "item has no variants",
+            IssueKind::ClearanceRange => "clearance minus is not smaller than the clearance",
+            IssueKind::TravelTooLong => "travel is more than 100 mm beyond the slide length",
+            IssueKind::HoleOutsideMember => "hole lies outside the slide member",
+            IssueKind::UnknownShape(_) => "shape kind must be tapered, post or frame",
+            IssueKind::ShapeGeometry => {
+                "shape parts do not fit (sizes, plate and glide heights, frame tubes)"
+            }
+            IssueKind::InvalidColor(_) => "color must be #rrggbb",
+            IssueKind::HolesNotIncreasing => "holes are not listed front to back",
             IssueKind::NotMonotonic => "R/F values do not change steadily with K",
             IssueKind::NoOpeningAngle => "no opening angle: door motion preview is unavailable",
             IssueKind::Draft => "pack is a draft",
@@ -183,37 +231,41 @@ impl fmt::Display for PackIssue {
 
 // ---- Raw TOML shape -------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawPack {
-    schema: u32,
-    id: String,
-    manufacturer: String,
-    #[serde(default)]
-    country: Option<String>,
-    version: String,
-    review: RawReview,
-    #[serde(default)]
-    sources: Vec<RawSource>,
-    #[serde(default)]
-    hinges: Vec<RawHinge>,
+pub struct RawPack {
+    pub schema: u32,
+    pub id: String,
+    pub manufacturer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    pub version: String,
+    pub review: RawReview,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<RawSource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hinges: Vec<RawHinge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawer_slides: Vec<RawSlide>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feet: Vec<RawFoot>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawReview {
-    status: ReviewStatus,
-    #[serde(default)]
-    by: Option<String>,
-    #[serde(default)]
-    date: Option<String>,
-    #[serde(default)]
-    notes: Option<String>,
+pub struct RawReview {
+    pub status: ReviewStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawSource {
+pub struct RawSource {
     id: String,
     title: String,
     url: String,
@@ -225,9 +277,9 @@ struct RawSource {
     pdf_page: Option<u16>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawHinge {
+pub struct RawHinge {
     id: String,
     name: BTreeMap<String, String>,
     source: String,
@@ -256,31 +308,31 @@ struct RawHinge {
     variants: Vec<RawVariant>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawCup {
+pub struct RawCup {
     diameter: f64,
     depth: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawRange {
+pub struct RawRange {
     min: f64,
     max: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawPlate {
+pub struct RawPlate {
     front_offset: f64,
     #[serde(default)]
     hole_pitch: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawAdjustment {
+pub struct RawAdjustment {
     #[serde(default)]
     vertical: Option<f64>,
     #[serde(default)]
@@ -289,16 +341,16 @@ struct RawAdjustment {
     overlay: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawAllow {
-    warning: String,
-    reason: String,
+pub struct RawAllow {
+    pub warning: String,
+    pub reason: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawVariant {
+pub struct RawVariant {
     arm: HingeArm,
     code: String,
     #[serde(default)]
@@ -320,6 +372,8 @@ pub struct Pack {
     pub review: Review,
     pub sources: Vec<Source>,
     pub hinges: Vec<HingeFamily>,
+    pub slides: Vec<SlideFamily>,
+    pub feet: Vec<FootFamily>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -385,6 +439,16 @@ impl HingeFamily {
     /// The name in `language`, else English, else any.
     pub fn name(&self, language: &str) -> &str {
         localized(&self.names, language)
+    }
+}
+
+/// Millimetres without trailing zeros: "500", "12.7".
+pub(crate) fn mm_text(value: Length) -> String {
+    let um = value.micrometres();
+    if um % 1000 == 0 {
+        (um / 1000).to_string()
+    } else {
+        format!("{}", um as f64 / 1000.0)
     }
 }
 
@@ -585,6 +649,27 @@ fn convert(raw: RawPack, issues: &mut Vec<PackIssue>) -> Option<Pack> {
             hinge(h, &path, &sources, &mut codes, issues)
         })
         .collect();
+    let status = raw.review.status;
+    let slides = raw
+        .drawer_slides
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let path = format!("drawer_slides[{i}]");
+            family_id(issues, &path, &s.id, &mut family_ids);
+            hardware::slide(s, &path, &sources, status, &mut codes, issues)
+        })
+        .collect();
+    let feet = raw
+        .feet
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, f)| {
+            let path = format!("feet[{i}]");
+            family_id(issues, &path, &f.id, &mut family_ids);
+            hardware::foot(f, &path, &sources, status, &mut codes, issues)
+        })
+        .collect();
     Some(Pack {
         id: raw.id,
         manufacturer: raw.manufacturer,
@@ -598,7 +683,25 @@ fn convert(raw: RawPack, issues: &mut Vec<PackIssue>) -> Option<Pack> {
         },
         sources,
         hinges,
+        slides,
+        feet,
     })
+}
+
+fn family_id(issues: &mut Vec<PackIssue>, path: &str, id: &str, seen: &mut HashSet<String>) {
+    if !valid_id(id) {
+        issue(
+            issues,
+            format!("{path}.id"),
+            IssueKind::InvalidId(id.into()),
+        );
+    } else if !seen.insert(id.into()) {
+        issue(
+            issues,
+            format!("{path}.id"),
+            IssueKind::DuplicateId(id.into()),
+        );
+    }
 }
 
 fn hinge(
@@ -859,6 +962,7 @@ pub fn snapshot(
         source: source.url.clone(),
         revision: format!("{}; SHA-256 {}", source.revision, source.sha256),
         installation_dimensions: Default::default(),
+        item: None,
         verified_hinge: Some(VerifiedHinge {
             printed_page: source.printed_page.unwrap_or(0),
             pdf_page: source.pdf_page.unwrap_or(0),
@@ -994,6 +1098,50 @@ impl CatalogRegistry {
             .iter()
             .find(|v| v.code == origin.variant_code)?;
         Some((pack, family, variant))
+    }
+
+    pub fn find_slide(
+        &self,
+        origin: &CatalogOrigin,
+    ) -> Option<(&Pack, &SlideFamily, &SlideVariant)> {
+        let pack = self.pack(&origin.pack_id)?;
+        let family = pack.slides.iter().find(|f| f.id == origin.item_id)?;
+        let variant = family
+            .variants
+            .iter()
+            .find(|v| v.code == origin.variant_code)?;
+        Some((pack, family, variant))
+    }
+
+    pub fn find_foot(&self, origin: &CatalogOrigin) -> Option<(&Pack, &FootFamily, &FootVariant)> {
+        let pack = self.pack(&origin.pack_id)?;
+        let family = pack.feet.iter().find(|f| f.id == origin.item_id)?;
+        let variant = family
+            .variants
+            .iter()
+            .find(|v| v.code == origin.variant_code)?;
+        Some((pack, family, variant))
+    }
+
+    /// A slide family in effect, by pack and family id.
+    pub fn slide_family(&self, pack: &str, family: &str) -> Option<(&Pack, &SlideFamily)> {
+        let pack = self.pack(pack)?;
+        Some((pack, pack.slides.iter().find(|f| f.id == family)?))
+    }
+
+    /// Every length of a slide family as snapshots, shortest first.
+    pub fn slide_lengths(&self, pack: &str, family: &str, language: &str) -> Vec<CatalogReference> {
+        self.slide_family(pack, family)
+            .map(|(pack, family)| {
+                let mut lengths: Vec<_> = family
+                    .variants
+                    .iter()
+                    .map(|v| snapshot_slide(pack, family, v, language))
+                    .collect();
+                lengths.sort_by_key(|c| c.slide().map(|s| s.length));
+                lengths
+            })
+            .unwrap_or_default()
     }
 }
 

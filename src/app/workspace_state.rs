@@ -33,6 +33,8 @@ pub(crate) enum InspectorTarget {
     Sheet(Uuid),
     Material(Uuid),
     Installation(Uuid),
+    /// A drawer's slide pair.
+    Slide(Uuid),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -217,6 +219,7 @@ impl WorkspaceSession {
             InspectorTarget::Installation(id) => {
                 project.hinge_installations.iter().any(|h| h.id == *id)
             }
+            InspectorTarget::Slide(id) => project.slide_installations.iter().any(|s| s.id == *id),
         });
         self.focused_sheet = self
             .focused_sheet

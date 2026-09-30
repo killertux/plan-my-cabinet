@@ -869,6 +869,13 @@ impl Workspace {
             .filter(|j| crate::door_joint::needs_review(project, j))
             .map(|j| object_name(project, j.moving_root_id))
             .collect();
+        let slides: Vec<_> = project
+            .slide_installations
+            .iter()
+            .map(|s| (s, crate::slide_installation::diagnose(project, s)))
+            .filter(|(_, status)| !status.issues.is_empty())
+            .map(|(s, status)| crate::service::fittings::slide_status_json(project, s, &status))
+            .collect();
         let kerf_confirmed = project.confirmed_shop_kerf == Some(project.cutting_kerf);
         let cut_ready = boards.is_empty() && unverified.is_empty() && !project.boards.is_empty();
         let mut todo = Vec::new();
@@ -893,6 +900,11 @@ impl Workspace {
         if !doors.is_empty() {
             todo.push("Some doors need review: remove_door and create_door again.".into());
         }
+        if !slides.is_empty() {
+            todo.push(
+                "Some drawer slides have issues (list_slides): fix the gaps or the length.".into(),
+            );
+        }
         Ok(json!({
             "revision": project.revision,
             "ready_to_cut": cut_ready && kerf_confirmed,
@@ -903,6 +915,7 @@ impl Workspace {
             "cut_fee_known": project.cut_fee.is_some(),
             "hinge_issues": hinges,
             "doors_needing_review": doors,
+            "slide_issues": slides,
             "todo": todo,
         }))
     }

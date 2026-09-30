@@ -1,0 +1,424 @@
+# FGVTN / TN telescopic drawer slides (Brazil).
+#
+# Facts only, transcribed from the manufacturer's public sheets and checked
+# visually against a raster of each page (docs/catalogs/fgvtn-slides-review.md).
+# The PDFs are cited by URL and SHA-256 and are not redistributed.
+#
+# Units are millimetres. Holes are measured along each member from its front
+# end, on the member's centre line. cabinet_holes are on the cabinet (outer)
+# member, drawer_holes on the drawer (inner) member. front_setback is the gap
+# from the cabinet front edge to the slide front (37 to the first hole, which
+# is 35 from the member front).
+
+schema = 1
+id = "fgvtn-slides"
+manufacturer = "FGVTN"
+country = "BR"
+version = "2026-09-30"
+review = { status = "reviewed", date = "2026-09-30", notes = "Each sheet checked visually; see fgvtn-slides-review.md for inferred values and omissions." }
+
+[[sources]]
+id = "tt45-slowmotion"
+title = "FGVTN TT45 Slowmotion telescopic slide sheet"
+url = "https://www.fgvtn.com.br/site/novopdf/Corredica_Telescopica_Esferas_TT45_Slowmotion_Abr24.pdf"
+sha256 = "68cf8c4e00f387f6324571613f8386c17017a0b0cd6c7fbbece2fa061b62e31e"
+revision = "DS_CATALOGO_GERAL_FGVTN_ABRIL24 p. 46"
+printed_page = 46
+
+[[sources]]
+id = "tt44-slowmotion"
+title = "FGVTN TT44 Slowmotion telescopic slide sheet"
+url = "https://www.fgvtn.com.br/site/novopdf/CORREDICA_TT44_SLOW_JUN23.pdf"
+sha256 = "98a69f08d9d4b74cf70ca17ff767f96c0fbf52d53f073470372eee647ccdd9ce"
+revision = "DS_CATALOGO_GERAL_FGVTN_JUN23 p. 73"
+printed_page = 73
+
+[[sources]]
+id = "tt35-slowmotion"
+title = "FGVTN TT35 Slowmotion telescopic slide sheet"
+url = "https://www.fgvtn.com.br/site/novopdf/Corredica_Telescopica_FGVTN_TT35_Slowmotion_Nov23.pdf"
+sha256 = "e707e3a523417588dd449c94abcf5d7bb8757cd99be069e8c40513b3a9de46c3"
+revision = "Nov 2023"
+
+[[sources]]
+id = "tn-h45-slow"
+title = "TN H45 Slow telescopic slide sheet"
+url = "https://www.fgvtn.com.br/site/novopdf/Corredica_Telescopica_TN_H45_SLOW.pdf"
+sha256 = "92dc07449cd291e0ccbd48648f7968838de80699e46998bc311bf79305bde800"
+revision = "TN H45 Slow sheet"
+
+[[sources]]
+id = "tt90-slow"
+title = "FGVTN TT90 Slow heavy-duty telescopic slide sheet"
+url = "https://www.fgvtn.com.br/site/novopdf/Corredica_TT90_Slow.pdf"
+sha256 = "5aba69c778e3562a9ecfea00af79d93a13bc0a1a6ed716c39d1db6456b3c8dc1"
+revision = "TT90 Slow sheet"
+
+[[drawer_slides]]
+id = "tt45-slowmotion"
+name = { en = "FGVTN TT45 Slowmotion full-extension slide", pt-BR = "Corrediça telescópica FGVTN TT45 Slowmotion" }
+source = "tt45-slowmotion"
+height = 45
+clearance = { nominal = 12.7, minus = 0, plus = 0.5 }
+front_setback = 2
+extension = "full"
+members = 3
+soft_close = true
+capacity_kg = 45
+finish = "zinc"
+fixing = "Side mount, 32 mm system, pan-head Phillips screws PHS AA 3.5"
+rear_fixing = "Rear holes on the cabinet member: 2 × ø4.5, 7.5 from the rear end, 32 apart"
+
+  [[drawer_slides.variants]]
+  code = "0073.045350SX"
+  length = 350
+  travel = 335
+  cabinet_holes = [35, 51, 99, 163]
+  drawer_holes = [32, 48, 57.5, 144]
+
+  [[drawer_slides.variants]]
+  code = "0073.045400SX"
+  length = 400
+  travel = 390
+  cabinet_holes = [35, 51, 99, 195, 211]
+  drawer_holes = [32, 48, 57.5, 208]
+
+  [[drawer_slides.variants]]
+  code = "0073.045450SX"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 51, 99, 227, 243]
+  drawer_holes = [32, 48, 57.5, 208]
+
+  [[drawer_slides.variants]]
+  code = "0073.045500SX"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 368]
+
+  [[drawer_slides.variants]]
+  code = "0073.045550SX"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 400]
+
+[[drawer_slides]]
+id = "tt44-slowmotion"
+name = { en = "FGVTN TT44 Slowmotion full-extension slide", pt-BR = "Corrediça telescópica FGVTN TT44 Slowmotion" }
+source = "tt44-slowmotion"
+height = 45
+clearance = { nominal = 12.7, minus = 0, plus = 0.5 }
+front_setback = 2
+extension = "full"
+members = 3
+soft_close = true
+capacity_kg = 35
+fixing = "Side mount, 32 mm system, pan-head Phillips screws PHS AA 3.5"
+rear_fixing = "Rear holes on the cabinet member: 2 × ø4.5, 7.5 from the rear end, 25 apart (recommended for the soft close)"
+
+  [[drawer_slides.variants]]
+  code = "0073.044350SX"
+  length = 350
+  travel = 335
+  cabinet_holes = [35, 51, 99, 163]
+  drawer_holes = [32, 48, 57.5, 144]
+  finish = "satin zinc"
+
+  [[drawer_slides.variants]]
+  code = "0073.044B350SX"
+  length = 350
+  travel = 335
+  cabinet_holes = [35, 51, 99, 163]
+  drawer_holes = [32, 48, 57.5, 144]
+  finish = "white epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 350 mm, white", pt-BR = "Corrediça FGVTN TT44 Slowmotion 350 mm, branca" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044P350SX"
+  length = 350
+  travel = 335
+  cabinet_holes = [35, 51, 99, 163]
+  drawer_holes = [32, 48, 57.5, 144]
+  finish = "black epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 350 mm, black", pt-BR = "Corrediça FGVTN TT44 Slowmotion 350 mm, preta" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044400SX"
+  length = 400
+  travel = 390
+  cabinet_holes = [35, 51, 99, 195, 211]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "satin zinc"
+
+  [[drawer_slides.variants]]
+  code = "0073.044B400SX"
+  length = 400
+  travel = 390
+  cabinet_holes = [35, 51, 99, 195, 211]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "white epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 400 mm, white", pt-BR = "Corrediça FGVTN TT44 Slowmotion 400 mm, branca" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044P400SX"
+  length = 400
+  travel = 390
+  cabinet_holes = [35, 51, 99, 195, 211]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "black epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 400 mm, black", pt-BR = "Corrediça FGVTN TT44 Slowmotion 400 mm, preta" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044450SX"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 51, 99, 227, 243]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "satin zinc"
+
+  [[drawer_slides.variants]]
+  code = "0073.044B450SX"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 51, 99, 227, 243]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "white epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 450 mm, white", pt-BR = "Corrediça FGVTN TT44 Slowmotion 450 mm, branca" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044P450SX"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 51, 99, 227, 243]
+  drawer_holes = [32, 48, 57.5, 208]
+  finish = "black epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 450 mm, black", pt-BR = "Corrediça FGVTN TT44 Slowmotion 450 mm, preta" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044500SX"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 368]
+  finish = "satin zinc"
+
+  [[drawer_slides.variants]]
+  code = "0073.044B500SX"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 368]
+  finish = "white epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 500 mm, white", pt-BR = "Corrediça FGVTN TT44 Slowmotion 500 mm, branca" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044P500SX"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 368]
+  finish = "black epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 500 mm, black", pt-BR = "Corrediça FGVTN TT44 Slowmotion 500 mm, preta" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044550SX"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 400]
+  finish = "satin zinc"
+
+  [[drawer_slides.variants]]
+  code = "0073.044B550SX"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 400]
+  finish = "white epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 550 mm, white", pt-BR = "Corrediça FGVTN TT44 Slowmotion 550 mm, branca" }
+
+  [[drawer_slides.variants]]
+  code = "0073.044P550SX"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 240, 400]
+  finish = "black epoxy"
+  name = { en = "FGVTN TT44 Slowmotion 550 mm, black", pt-BR = "Corrediça FGVTN TT44 Slowmotion 550 mm, preta" }
+
+[[drawer_slides]]
+id = "tt35-slowmotion"
+name = { en = "FGVTN TT35 Slowmotion slide", pt-BR = "Corrediça telescópica FGVTN TT35 Slowmotion" }
+source = "tt35-slowmotion"
+height = 35
+clearance = { nominal = 12.7, minus = 0, plus = 0.5 }
+front_setback = 2
+extension = "full"
+members = 3
+soft_close = true
+capacity_kg = 25
+finish = "satin zinc"
+fixing = "Side mount, 32 mm system, pan-head Phillips screws PHS AA 3.5"
+rear_fixing = "Screw at the rear end of the cabinet member (position not dimensioned on the sheet)"
+notes = "The 250 and 300 mm lengths carry 10 kg and a shorter soft-close unit."
+
+  [[drawer_slides.variants]]
+  code = "0073.035250SX"
+  length = 250
+  travel = 250
+  cabinet_holes = [35, 51, 99]
+  drawer_holes = [32, 48, 57.5]
+  capacity_kg = 10
+
+  [[drawer_slides.variants]]
+  code = "0073.035300SX"
+  length = 300
+  travel = 297
+  cabinet_holes = [35, 51, 99]
+  drawer_holes = [32, 48, 57.5, 134.5, 144, 160]
+  capacity_kg = 10
+
+  [[drawer_slides.variants]]
+  code = "0073.035350SX"
+  length = 350
+  travel = 345
+  cabinet_holes = [35, 51, 99, 227, 243]
+  drawer_holes = [32, 48, 57.5, 134.5, 144, 160, 262.5, 272, 288]
+
+  [[drawer_slides.variants]]
+  code = "0073.035400SX"
+  length = 400
+  travel = 400
+  cabinet_holes = [35, 51, 99, 259, 275]
+  drawer_holes = [32, 48, 57.5, 166.5, 176, 192, 326.5, 336, 352]
+
+  [[drawer_slides.variants]]
+  code = "0073.035450SX"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 51, 99, 259, 275, 298, 323]
+  drawer_holes = [32, 48, 57.5, 198.5, 208, 224, 358.5, 368, 384]
+
+  [[drawer_slides.variants]]
+  code = "0073.035500SX"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 51, 99, 259, 275, 330, 355]
+  drawer_holes = [32, 48, 57.5, 230.5, 240, 256, 390.5, 400, 416]
+
+  [[drawer_slides.variants]]
+  code = "0073.035550SX"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 51, 99, 259, 275, 362, 387]
+  drawer_holes = [32, 48, 57.5, 262.5, 272, 288, 454.5, 464, 480]
+
+[[drawer_slides]]
+id = "tn-h45-slow"
+name = { en = "TN H45 Slow telescopic slide", pt-BR = "Corrediça telescópica TN H45 Slow" }
+source = "tn-h45-slow"
+height = 45
+clearance = { nominal = 12.7, minus = 0, plus = 0.5 }
+front_setback = 2
+extension = "full"
+members = 3
+soft_close = true
+capacity_kg = 35
+finish = "zinc"
+fixing = "Side mount, pan-head Phillips chipboard screws ø3.5"
+rear_fixing = "Rear holes on the cabinet member: 2 × ø4.5, 18 apart, 40 (up to 350 mm) or 60 (400 mm and longer) from the rear end; required for the soft close"
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX25000"
+  length = 250
+  travel = 200
+  cabinet_holes = [35, 99, 115, 131]
+  drawer_holes = [32, 48, 57.5, 161]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX30000"
+  length = 300
+  travel = 275
+  cabinet_holes = [35, 99, 115, 131, 163]
+  drawer_holes = [32, 48, 57.5, 112, 211]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX35000"
+  length = 350
+  travel = 350
+  cabinet_holes = [35, 99, 115, 131, 163]
+  drawer_holes = [32, 48, 57.5, 144, 261]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX40000"
+  length = 400
+  travel = 400
+  cabinet_holes = [35, 99, 115, 131, 195]
+  drawer_holes = [32, 48, 57.5, 208, 291]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX45000"
+  length = 450
+  travel = 450
+  cabinet_holes = [35, 99, 115, 131, 227]
+  drawer_holes = [32, 48, 57.5, 208, 341]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX50000"
+  length = 500
+  travel = 500
+  cabinet_holes = [35, 99, 115, 131, 259]
+  drawer_holes = [32, 48, 57.5, 240, 368]
+
+  [[drawer_slides.variants]]
+  code = "545TN287SX55000"
+  length = 550
+  travel = 550
+  cabinet_holes = [35, 99, 115, 131, 259]
+  drawer_holes = [32, 48, 57.5, 240, 400]
+
+[[drawer_slides]]
+id = "tt90-slow"
+name = { en = "FGVTN TT90 Slow heavy-duty slide", pt-BR = "Corrediça telescópica FGVTN TT90 Slow (carga pesada)" }
+source = "tt90-slow"
+height = 52
+clearance = { nominal = 19, minus = 0.3, plus = 0.3 }
+front_setback = 2
+extension = "full"
+members = 3
+soft_close = true
+capacity_kg = 90
+finish = "zinc"
+fixing = "Countersunk Phillips chipboard screws ø4×15, or countersunk M4/M5 machine screws"
+rear_fixing = "ø5 hole at the rear end of the cabinet member: a screw there is required"
+notes = "Hole positions are the centres of each ø5 + 2 × ø6 countersunk group (32 mm system)."
+
+  [[drawer_slides.variants]]
+  code = "0073.090450SX"
+  length = 450
+  travel = 435
+  cabinet_holes = [51, 302]
+  drawer_holes = [51, 214, 377]
+
+  [[drawer_slides.variants]]
+  code = "0073.090500SX"
+  length = 500
+  travel = 485
+  cabinet_holes = [51, 213, 352]
+  drawer_holes = [51, 239, 427]
+
+  [[drawer_slides.variants]]
+  code = "0073.090550SX"
+  length = 550
+  travel = 535
+  cabinet_holes = [51, 263, 402]
+  drawer_holes = [51, 264, 477]
+
+  [[drawer_slides.variants]]
+  code = "0073.090600SX"
+  length = 600
+  travel = 585
+  cabinet_holes = [51, 263, 452]
+  drawer_holes = [51, 289, 527]

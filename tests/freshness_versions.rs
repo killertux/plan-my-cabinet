@@ -132,7 +132,7 @@ fn v4_receipt_hashes_printed_aliases_and_keeps_historical_bytes() {
     .unwrap();
     let path = std::env::temp_dir().join(format!("freshness-{}.pdf", Uuid::new_v4()));
     let receipt = write_pdf(&plan, Some(&path), Overwrite::Decline).unwrap();
-    assert_eq!(receipt.metadata.fingerprint_version, Some(4));
+    assert_eq!(receipt.metadata.fingerprint_version, Some(5));
     project.export_records.push(receipt.clone());
     let mut editor = ProjectEditor::new(project).unwrap();
     assert_eq!(
@@ -235,7 +235,7 @@ fn editor_snapshot_receipt_with_noninitial_alias_is_immediately_current() {
         .unwrap();
     std::fs::remove_file(path).unwrap();
     let record = editor.project().export_records.last().unwrap();
-    assert_eq!(record.metadata.fingerprint_version, Some(4));
+    assert_eq!(record.metadata.fingerprint_version, Some(5));
     assert_eq!(
         record
             .metadata

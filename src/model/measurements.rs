@@ -2,7 +2,7 @@
 use uuid::Uuid;
 
 use crate::assembly_edit::{AssemblyEditError, world_pose};
-use crate::domain::{HardwareKind, Project};
+use crate::domain::Project;
 use crate::units::{Pose, Quaternion};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,7 +132,7 @@ pub fn measure(
     if scope == Scope::Overall {
         for hardware in &project.hardware {
             if included(hardware.id, hardware.parent_id) {
-                let HardwareKind::Placeholder { dimensions } = hardware.kind else {
+                let Some(dimensions) = project.hardware_dimensions(hardware) else {
                     return Err(MeasurementError::UndimensionedHardware(hardware.id));
                 };
                 add_box(
@@ -160,7 +160,7 @@ pub fn measure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Assembly, Board, BoardGrain, Hardware, Material};
+    use crate::domain::{Assembly, Board, BoardGrain, Hardware, HardwareKind, Material};
     use crate::money::Currency;
     use crate::units::Length;
 

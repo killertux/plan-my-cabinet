@@ -1185,11 +1185,20 @@ impl DesktopApp {
 
     fn hardware_add_menu(&mut self, ui: &mut egui::Ui) {
         let mut run = None;
-        for action in [A::NewHinge, A::NewDoor, A::NewHardware, A::AddCatalog] {
+        for action in [
+            A::NewHinge,
+            A::NewDoor,
+            A::NewSlides,
+            A::NewFoot,
+            A::NewHardware,
+            A::AddCatalog,
+        ] {
             let request = Request::new(action);
             let (icon, key) = match action {
                 A::NewHinge => (Icon::Hinge, "hinge-new"),
                 A::NewDoor => (Icon::Door, "door-add"),
+                A::NewSlides => (Icon::Layers, "slide-new"),
+                A::NewFoot => (Icon::Cube, "foot-new"),
                 A::NewHardware => (Icon::Cube, "hardware-new"),
                 _ => (Icon::Plus, "catalog-add"),
             };

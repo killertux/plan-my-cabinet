@@ -1,4 +1,5 @@
-//! Hinge records pinned into projects, and how far their facts can be trusted.
+//! Hardware records pinned into projects (hinges, drawer slides, feet), and
+//! how far their facts can be trusted.
 //!
 //! Records come from catalog packs (`catalog_pack`). A project keeps its own
 //! copy, so a changed or missing pack never alters a saved project. Trust is
@@ -8,9 +9,9 @@ use std::sync::OnceLock;
 
 use uuid::Uuid;
 
-use crate::catalog_pack::{CatalogRegistry, ReviewStatus, snapshot};
+use crate::catalog_pack::{CatalogRegistry, ReviewStatus, snapshot, snapshot_foot, snapshot_slide};
 use crate::commands::{EditError, ProjectEditor};
-use crate::domain::{CatalogReference, Project, VerifiedHinge};
+use crate::domain::{CatalogItem, CatalogReference, FootSpec, Project, SlideSpec, VerifiedHinge};
 use crate::hinge_installation::{InstallationStatus, diagnose};
 use crate::units::Length;
 
@@ -28,7 +29,13 @@ pub enum Trust {
     /// Coherent facts from a user pack, an older bundled revision or a draft.
     /// Guidance is given and labelled as user-supplied data.
     UserSupplied,
+    /// Equals a record of a bundled pack of representative dimensions of a
+    /// common product type (not a manufacturer sheet).
+    Generic,
 }
+
+/// Default family for drawer slides: full extension, 45 kg, 350–550 mm.
+pub const DEFAULT_SLIDE_FAMILY: (&str, &str) = ("fgvtn-slides", "tt45-slowmotion");
 
 fn bundled() -> &'static CatalogRegistry {
     static REGISTRY: OnceLock<CatalogRegistry> = OnceLock::new();
@@ -37,11 +44,20 @@ fn bundled() -> &'static CatalogRegistry {
 
 /// Every record of the bundled reviewed packs, as snapshots.
 fn reviewed_records() -> &'static [CatalogReference] {
-    static RECORDS: OnceLock<Vec<CatalogReference>> = OnceLock::new();
-    RECORDS.get_or_init(|| {
+    bundled_records(ReviewStatus::Reviewed)
+}
+
+fn bundled_records(status: ReviewStatus) -> &'static [CatalogReference] {
+    static REVIEWED: OnceLock<Vec<CatalogReference>> = OnceLock::new();
+    static GENERIC: OnceLock<Vec<CatalogReference>> = OnceLock::new();
+    let cell = match status {
+        ReviewStatus::Generic => &GENERIC,
+        _ => &REVIEWED,
+    };
+    cell.get_or_init(|| {
         let mut records = Vec::new();
         for pack in bundled().usable() {
-            if pack.review.status != ReviewStatus::Reviewed {
+            if pack.review.status != status {
                 continue;
             }
             for family in &pack.hinges {
@@ -49,9 +65,40 @@ fn reviewed_records() -> &'static [CatalogReference] {
                     records.push(snapshot(pack, family, variant, "en"));
                 }
             }
+            for language in ["en", "pt-BR"] {
+                for family in &pack.slides {
+                    for variant in &family.variants {
+                        records.push(snapshot_slide(pack, family, variant, language));
+                    }
+                }
+                for family in &pack.feet {
+                    for variant in &family.variants {
+                        records.push(snapshot_foot(pack, family, variant, language));
+                    }
+                }
+            }
         }
         records
     })
+}
+
+/// Pinned slide facts usable for guidance.
+pub fn slide_spec(entry: &CatalogReference) -> Option<&SlideSpec> {
+    entry.slide().filter(|s| s.is_consistent())
+}
+
+/// Pinned foot facts usable for drawing and lists.
+pub fn foot_spec(entry: &CatalogReference) -> Option<&FootSpec> {
+    entry.foot().filter(|s| s.is_consistent())
+}
+
+/// The record gives guidance: coherent hinge, slide or foot facts.
+pub fn is_usable(entry: &CatalogReference) -> bool {
+    match &entry.item {
+        None => is_verified(entry),
+        Some(CatalogItem::Slide(s)) => s.is_consistent(),
+        Some(CatalogItem::Foot(f)) => f.is_consistent(),
+    }
 }
 
 fn same_facts(a: &CatalogReference, b: &CatalogReference) -> bool {
@@ -61,6 +108,23 @@ fn same_facts(a: &CatalogReference, b: &CatalogReference) -> bool {
         && a.revision == b.revision
         && a.installation_dimensions.is_empty()
         && a.verified_hinge == b.verified_hinge
+        && same_item(a.item.as_ref(), b.item.as_ref())
+}
+
+/// Items compare without the display family name, which is localized.
+fn same_item(a: Option<&CatalogItem>, b: Option<&CatalogItem>) -> bool {
+    match (a, b) {
+        (Some(CatalogItem::Slide(a)), Some(CatalogItem::Slide(b))) => {
+            SlideSpec {
+                family: String::new(),
+                ..a.clone()
+            } == SlideSpec {
+                family: String::new(),
+                ..b.clone()
+            }
+        }
+        (a, b) => a == b,
+    }
 }
 
 /// Pinned facts usable for numeric guidance: present and internally
@@ -77,6 +141,19 @@ pub fn is_verified(entry: &CatalogReference) -> bool {
 
 /// `None` when the record gives no guidance at all.
 pub fn trust(entry: &CatalogReference) -> Option<Trust> {
+    if entry.item.is_some() {
+        if !is_usable(entry) {
+            return None;
+        }
+        let matches = |records: &[CatalogReference]| records.iter().any(|r| same_facts(entry, r));
+        return Some(if matches(reviewed_records()) {
+            Trust::Reviewed
+        } else if matches(bundled_records(ReviewStatus::Generic)) {
+            Trust::Generic
+        } else {
+            Trust::UserSupplied
+        });
+    }
     facts(entry)?;
     Some(
         if reviewed_records()
@@ -143,12 +220,21 @@ pub fn replacement(
     entry: &CatalogReference,
     language: &str,
 ) -> Option<CatalogReference> {
-    let mut fresh = match &entry.origin {
-        Some(origin) => {
+    let mut fresh = match (&entry.origin, &entry.item) {
+        (Some(origin), Some(CatalogItem::Slide(_))) => {
+            let (pack, family, variant) = registry.find_slide(origin)?;
+            snapshot_slide(pack, family, variant, language)
+        }
+        (Some(origin), Some(CatalogItem::Foot(_))) => {
+            let (pack, family, variant) = registry.find_foot(origin)?;
+            snapshot_foot(pack, family, variant, language)
+        }
+        (None, Some(_)) => return None,
+        (Some(origin), None) => {
             let (pack, family, variant) = registry.find_variant(origin)?;
             snapshot(pack, family, variant, language)
         }
-        None => registry.usable().into_iter().find_map(|pack| {
+        (None, None) => registry.usable().into_iter().find_map(|pack| {
             pack.hinges.iter().find_map(|family| {
                 family
                     .variants
@@ -159,6 +245,15 @@ pub fn replacement(
         })?,
     };
     fresh.id = entry.id;
+    // Keep the pinned name language: only facts are compared for updates.
+    if fresh.item.is_some() {
+        fresh.name.clone_from(&entry.name);
+        if let (Some(CatalogItem::Slide(new)), Some(CatalogItem::Slide(old))) =
+            (&mut fresh.item, &entry.item)
+        {
+            new.family.clone_from(&old.family);
+        }
+    }
     Some(fresh)
 }
 
@@ -221,7 +316,7 @@ pub fn update_from_catalog(
         .find(|entry| entry.id == catalog_id)
         .ok_or(EditError::Command(CatalogEditError::MissingEntry))?;
     let replacement = replacement(registry, current, language)
-        .filter(is_verified)
+        .filter(is_usable)
         .ok_or(EditError::Command(CatalogEditError::NotInCatalog))?;
     editor.transact(|candidate| {
         let entry = candidate

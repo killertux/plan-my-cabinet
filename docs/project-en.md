@@ -39,8 +39,11 @@ or unconfirmed numeric rounding blocks generation.
 carcass, separate box sides/fronts/backs/applied bottoms and exterior fronts.
 Set its drawer count, box depth, side and rear clearances, vertical clearance,
 front reveals and gaps in the setup. These are independent editable boards,
-not ongoing parametric constraints. They do not select slides, supply
-machining instructions, or certify structural or mechanical fit.
+not ongoing parametric constraints. Each drawer gets a pair of catalog
+drawer slides (default FGVTN TT45; choose another model or none in the
+setup), and the box is two slide clearances narrower than the opening. The
+template does not supply machining instructions or certify structural or
+mechanical fit.
 
 The setup does not alter the open project. **Cancel setup** returns to Welcome
 without creating a project or a recent entry. Generate first asks how to

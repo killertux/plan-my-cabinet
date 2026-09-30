@@ -7,7 +7,7 @@ use std::path::Path;
 use plan_my_cabinet::commands::ProjectEditor;
 use plan_my_cabinet::domain::{
     Allocation, Board, BoardGrain, CatalogReference, Hardware, HardwareKind, Material, Project,
-    Stock, StockGrain, StockSource,
+    SCHEMA_VERSION, Stock, StockGrain, StockSource,
 };
 use plan_my_cabinet::money::{Currency, Money};
 use plan_my_cabinet::persistence::{prepare_bytes, prepare_reader, save, serialize};
@@ -73,6 +73,7 @@ fn fixture() -> Project {
         installation_dimensions: HashMap::new(),
         verified_hinge: None,
         origin: None,
+        item: None,
     });
     p.hardware.push(Hardware {
         id: id(7),
@@ -145,7 +146,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     std::fs::write(&source, LEGACY).unwrap();
     let mut editor = reopen(&source);
     let p = editor.project();
-    assert_eq!(p.schema_version, 3);
+    assert_eq!(p.schema_version, SCHEMA_VERSION);
     assert_eq!(p.revision, 17);
     assert!(!editor.is_dirty());
     assert!(!editor.can_undo());
@@ -153,7 +154,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     assert_eq!(editor.saved_revision(), Some(17));
     // Independent typed decoding proves no migration quantization or catalog refresh.
     let mut expected: Project = serde_json::from_slice(LEGACY).unwrap();
-    expected.schema_version = 3;
+    expected.schema_version = SCHEMA_VERSION;
     expected.stock_aliases.insert(id(4), "S1".into());
     expected.next_stock_s_alias = 2;
     assert_eq!(p, &expected);
@@ -190,7 +191,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     assert!(!loaded.is_dirty());
     // Compare all JSON fields as well, including IDs, prices and historical receipts.
     let mut original: serde_json::Value = serde_json::from_slice(LEGACY).unwrap();
-    original["schema_version"] = 3.into();
+    original["schema_version"] = SCHEMA_VERSION.into();
     // Version 3 writes the catalog-pack fields with their exact v1 defaults.
     for entry in original["catalog"].as_array_mut().unwrap() {
         entry["origin"] = serde_json::Value::Null;
@@ -234,7 +235,7 @@ fn legacy_missing_optional_fields_keep_original_defaults_without_dirtying() {
     let bytes = serde_json::to_vec(&value).unwrap();
     let editor = prepare_bytes(&bytes).unwrap().into_editor();
     let p = editor.project();
-    assert_eq!(p.schema_version, 3);
+    assert_eq!(p.schema_version, SCHEMA_VERSION);
     assert_eq!(
         p.grid_spacing,
         plan_my_cabinet::domain::DEFAULT_GRID_SPACING
@@ -278,7 +279,7 @@ fn legacy_invalid_and_future_documents_preserve_files_and_active_edits() {
             serde_json::json!("bad"),
         ),
         ("/export_records/0/file_sha256", serde_json::json!("bad")),
-        ("/schema_version", serde_json::json!(4)),
+        ("/schema_version", serde_json::json!(SCHEMA_VERSION + 1)),
     ] {
         let mut value = original.clone();
         *value.pointer_mut(pointer).unwrap() = bad;

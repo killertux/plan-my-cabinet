@@ -1,6 +1,6 @@
 //! Project-driven, depth-tested 3D viewport. Camera state is presentation-only.
 use eframe::egui;
-use plan_my_cabinet::domain::{Board, HardwareKind, Project};
+use plan_my_cabinet::domain::{Board, Project};
 use plan_my_cabinet::placement::{BoardFace, Side};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
@@ -346,9 +346,7 @@ fn pick_visible(
         .iter()
         .filter(|h| selection.visible(project, h.id))
         .filter_map(|h| {
-            let HardwareKind::Placeholder { dimensions } = h.kind else {
-                return None;
-            };
+            let dimensions = project.hardware_dimensions(h)?;
             let pose = plan_my_cabinet::assembly_edit::world_pose(project, h.id).ok()?;
             let (distance, _) = board_hit(
                 ray,

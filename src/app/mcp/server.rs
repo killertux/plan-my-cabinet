@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
 use plan_my_cabinet::service::design::*;
+use plan_my_cabinet::service::fittings::*;
 use plan_my_cabinet::service::hardware::*;
 use plan_my_cabinet::service::project::*;
 use plan_my_cabinet::service::stock::*;
@@ -41,7 +42,8 @@ pub(crate) async fn serve(workspace: Workspace) -> Result<(), Box<dyn std::error
             + PmcServer::design_router()
             + PmcServer::vision_router()
             + PmcServer::stock_router()
-            + PmcServer::hardware_router(),
+            + PmcServer::hardware_router()
+            + PmcServer::fittings_router(),
     };
     let service = server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
@@ -441,7 +443,7 @@ impl PmcServer {
     }
 
     #[tool(
-        description = "Create (or, with `hardware`, update) a dimensioned non-wood reference box such as a foot, handle or appliance. Not cut from stock."
+        description = "Create (or, with `hardware`, update) a dimensioned non-wood reference box such as a handle or appliance. Not cut from stock. For feet use add_foot (real shapes from the catalog)."
     )]
     async fn set_placeholder_hardware(
         &self,
@@ -687,7 +689,7 @@ impl PmcServer {
         self.call(move |ws| ws.list_hinge_catalog(input)).await
     }
 
-    #[tool(description = "Hinge models pinned to this project.")]
+    #[tool(description = "Hardware models pinned to this project: hinges, drawer slides and feet.")]
     async fn list_project_catalog(&self) -> Result<CallToolResult, McpError> {
         self.call(|ws| ws.list_project_catalog()).await
     }
@@ -779,6 +781,141 @@ impl PmcServer {
     #[tool(description = "Doors with mount, hinge count, review status and opening limit.")]
     async fn list_doors(&self) -> Result<CallToolResult, McpError> {
         self.call(|ws| ws.list_doors()).await
+    }
+}
+
+// ------------------------------------------------- slides and feet
+
+#[tool_router(router = fittings_router)]
+impl PmcServer {
+    #[tool(
+        description = "Hardware catalogs available to pin: hinges, drawer slides (every length with travel, clearance and holes) and feet (shape and size). kind filters; reload re-reads user packs."
+    )]
+    async fn list_hardware_catalog(
+        &self,
+        Parameters(input): Parameters<ListHardwareCatalogInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.list_hardware_catalog(input)).await
+    }
+
+    #[tool(
+        description = "Pin one drawer slide length to the project (by variant code, or family + length). add_slides pins automatically; use this to choose ahead."
+    )]
+    async fn add_catalog_slide(
+        &self,
+        Parameters(input): Parameters<AddCatalogSlideInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.add_catalog_slide(input)).await
+    }
+
+    #[tool(description = "Pin a foot model from the catalog to the project.")]
+    async fn add_catalog_foot(
+        &self,
+        Parameters(input): Parameters<AddCatalogFootInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.add_catalog_foot(input)).await
+    }
+
+    #[tool(
+        description = "Create a new drawer slide model (height, side clearance with tolerance, lengths with travel and holes) and pin every length. save_to_catalog also writes it to the app's user catalog (user-models.toml) for future projects. Values are checked with the catalog rules."
+    )]
+    async fn create_slide_model(
+        &self,
+        Parameters(input): Parameters<CreateSlideModelInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.create_slide_model(input)).await
+    }
+
+    #[tool(
+        description = "Create a new foot model and pin it. Shapes: tapered (plastic cone/pyramid: top, bottom, height), post (tube + top plate + optional glide: chrome feet, straight table legs), frame (closed tube frame: industrial legs; bottom_width < top_width = trapezoid, = tube_width = V). The picture follows these dimensions. save_to_catalog writes it to user-models.toml."
+    )]
+    async fn create_foot_model(
+        &self,
+        Parameters(input): Parameters<CreateFootModelInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.create_foot_model(input)).await
+    }
+
+    #[tool(
+        description = "Plan slides for a drawer without changing anything: finds the box sides and the carcass sides beside them, measures the gaps and depths, and picks the longest length of the family that fits."
+    )]
+    async fn suggest_slides(
+        &self,
+        Parameters(input): Parameters<SuggestSlidesInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.suggest_slides(input)).await
+    }
+
+    #[tool(
+        description = "Install a pair of drawer slides on a drawer (its assembly or any board of it): the longest length that fits, centred on the box sides, 2 mm behind the carcass front. Checks the side gaps against the slide's clearance (e.g. 12.7 +0.5/-0 mm: make the box 25.4 mm narrower than the opening), depth and height; returns hole positions. Default family TT45 Slowmotion."
+    )]
+    async fn add_slides(
+        &self,
+        Parameters(input): Parameters<AddSlidesInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.add_slides(input)).await
+    }
+
+    #[tool(
+        description = "Change a drawer's slides: another length or entry, the height or the setback; refits after boards moved."
+    )]
+    async fn update_slide(
+        &self,
+        Parameters(input): Parameters<UpdateSlideInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.update_slide(input)).await
+    }
+
+    #[tool(description = "Remove a drawer's slides.")]
+    async fn remove_slide(
+        &self,
+        Parameters(input): Parameters<SlideRefInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.remove_slide(input)).await
+    }
+
+    #[tool(
+        description = "Drawer slides with their product, length, gaps, hole positions (mm from each board's front edge) and issues."
+    )]
+    async fn list_slides(
+        &self,
+        Parameters(input): Parameters<ListSlidesInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.list_slides(input)).await
+    }
+
+    #[tool(
+        description = "Place feet (catalog code like generic-post-square-100, a pinned entry, or a created model). anchor top_center puts the mounting face centre at the pose (e.g. under the cabinet bottom); positions places several at once. Feet are not cut; raise the furniture yourself (transform_objects) so they stand on the floor at z = 0."
+    )]
+    async fn add_foot(
+        &self,
+        Parameters(input): Parameters<AddFootInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.add_foot(input)).await
+    }
+
+    #[tool(description = "Change a foot's model, name, parent or position.")]
+    async fn update_foot(
+        &self,
+        Parameters(input): Parameters<UpdateFootInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.update_foot(input)).await
+    }
+
+    #[tool(description = "Feet in the project with model, position and counts per model.")]
+    async fn list_feet(&self) -> Result<CallToolResult, McpError> {
+        self.call(|ws| ws.list_feet()).await
+    }
+
+    #[tool(
+        description = "Render the model with a drawer pulled out on its slides (fraction 0..1 of the travel, or a distance), to see the box and the slide members."
+    )]
+    async fn render_drawer_opening(
+        &self,
+        Parameters(input): Parameters<DrawerOpeningInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_images(move |ws| ws.render_drawer_opening(input))
+            .await
     }
 }
 

@@ -116,6 +116,12 @@ fn stdio_server_builds_renders_and_saves_a_cabinet() {
         "add_hinges",
         "create_door",
         "save_project",
+        "list_hardware_catalog",
+        "add_slides",
+        "add_foot",
+        "create_foot_model",
+        "create_slide_model",
+        "render_drawer_opening",
     ] {
         assert!(names.contains(&expected), "missing {expected}");
     }
@@ -149,6 +155,28 @@ fn stdio_server_builds_renders_and_saves_a_cabinet() {
     let error: Value =
         serde_json::from_str(missing["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(error["code"], "not_found");
+
+    // A drawer chest in the same project comes with slides; pull one out.
+    let chest = Client::json(&client.call(
+        "generate_template",
+        json!({ "kind": "drawers", "name": "Chest", "into": "current_project", "offset_mm": [800, 0, 0] }),
+    ));
+    assert_eq!(chest["slides"].as_array().unwrap().len(), 3);
+    let opened = client.call(
+        "render_drawer_opening",
+        json!({ "drawer": "Drawer 1", "fraction": 0.5, "width": 320, "height": 240 }),
+    );
+    assert!(
+        opened["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["type"] == "image")
+    );
+    client.call(
+        "add_foot",
+        json!({ "model": "generic-tapered-round-40-black", "parent": "Chest", "positions": [[850, 50, 0]] }),
+    );
 
     let path = dir.join("wall.pmcab");
     let saved = Client::json(&client.call("save_project", json!({ "path": path })));

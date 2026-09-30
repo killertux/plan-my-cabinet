@@ -6,8 +6,21 @@ use crate::*;
 use plan_my_cabinet::assembly_edit::world_pose;
 use plan_my_cabinet::domain::HardwareKind;
 
+/// A foot model: pinned in the project, or a catalog variant to pin.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FootModel {
+    Pinned(Uuid),
+    Catalog {
+        pack: String,
+        family: String,
+        code: String,
+    },
+}
+
 pub(crate) struct HardwareDialog {
     id: Option<Uuid>,
+    /// `Some` for a catalog foot; `None` for a dimensioned reference box.
+    foot: Option<Option<FootModel>>,
     project_id: Uuid,
     revision: u64,
     name: String,
@@ -146,8 +159,15 @@ impl HardwareDialog {
         let position =
             std::array::from_fn(|i| field(trim3(world.map_or(0.0, |p| p.translation_mm[i]))));
         let original_position = position.each_ref().map(|field| field.text.clone());
+        let foot = item.and_then(|h| match h.kind {
+            HardwareKind::Catalog { catalog_id } if app.editor.project().foot_spec(h).is_some() => {
+                Some(Some(FootModel::Pinned(catalog_id)))
+            }
+            _ => None,
+        });
         Self {
             id,
+            foot,
             project_id: app.editor.project().id,
             revision: app.editor.project().revision,
             name: item.map_or(String::new(), |h| h.name.clone()),
@@ -170,6 +190,109 @@ impl HardwareDialog {
     }
 }
 
+impl HardwareDialog {
+    /// A new catalog foot: the first pinned foot model, else the first in the catalog.
+    pub(crate) fn new_foot(app: &DesktopApp) -> Self {
+        let mut dialog = Self::new(app, None);
+        let pinned = app
+            .editor
+            .project()
+            .catalog
+            .iter()
+            .find(|c| c.foot().is_some())
+            .map(|c| FootModel::Pinned(c.id));
+        let catalog = || {
+            foot_models(app)
+                .into_iter()
+                .map(|(model, _)| model)
+                .find(|m| matches!(m, FootModel::Catalog { .. }))
+        };
+        dialog.foot = Some(pinned.or_else(catalog));
+        dialog.name = app.localizer.text("foot-default-name");
+        dialog
+    }
+}
+
+/// Foot models to offer: pinned ones first, then every catalog variant.
+fn foot_models(app: &DesktopApp) -> Vec<(FootModel, String)> {
+    let language = app.localizer.language().tag();
+    let project = app.editor.project();
+    let mut out: Vec<(FootModel, String)> = project
+        .catalog
+        .iter()
+        .filter(|c| c.foot().is_some())
+        .map(|c| (FootModel::Pinned(c.id), c.name.clone()))
+        .collect();
+    for pack in app.hardware.catalogs.usable() {
+        for family in &pack.feet {
+            for variant in &family.variants {
+                let already = project.catalog.iter().any(|c| {
+                    c.foot().is_some()
+                        && c.origin
+                            .as_ref()
+                            .is_some_and(|o| o.pack_id == pack.id && o.variant_code == variant.code)
+                });
+                if already {
+                    continue;
+                }
+                let name = variant
+                    .names
+                    .as_ref()
+                    .and_then(|n| n.get(language).or_else(|| n.get("en")))
+                    .cloned()
+                    .unwrap_or_else(|| family.name(language).to_owned());
+                out.push((
+                    FootModel::Catalog {
+                        pack: pack.id.clone(),
+                        family: family.id.clone(),
+                        code: variant.code.clone(),
+                    },
+                    name,
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// The catalog id to use and, for a catalog variant, the snapshot to pin.
+fn resolve_foot(
+    app: &DesktopApp,
+    model: &FootModel,
+) -> Option<(Uuid, Option<plan_my_cabinet::domain::CatalogReference>)> {
+    match model {
+        FootModel::Pinned(id) => Some((*id, None)),
+        FootModel::Catalog { pack, family, code } => {
+            let pack = app.hardware.catalogs.pack(pack)?;
+            let family = pack.feet.iter().find(|f| &f.id == family)?;
+            let variant = family.variants.iter().find(|v| &v.code == code)?;
+            let entry = plan_my_cabinet::catalog_pack::snapshot_foot(
+                pack,
+                family,
+                variant,
+                app.localizer.language().tag(),
+            );
+            Some((entry.id, Some(entry)))
+        }
+    }
+}
+
+fn foot_size(app: &DesktopApp, model: &FootModel) -> Option<[Length; 3]> {
+    match model {
+        FootModel::Pinned(id) => app
+            .editor
+            .project()
+            .catalog
+            .iter()
+            .find(|c| c.id == *id)
+            .and_then(|c| c.foot())
+            .map(|s| s.local_size()),
+        FootModel::Catalog { .. } => resolve_foot(app, model)
+            .and_then(|(_, pin)| pin)
+            .and_then(|c| c.foot().map(|s| s.local_size())),
+    }
+}
+
 impl DesktopApp {
     pub(crate) fn remove_reference_hardware(&mut self, id: Uuid) -> bool {
         let removed = self.editor.remove_placeholder(id).is_ok();
@@ -189,11 +312,15 @@ impl DesktopApp {
             .iter()
             .map(|h| match h.kind {
                 HardwareKind::Placeholder { dimensions } => {
-                    (h.id, h.name.clone(), Some(dimensions), None)
+                    (h.id, h.name.clone(), Some(dimensions), None, false)
                 }
-                HardwareKind::Catalog { catalog_id } => {
-                    (h.id, h.name.clone(), None, Some(catalog_id))
-                }
+                HardwareKind::Catalog { catalog_id } => (
+                    h.id,
+                    h.name.clone(),
+                    None,
+                    Some(catalog_id),
+                    self.editor.project().foot_spec(h).is_some(),
+                ),
             })
             .collect();
         if items.is_empty() {
@@ -251,7 +378,7 @@ impl DesktopApp {
                 })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    for (id, name, dims, catalog_id) in items {
+                    for (id, name, dims, catalog_id, foot) in items {
                         let selected = self.selection.ids.contains(&id);
                         let active = self.selection.active == Some(id);
                         let catalog = catalog_id.map(|catalog_id| {
@@ -269,6 +396,7 @@ impl DesktopApp {
                             (None, Some(Some(product))) => product.clone(),
                             _ => String::new(),
                         };
+                        let editable = dims.is_some() || foot;
                         let edit = Request::with(A::EditHardware, Target::Object(id));
                         let duplicate = Request::with(A::DuplicateHardware, Target::Object(id));
                         let delete = Request::with(A::DeleteHardware, Target::Object(id));
@@ -290,7 +418,7 @@ impl DesktopApp {
                                 ui.spacing_mut().item_spacing.x = 7.0;
                                 ui.add_space(2.0);
                                 ui.add(crate::icons::icon(
-                                    if dims.is_some() {
+                                    if dims.is_some() || foot {
                                         Icon::Cube
                                     } else {
                                         Icon::Hinge
@@ -312,7 +440,7 @@ impl DesktopApp {
                                                 self.localizer.text("hinge-missing-catalog"),
                                             );
                                         }
-                                        if hovered && !modal && dims.is_some() {
+                                        if hovered && !modal && editable {
                                             for (request, icon, color) in [
                                                 (delete, Icon::Trash, tw::DANGER),
                                                 (duplicate, Icon::Duplicate, tw::SECONDARY),
@@ -366,11 +494,11 @@ impl DesktopApp {
                         response.context_menu(|ui| {
                             let has_selection = !self.selection.ids.is_empty();
                             for (request, enabled) in [
-                                (edit, dims.is_some()),
-                                (duplicate, dims.is_some()),
+                                (edit, editable),
+                                (duplicate, editable),
                                 (Request::new(A::Group), has_selection),
                                 (Request::new(A::Reparent), has_selection),
-                                (delete, dims.is_some()),
+                                (delete, editable),
                             ] {
                                 let label = match request.id {
                                     A::Group => self.localizer.text("assembly-group"),
@@ -395,7 +523,7 @@ impl DesktopApp {
                                 Request::with(A::SelectObject, Target::Object(id))
                                     .argument(Argument::Additive(additive)),
                             );
-                        } else if run.is_none() && response.double_clicked() && dims.is_some() {
+                        } else if run.is_none() && response.double_clicked() && editable {
                             run = Some(edit);
                         }
                     }
@@ -412,11 +540,24 @@ impl DesktopApp {
         };
         let mut valid = draft.project_id == self.editor.project().id
             && draft.revision == self.editor.project().revision;
-        let title = self.localizer.text(if draft.id.is_some() {
-            "hardware-edit"
+        let title = self
+            .localizer
+            .text(match (&draft.foot, draft.id.is_some()) {
+                (Some(_), true) => "foot-edit",
+                (Some(_), false) => "foot-new",
+                (None, true) => "hardware-edit",
+                (None, false) => "hardware-new",
+            });
+        let models = if draft.foot.is_some() {
+            foot_models(self)
         } else {
-            "hardware-new"
-        });
+            Vec::new()
+        };
+        let size = draft
+            .foot
+            .as_ref()
+            .and_then(|m| m.as_ref())
+            .and_then(|m| foot_size(self, m));
         let mut chrome = draft.chrome.detach();
         let result = chrome.show(
             ctx,
@@ -479,14 +620,53 @@ impl DesktopApp {
                 });
                 valid &= !draft.name.trim().is_empty();
                 ui.add_space(10.0);
-                hinge_ui::field_label(ui, &self.localizer.text("hardware-dimensions"));
-                valid &= axis_fields(
-                    ui,
-                    &self.localizer,
-                    "hardware-dialog-dimension",
-                    &mut draft.dimensions,
-                    true,
-                );
+                if let Some(model) = &mut draft.foot {
+                    hinge_ui::field_label(ui, &self.localizer.text("foot-model"));
+                    egui::ComboBox::from_id_salt("hardware-dialog-foot-model")
+                        .width(ui.available_width())
+                        .selected_text(
+                            model
+                                .as_ref()
+                                .and_then(|m| models.iter().find(|(k, _)| k == m))
+                                .map_or_else(
+                                    || self.localizer.text("foot-choose-model"),
+                                    |(_, name)| name.clone(),
+                                ),
+                        )
+                        .show_ui(ui, |ui| {
+                            for (key, name) in &models {
+                                combo_option(ui, model, Some(key.clone()), name);
+                            }
+                        });
+                    if let Some(size) = size {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} × {} × {} mm",
+                                trim3(size[0].micrometres() as f64 / 1000.0),
+                                trim3(size[1].micrometres() as f64 / 1000.0),
+                                trim3(size[2].micrometres() as f64 / 1000.0),
+                            ))
+                            .size(11.5)
+                            .color(tw::MUTED),
+                        );
+                    }
+                    valid &= model.is_some();
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(self.localizer.text("foot-position-hint"))
+                            .size(11.0)
+                            .color(tw::FAINT),
+                    );
+                } else {
+                    hinge_ui::field_label(ui, &self.localizer.text("hardware-dimensions"));
+                    valid &= axis_fields(
+                        ui,
+                        &self.localizer,
+                        "hardware-dialog-dimension",
+                        &mut draft.dimensions,
+                        true,
+                    );
+                }
                 ui.add_space(10.0);
                 hinge_ui::field_label(ui, &self.localizer.text("hardware-position"));
                 valid &= axis_fields(
@@ -511,7 +691,43 @@ impl DesktopApp {
             chrome.close(ctx);
             return;
         }
-        if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm) {
+        if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm)
+            && let Some(Some(model)) = draft.foot.clone()
+        {
+            let position = std::array::from_fn(|i| {
+                if draft.position[i].text == draft.original_position[i] {
+                    draft.original_world[i]
+                } else {
+                    super::assembly_ui::coordinate(&draft.position[i])
+                        .expect("validated coordinate")
+                }
+            });
+            let result = match (
+                Pose::new(position, draft.rotation),
+                resolve_foot(self, &model),
+            ) {
+                (Ok(pose), Some((catalog_id, pin))) => match draft.id {
+                    Some(id) => self
+                        .editor
+                        .edit_foot(id, draft.name.clone(), catalog_id, pin, draft.parent, pose)
+                        .map(|_| id)
+                        .map_err(|_| ()),
+                    None => self
+                        .editor
+                        .create_foot(draft.name.clone(), catalog_id, pin, draft.parent, pose)
+                        .map_err(|_| ()),
+                },
+                _ => Err(()),
+            };
+            match result {
+                Ok(id) => {
+                    self.selection.choose(Some(id), false);
+                    chrome.close(ctx);
+                    return;
+                }
+                Err(()) => draft.error = true,
+            }
+        } else if actions::decision(A::ConfirmDialog, result.action == ModalAction::Confirm) {
             let dims = draft
                 .dimensions
                 .each_ref()

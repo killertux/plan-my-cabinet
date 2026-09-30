@@ -168,3 +168,135 @@ for one hinge with `allow`, but only with a reason.
 To check a pack without opening the app, run
 `plan-my-cabinet --check-catalog my-pack.toml`. It prints each problem with
 its place in the file and exits non-zero on errors.
+
+# Drawer slides
+
+A drawer slide pair joins a drawer to the two cabinet sides beside it. The
+drawer is a group of boards (an assembly): the **Drawers** template makes one
+group per drawer; for a drawer you built yourself, group its boards first.
+
+**Hardware ▸ + ▸ Drawer slides…** opens the slide dialog. Pick the drawer (or
+select one of its boards first) and a slide model. The app finds the box sides
+and the cabinet sides next to them, measures the gaps, and picks the longest
+length that fits. It shows the product code and whether it fits. You can
+choose a length, the height on the box side (centred by default) and the
+setback from the cabinet front (2 mm by default).
+
+The checks are:
+
+- **Side clearance.** The gap between each box side and cabinet side must be
+  within the slide's clearance. For most slides this is 12.7 mm, +0.5/−0, so
+  the box is 25.4 mm narrower than the opening. The TT90 needs 19 ±0.3 mm.
+- **Depth.** Setback plus slide length must fit the cabinet side, and the
+  drawer member must fit on the box side. A 500 mm slide goes on a 500 mm box.
+- **Height.** The slide must fit on the box side and on the cabinet side.
+- **Alignment.** Both slides must be at the same height and depth.
+
+The **Drawer slides** list in the Hardware panel shows each drawer with its
+product code. The inspector lists the gaps and, for each side, the hole
+distances from the front edge and the height of the slide's centre line. Hole
+positions come from the manufacturer's sheet; check them before drilling.
+
+**Preview** pulls the drawer out on its slides (a slider in millimetres, up
+to the slide's travel). It is display only, like the door preview.
+
+The **Drawers** template installs slides on every drawer. Choose the slide
+model in the setup (default FGVTN TT45 Slowmotion) or **None**. With a
+slide, the side clearance comes from the slide and the side clearance field
+is ignored.
+
+The bundled `catalogs/fgvtn-slides.toml` has these FGVTN / TN full-extension
+soft-close slides, from the manufacturer's sheets
+(see [the review](catalogs/fgvtn-slides-review.md)):
+
+| Model | Lengths | Load | Height | Side clearance |
+|---|---|---|---|---|
+| TT45 Slowmotion (0073.045500SX …) | 350–550 mm | 45 kg | 45 mm | 12.7 +0.5/−0 |
+| TT44 Slowmotion (zinc, white, black) | 350–550 mm | 35 kg | 45 mm | 12.7 +0.5/−0 |
+| TT35 Slowmotion | 250–550 mm | 25 kg | 35 mm | 12.7 +0.5/−0 |
+| TN H45 Slow | 250–550 mm | 35 kg | 45 mm | 12.7 +0.5/−0 |
+| TT90 Slow (heavy duty) | 450–600 mm | 90 kg | 52 mm | 19 ±0.3 |
+
+The shop PDF lists the slides to buy ("0073.045500SX … — 3 pairs") and, for
+each drawer, the hole distances on both boards of each side.
+
+# Feet
+
+Feet are catalog hardware placed like any hardware item: **Hardware ▸ + ▸
+Foot…**, then choose the model, the group it belongs to and its position. The
+position is the corner of the foot's box on the floor; the mounting face is on
+top. Feet are not cut from stock and they do not lift the furniture: raise
+the cabinet by the foot height (for 100 mm feet, move it up 100 mm).
+
+Feet are drawn with the product's shape, so you can see how the piece will
+look: a plastic cone, a chrome post with its flange and levelling glide, an
+industrial tube frame. The bundled `catalogs/generic-feet.toml` has typical
+sizes of common products. These are **generic reference dimensions**, not a
+manufacturer's sheet, and they are labelled that way on screen and in the PDF:
+
+| Model | Size |
+|---|---|
+| Plastic tapered foot 40 mm (black, white) | Ø50 → Ø30 × 40 mm, one screw |
+| Square chrome adjustable foot 60/100/120/150/200 mm | 60 × 60 flange, 32 × 32 tube, Ø38 glide, 10 mm levelling |
+| Round chrome adjustable foot 80/100 mm | Ø60 flange, Ø32 tube, Ø38 glide |
+| Industrial frame leg 750 × 500 | closed frame of 30 × 30 tube |
+| Reinforced industrial frame leg 750 × 600 | closed frame of 50 × 30 tube |
+| Industrial trapezoid leg 710 × 500 | 500 at the top, 400 at the floor |
+| Straight table leg 710 mm | 40 × 40 tube, 100 × 100 plate, 30 mm levelling |
+
+The shop PDF lists the feet to buy with their size and finish.
+
+## Writing slide and foot models
+
+Slides and feet go in catalog packs like hinges, in `[[drawer_slides]]` and
+`[[feet]]` tables. A pack may hold any mix of hinges, slides and feet.
+
+```toml
+[[drawer_slides]]
+id = "acme-45"
+name = { en = "Acme 45 full-extension slide", pt-BR = "Corrediça Acme 45" }
+source = "acme-sheet"          # required in a reviewed pack
+height = 45
+clearance = { nominal = 12.7, minus = 0, plus = 0.5 }
+front_setback = 2              # slide front behind the cabinet front
+extension = "full"             # full | partial | over
+soft_close = true
+capacity_kg = 45
+rear_fixing = "Screw at the rear end"   # optional text
+
+  [[drawer_slides.variants]]
+  code = "A45-500"
+  length = 500                 # the closed cabinet member
+  travel = 500                 # how far it opens
+  cabinet_holes = [35, 51, 99, 259, 275]   # mm from the member's front end
+  drawer_holes = [32, 48, 57.5, { along = 240, offset = 8, diameter = 4.5 }]
+
+[[feet]]
+id = "cone-40"
+name = { en = "Plastic cone 40 mm" }
+shape = { kind = "tapered", height = 40, top = { diameter = 50 }, bottom = { diameter = 30 } }
+color = "#1e1e1e"
+mounting_holes = [[0, 0]]      # X, Y from the centre of the mounting face
+
+  [[feet.variants]]
+  code = "CONE-40-BLK"
+
+  [[feet.variants]]
+  code = "CONE-40-WHT"
+  color = "#eeeeea"            # optional overrides: color, finish, height
+```
+
+Foot shapes:
+
+- `tapered`: a solid cone or pyramid. `top` and `bottom` are sections
+  (`{ diameter = … }` or `{ width = …, depth = … }`) and `height`.
+- `post`: a tube with a top plate and an optional glide: `tube`, `plate`,
+  `plate_thickness`, `glide = { diameter, height }`, `height`.
+- `frame`: a closed tube frame: `top_width`, `bottom_width` (smaller for a
+  trapezoid, equal to `tube_width` for a V), `tube_width`, `tube_depth`,
+  optional `crossbar_height` and `glide`, `height`.
+
+Packs with `review = { status = "generic" }` hold typical sizes without a
+manufacturer's sheet (no `[[sources]]` needed). Models created by an AI agent
+with `save_to_catalog` are written to `user-models.toml` in your catalog
+folder; use **Reload** to see them.

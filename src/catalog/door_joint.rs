@@ -499,6 +499,14 @@ pub fn delete_object(editor: &mut ProjectEditor, id: Uuid) -> Result<bool, EditE
         p.hinge_installations.retain(|h| {
             !board_ids.contains(&h.door_board_id) && !board_ids.contains(&h.mounting_board_id)
         });
+        p.slide_installations.retain(|s| {
+            !members.contains(&s.drawer_root_id)
+                && !s
+                    .drawer_sides
+                    .iter()
+                    .chain(&s.cabinet_sides)
+                    .any(|b| board_ids.contains(b))
+        });
         p.allocations.retain(|a| !board_ids.contains(&a.board_id));
         p.boards.retain(|b| !members.contains(&b.id));
         p.assemblies.retain(|a| !members.contains(&a.id));

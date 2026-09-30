@@ -1202,6 +1202,11 @@ fn issue(issue: &ExportIssue, project: &Project, loc: &Localizer, unit: Unit) ->
             loc.text("pdf-joint-review"),
             loc.text("pdf-installation-withheld")
         ),
+        ExportIssue::Slide { id, name, reason } => format!(
+            "{name} [{id}]: {} — {}",
+            loc.text(reason.key()),
+            loc.text("pdf-installation-withheld")
+        ),
         ExportIssue::InvalidWood(_) => loc.text("pdf-invalid-wood"),
     }
 }
@@ -1628,12 +1633,18 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
                             label(&loc, "pdf-catalog"),
                             label(&loc, "pdf-missing")
                         ),
-                        |c| format!(
-                            "{} / {} / {}",
-                            c.product_id,
-                            c.plate_id.as_deref().unwrap_or("—"),
-                            c.revision
-                        )
+                        |c| if c.foot().is_some() {
+                            crate::hardware_lines::foot_line(c, &loc, |v| {
+                                length(v, settings.units, settings.language)
+                            })
+                        } else {
+                            format!(
+                                "{} / {} / {}",
+                                c.product_id,
+                                c.plate_id.as_deref().unwrap_or("—"),
+                                c.revision
+                            )
+                        }
                     ),
             }
         ));
@@ -1641,12 +1652,38 @@ pub fn render_pdf(prepared: &PreparedExport) -> Result<Vec<u8>, PdfExportError> 
             p.line(label(&loc, "pdf-installation-withheld"));
         }
     }
+    let purchases = crate::hardware_lines::purchase_lines(project, &loc);
+    if !purchases.is_empty() {
+        p.title(label(&loc, "pdf-purchase-list"));
+        for line in purchases {
+            p.line(line);
+        }
+    }
+    if !project.slide_installations.is_empty() {
+        p.title(label(&loc, "pdf-drawer-slides"));
+        p.line(label(&loc, "pdf-slide-review-warning"));
+        for slide in &project.slide_installations {
+            match prepared.slide_guidance.iter().find(|g| g.id == slide.id) {
+                Some(guidance) => {
+                    for line in crate::hardware_lines::slide_lines(project, guidance, &loc, |v| {
+                        length(v, settings.units, settings.language)
+                    }) {
+                        p.line(line);
+                    }
+                }
+                None => p.line(format!(
+                    "{} — {}",
+                    crate::render::picture::slide_name(project, slide),
+                    label(&loc, "pdf-installation-withheld")
+                )),
+            }
+        }
+    }
     if !project.hinge_installations.is_empty()
         || !project.door_joints.is_empty()
-        || project
-            .hardware
-            .iter()
-            .any(|h| matches!(h.kind, HardwareKind::Catalog { .. }))
+        || project.hardware.iter().any(|h| {
+            matches!(h.kind, HardwareKind::Catalog { .. }) && project.foot_spec(h).is_none()
+        })
     {
         p.line(label(&loc, "pdf-hinge-review-warning"));
         p.line(label(&loc, "pdf-motion-approximate"));

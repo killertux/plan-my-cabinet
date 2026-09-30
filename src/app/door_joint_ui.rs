@@ -54,6 +54,38 @@ impl DoorDialog {
     }
 }
 
+/// How far a preview may go: a door's opening limit in degrees, or a
+/// drawer's slide travel in millimetres. `None` when it cannot move.
+pub(crate) fn motion_limit(project: &Project, id: Uuid) -> Option<f64> {
+    if let Some(joint) = project.door_joints.iter().find(|j| j.id == id) {
+        return door_joint::opening_limit(project, joint).ok();
+    }
+    let slide = project.slide_installations.iter().find(|s| s.id == id)?;
+    plan_my_cabinet::slide_installation::max_extension(project, slide)
+        .map(|travel| travel.micrometres() as f64 / 1000.0)
+}
+
+/// Display-only poses for a door at `value` degrees or a drawer pulled out
+/// `value` mm.
+pub(crate) fn motion_poses(
+    project: &Project,
+    id: Uuid,
+    value: f64,
+) -> Option<std::collections::HashMap<Uuid, Pose>> {
+    let poses = if let Some(joint) = project.door_joints.iter().find(|j| j.id == id) {
+        door_joint::derived_poses(project, joint, value).ok()?
+    } else {
+        let slide = project.slide_installations.iter().find(|s| s.id == id)?;
+        plan_my_cabinet::slide_installation::derived_poses(project, slide, value).ok()?
+    };
+    Some(poses.into_iter().collect())
+}
+
+/// Whether the motion preview is a drawer (mm) rather than a door (degrees).
+pub(crate) fn is_drawer_motion(project: &Project, id: Uuid) -> bool {
+    project.slide_installations.iter().any(|s| s.id == id)
+}
+
 pub(crate) enum DoorRemoval {
     Joint(Uuid),
     Object(Uuid),
@@ -119,28 +151,33 @@ impl DesktopApp {
         {
             return false;
         }
+        let project = self.editor.project();
         let selected = match self.session.inspector {
-            Some(InspectorTarget::Installation(id)) => Some(id),
+            Some(InspectorTarget::Installation(id)) => project
+                .door_joints
+                .iter()
+                .find(|joint| joint.hinge_installation_ids.contains(&id))
+                .map(|joint| joint.id),
+            Some(InspectorTarget::Slide(id)) => Some(id),
             _ => None,
         };
-        let joint = self
-            .editor
-            .project()
-            .door_joints
-            .iter()
-            .find(|joint| self.hardware.door_motion.map(|(id, _)| id) == Some(joint.id))
-            .or_else(|| {
-                self.editor.project().door_joints.iter().find(|joint| {
-                    selected.is_some_and(|id| joint.hinge_installation_ids.contains(&id))
-                })
-            })
-            .cloned();
-        let Some(joint) = joint else {
+        let Some(target) = self
+            .hardware
+            .door_motion
+            .map(|(id, _)| id)
+            .or(selected)
+            .filter(|id| motion_limit(project, *id).is_some())
+        else {
             return false;
         };
-        let start = Request::with(A::StartMotion, Target::Door(joint.id));
+        let target_ref = if is_drawer_motion(project, target) {
+            Target::Slide(target)
+        } else {
+            Target::Door(target)
+        };
+        let start = Request::with(A::StartMotion, target_ref);
         let close = Request::new(A::CloseMotion);
-        let active = self.hardware.door_motion.map(|(id, _)| id) == Some(joint.id);
+        let active = self.hardware.door_motion.map(|(id, _)| id) == Some(target);
         let top = egui::Area::new(egui::Id::new("hardware-motion-mode"))
             .order(egui::Order::Foreground)
             .fixed_pos(
@@ -224,31 +261,51 @@ impl DesktopApp {
         let Some((id, mut angle)) = self.hardware.door_motion else {
             return;
         };
-        let Some(joint) = self
-            .editor
-            .project()
-            .door_joints
-            .iter()
-            .find(|j| j.id == id)
-            .cloned()
-        else {
-            return;
+        let project = self.editor.project();
+        let drawer = is_drawer_motion(project, id);
+        let (name, limit) = if drawer {
+            let Some(slide) = project.slide_installations.iter().find(|s| s.id == id) else {
+                return;
+            };
+            (
+                object_name(project, slide.drawer_root_id).to_owned(),
+                motion_limit(project, id).ok_or(()),
+            )
+        } else {
+            let Some(joint) = project.door_joints.iter().find(|j| j.id == id) else {
+                return;
+            };
+            (
+                object_name(project, joint.moving_root_id).to_owned(),
+                door_joint::opening_limit(project, joint).map_err(|_| ()),
+            )
         };
-        let name = object_name(self.editor.project(), joint.moving_root_id).to_owned();
-        let limit = door_joint::opening_limit(self.editor.project(), &joint);
+        let target = if drawer {
+            Target::Slide(id)
+        } else {
+            Target::Door(id)
+        };
         ui.spacing_mut().item_spacing.y = 10.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            ui.add(crate::icons::icon(Icon::Door, tw::MUTED, 15.0));
+            ui.add(crate::icons::icon(
+                if drawer { Icon::Cube } else { Icon::Door },
+                tw::MUTED,
+                15.0,
+            ));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    egui::RichText::new(format!("{angle:.0}°"))
-                        .font(if tw::weights_available(ui) {
-                            egui::FontId::new(14.0, crate::theme::Typeface::MonoSemibold.family())
-                        } else {
-                            egui::FontId::monospace(14.0)
-                        })
-                        .color(tw::TEXT),
+                    egui::RichText::new(if drawer {
+                        format!("{angle:.0} mm")
+                    } else {
+                        format!("{angle:.0}°")
+                    })
+                    .font(if tw::weights_available(ui) {
+                        egui::FontId::new(14.0, crate::theme::Typeface::MonoSemibold.family())
+                    } else {
+                        egui::FontId::monospace(14.0)
+                    })
+                    .color(tw::TEXT),
                 );
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(
@@ -266,11 +323,12 @@ impl DesktopApp {
                 let (slider, travel) = angle_slider(ui, &mut angle, limit, &label, true);
                 if slider.changed() {
                     self.invoke_or_report(
-                        Request::with(A::SetDoorAngle, Target::Door(id))
-                            .argument(Argument::Angle(angle)),
+                        Request::with(A::SetDoorAngle, target).argument(Argument::Angle(angle)),
                     );
                 }
-                show_motion_ticks(ui, travel, slider.rect.x_range(), limit);
+                if !drawer {
+                    show_motion_ticks(ui, travel, slider.rect.x_range(), limit);
+                }
                 ui.add_space(2.0);
             }
             Err(_) => {

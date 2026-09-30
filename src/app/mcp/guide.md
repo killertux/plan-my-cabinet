@@ -11,6 +11,8 @@
 - **Placement**: a board on a stock piece at an origin (from the sheet's bottom-left corner), optionally turned 90°, optionally locked. At most one per board.
 - **Hinge**: a catalog hinge joining a door board to the board it hangs from (its *mount*), at a distance along the door's hinge edge, with K (cup edge setback) and R (overlay) — or F (gap) and E (depth) for inset hinges.
 - **Door**: the relationship that lets a door board (or assembly) swing on its hinges.
+- **Drawer slides**: a pair of catalog slides (one length of a family, e.g. FGVTN TT45 500 mm) joining a drawer (an assembly of box boards) to the two carcass sides beside it. The gap between box side and carcass side must match the slide's clearance (12.7 +0.5/−0 mm for most; 19 ±0.3 for TT90).
+- **Foot**: a catalog foot placed like hardware (never cut): tapered plastic feet, chrome posts with a plate and a glide, straight table legs, industrial tube frames. Drawn with the product's real shape.
 
 ## Coordinates
 
@@ -61,6 +63,24 @@ All cuts are straight, full-length (guillotine) cuts and include the kerf. Grain
 3. `add_hinges {"door":"Left door"}` pins the bundled hinge if none is pinned, chooses the count (2 up to 900 mm, 3 up to 1500 …), positions (100 mm from each end), and the K/R pair whose R equals the side thickness.
 4. `create_door {"moving":"Left door"}` turns it into a swinging door; `render_door_opening {"door":"Left door","angle_degrees":90}` shows it open.
 
+## Drawer slides
+
+1. `generate_template {"kind":"drawers"}` already installs slides on every drawer (default TT45 Slowmotion, the longest length that fits; `slides: {"slide":"tt90-slow"}` for heavy drawers, `{"none": true}` for none). The box is two clearances narrower than the opening.
+2. For a drawer you built: group its boards (`group_objects`), then `suggest_slides {"drawer":"Drawer"}` (read-only: detected sides, gaps, chosen length) and `add_slides {"drawer":"Drawer"}`. Issues explain a wrong gap, a slide longer than the carcass or box, or a bad height.
+3. `list_slides` gives hole distances from each board's front edge for the shop; `update_slide {"slide":"Drawer","length":450}` changes the length.
+4. `render_drawer_opening {"drawer":"Drawer 1","fraction":1}` shows it open with the slide members.
+
+## Feet
+
+Feet are placed, not cut, and they do not lift the furniture: raise it first (`transform_objects {"objects":["Chest"],"translate_mm":[0,0,100]}` for 100 mm feet), then
+`add_foot {"model":"generic-post-square-100","parent":"Chest","anchor":"top_center","positions":[[40,40,100],[560,40,100],[40,500,100],[560,500,100]]}`.
+With `anchor: top_center` each position is the centre of the foot's mounting face (the underside of the bottom); the default anchor is the foot's box corner on the floor. `list_hardware_catalog {"kind":"foot"}` lists the models; `describe_scene` confirms the feet touch the bottom and stand at z = 0.
+
+## New hardware models
+
+`create_foot_model` takes a shape — `tapered` (top/bottom section, height: plastic feet), `post` (tube, plate, plate_thickness, optional glide, height: chrome feet and straight legs), `frame` (top_width, bottom_width, tube_width, tube_depth, optional crossbar_height and glide: industrial legs; a smaller bottom_width makes a trapezoid) — plus color and mounting holes. Sections are `{"diameter": d}` or `{"width": w, "depth": d}`.
+`create_slide_model` takes the profile height, clearance `{nominal, minus, plus}`, and lengths with travel and holes. Both pin the model to the project; `save_to_catalog: true` also writes it to the user catalog (`user-models.toml`) so the app and later projects offer it.
+
 ## Worked example: base cabinet with two doors
 
 ```
@@ -107,4 +127,4 @@ save_project {"path":"/Users/me/Documents/bookshelf.pmcab"}
 
 ## Errors
 
-Failures return `{code, message, hint, details}`. Common codes: `no_open_project`, `unsaved_changes` (save or pass `discard_changes`), `not_found` / `ambiguous_ref` (use ids), `invalid_length`, `rounding_required`, `invalid_pose`, `material_in_use`, `allocated_stock`, `invalid_placement` (see `details.sheets`), `locked`, `stale_search` (optimize again), `revision_mismatch`, `installation_error`, `joint_error`, `template_error`, `io`.
+Failures return `{code, message, hint, details}`. Common codes: `no_open_project`, `unsaved_changes` (save or pass `discard_changes`), `not_found` / `ambiguous_ref` (use ids), `invalid_length`, `rounding_required`, `invalid_pose`, `material_in_use`, `allocated_stock`, `invalid_placement` (see `details.sheets`), `locked`, `stale_search` (optimize again), `revision_mismatch`, `installation_error`, `joint_error`, `template_error`, `catalog_error` (a new model with invalid values; the message names the field), `conflict` (a drawer that already has slides), `io`.

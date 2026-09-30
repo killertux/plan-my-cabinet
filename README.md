@@ -157,22 +157,25 @@ included in every cut.
 - **Optimize all sheets** (bottom right) searches for the plan with the
   lowest new spending or the fewest cuts.
 
-### 5. Place the hinges
+### 5. Place the hinges, slides and feet
 
 ![Hardware workspace](docs/screenshots/hardware.png)
 
 In **Hardware**, you attach each door to its cabinet side and add hinges from
 a catalog. For each hinge, the app shows where it goes: the cup position, the
 mounting plate holes and the overlay for the setback you choose. You can also
-preview the door opening. The bundled catalogs contain FGVTN hinges, taken
-from the manufacturer's data sheets.
+preview the door opening. Drawers get catalog slides: the app checks the side
+gaps, depth and height, gives the hole positions and previews the drawer
+sliding out. Feet (plastic, chrome, industrial legs) are drawn with the
+product's shape. The bundled catalogs contain FGVTN hinges and drawer slides,
+taken from the manufacturer's data sheets, and generic feet.
 
 ### 6. Hand off to the shop
 
 ![Handoff workspace](docs/screenshots/handoff.png)
 
 **Handoff** builds a PDF with the parts list, the costs, the sheet diagrams
-with their cut steps, and the hinge references.
+with their cut steps, the hinge and slide references, and the hardware to buy.
 
 - A **Draft** packet is marked "NOT FOR CUTTING" and lists any open issues.
 - A **Shop-ready** packet requires every issue to be solved first.
@@ -199,8 +202,9 @@ the Welcome screen offers to restore your work.
 
 `plan-my-cabinet --mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
 server on standard input and output, with no window. An agent such as Claude
-can then build a cabinet, look at pictures of it, plan the cuts, add hinges
-and doors, and save a project file you open in the app. For example, with
+can then build a cabinet, look at pictures of it, plan the cuts, add hinges,
+doors, drawer slides and feet, create new hardware models, and save a project
+file you open in the app. For example, with
 Claude Code:
 
 ```sh
@@ -219,7 +223,7 @@ Portuguese:
 - [Measurement entry](docs/input-en.md)
 - [3D view](docs/viewport-en.md)
 - [Stock and cut planning](docs/stock-en.md)
-- [Hinges and catalog packs](docs/hardware-en.md)
+- [Hinges, drawer slides, feet and catalog packs](docs/hardware-en.md)
 - [Shop handoff](docs/shop-handoff-en.md)
 - [Project files and recovery](docs/project-en.md)
 - [Using it from an AI agent (MCP)](docs/mcp-en.md)

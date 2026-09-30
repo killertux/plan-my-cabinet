@@ -39,6 +39,15 @@ fn arm_name(arm: HingeArm) -> &'static str {
     }
 }
 
+pub(crate) fn trust_name(entry: &crate::domain::CatalogReference) -> &'static str {
+    match hardware_catalog::trust(entry) {
+        Some(Trust::Reviewed) => "reviewed",
+        Some(Trust::UserSupplied) => "user_supplied",
+        Some(Trust::Generic) => "generic",
+        None => "unverified",
+    }
+}
+
 fn pairs(entry: &CatalogReference) -> Vec<Value> {
     hardware_catalog::facts(entry)
         .map(|f| {
@@ -58,7 +67,7 @@ fn entry_json(project: &Project, entry: &CatalogReference) -> Value {
         "product": entry.product_id,
         "plate": entry.plate_id,
         "arm": facts.map(|f| arm_name(f.arm)),
-        "trust": match hardware_catalog::trust(entry) { Some(Trust::Reviewed) => "reviewed", Some(Trust::UserSupplied) => "user_supplied", None => "unverified" },
+        "trust": trust_name(entry),
         "k_r_pairs": pairs(entry),
         "door_thickness_mm": facts.map(|f| [mm_f64(f.door_thickness_min), mm_f64(f.door_thickness_max)]),
         "opening_limit_degrees": facts.map(|f| f.opening_limit_degrees),
@@ -275,7 +284,11 @@ impl Workspace {
     pub fn list_project_catalog(&self) -> ServiceResult<Value> {
         let project = self.project()?;
         Ok(
-            json!({ "entries": project.catalog.iter().map(|c| entry_json(project, c)).collect::<Vec<_>>() }),
+            json!({ "entries": project.catalog.iter().map(|c| match &c.item {
+                Some(crate::domain::CatalogItem::Slide(_)) => crate::service::fittings::slide_entry_json(project, c),
+                Some(crate::domain::CatalogItem::Foot(_)) => crate::service::fittings::foot_entry_json(project, c),
+                None => entry_json(project, c),
+            }).collect::<Vec<_>>() }),
         )
     }
 

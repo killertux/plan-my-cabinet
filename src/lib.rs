@@ -22,19 +22,21 @@ pub mod ui;
 
 // Flat paths (`plan_my_cabinet::commands`, `crate::domain`) stay valid.
 pub use catalog::{
-    catalog_pack, door_joint, hardware_catalog, hinge_installation, template_recipes,
-    template_setup,
+    board_frame, catalog_pack, door_joint, hardware_catalog, hinge_installation,
+    slide_installation, template_recipes, template_setup, user_pack,
 };
 pub use editing::{
     assembly_edit, auto_place, board_commands, board_dimensions, color_commands, commands,
     edit_drafts, material_changes, placement, sheet_edit, stock_commands,
 };
-pub use model::{dimension_input, domain, kerf_date, material_presets, measurements, money, units};
+pub use model::{
+    dimension_input, domain, hardware_spec, kerf_date, material_presets, measurements, money, units,
+};
 pub use optimize::{
     allocation_diagnostics, candidate_generation, candidate_ranking, cut_tree, first_fit,
     optimization_worker, sheet_packer,
 };
-pub use output::{document_layout, export, pdf_export, workshop_document};
+pub use output::{document_layout, export, hardware_lines, pdf_export, workshop_document};
 pub use read_models::{cost_estimate, design_read_models, receipt_read_models, stock_read_models};
 pub use storage::{local_preferences, persistence, recent_projects, recovery, user_dirs};
 pub use ui::{icons, settings_ui, theme, theme_widgets, welcome_ui};

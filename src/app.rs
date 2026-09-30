@@ -28,6 +28,7 @@ pub(crate) mod recovery_cleanup_ui;
 pub(crate) mod settings_host;
 pub(crate) mod sheet_ui;
 pub(crate) mod shell;
+pub(crate) mod slide_ui;
 pub(crate) mod state;
 pub(crate) mod stock_ui;
 pub(crate) mod template_setup_ui;

@@ -1195,7 +1195,7 @@ mod tests {
         assert!(!recovered.can_undo());
         assert_eq!(fs::read(&path).unwrap(), golden);
 
-        for version in [1, 4] {
+        for version in [1, crate::domain::SCHEMA_VERSION + 1] {
             let mut invalid = record.clone();
             invalid["project"]["schema_version"] = version.into();
             if version == 1 {
@@ -1204,12 +1204,12 @@ mod tests {
             let bytes = serde_json::to_vec(&invalid).unwrap();
             fs::write(&store.file, &bytes).unwrap();
             let result = store.inspect(&saved);
-            if version == 4 {
+            if version > 1 {
                 assert!(matches!(
                     result,
                     Err(RecoveryError::Invalid(
-                        PersistenceError::UnsupportedVersion(4)
-                    ))
+                        PersistenceError::UnsupportedVersion(v)
+                    )) if v == u64::from(version)
                 ));
             } else {
                 assert!(matches!(

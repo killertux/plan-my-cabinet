@@ -63,8 +63,8 @@ use app::{
     actions, assembly_ui, capture, catalog_ui, command_palette, currency_ui, door_joint_ui,
     handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
     pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui, recovery_cleanup_ui,
-    sheet_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery,
-    workspace_shell, workspace_state,
+    sheet_ui, slide_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host,
+    widget_gallery, workspace_shell, workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
 use actions::{ActionId as A, Argument, Request, Target};
@@ -590,12 +590,38 @@ fn check_catalogs(paths: &[std::ffi::OsString]) -> std::process::ExitCode {
         let loaded = plan_my_cabinet::catalog_pack::load_file(Path::new(path));
         let path = Path::new(path).display();
         if let Some(pack) = loaded.usable() {
-            let variants: usize = pack.hinges.iter().map(|h| h.variants.len()).sum();
+            let count = |families: usize, variants: usize, what: &str| {
+                (families > 0).then(|| format!("{families} {what}, {variants} variants"))
+            };
+            let items: Vec<String> = [
+                count(
+                    pack.hinges.len(),
+                    pack.hinges.iter().map(|h| h.variants.len()).sum(),
+                    "hinges",
+                ),
+                count(
+                    pack.slides.len(),
+                    pack.slides.iter().map(|s| s.variants.len()).sum(),
+                    "drawer slides",
+                ),
+                count(
+                    pack.feet.len(),
+                    pack.feet.iter().map(|f| f.variants.len()).sum(),
+                    "feet",
+                ),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
             println!(
-                "{path}: {} {} — {} hinges, {variants} variants, {} warnings",
+                "{path}: {} {} — {}, {} warnings",
                 pack.manufacturer,
                 pack.version,
-                pack.hinges.len(),
+                if items.is_empty() {
+                    "empty".to_owned()
+                } else {
+                    items.join("; ")
+                },
                 loaded.warnings()
             );
         } else {

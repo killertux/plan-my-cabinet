@@ -2,6 +2,7 @@
 
 pub mod dimension_input;
 pub mod domain;
+pub mod hardware_spec;
 pub mod kerf_date;
 pub mod material_presets;
 pub mod measurements;

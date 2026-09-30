@@ -290,6 +290,24 @@ pub fn scene_with_hover(
             );
         }
     }
+    for solid in crate::render::hardware_mesh::solids(project, selection, poses) {
+        for p in solid.points() {
+            all.include(p);
+        }
+        let active = selection.active == Some(solid.id);
+        let hover = !active && hovered.contains(&solid.id);
+        let face = if hover {
+            std::array::from_fn(|i| solid.base[i] * 0.78 + [1.0, 0.86, 0.66][i] * 0.22)
+        } else {
+            selection_face_color(solid.base, active)
+        };
+        let edge = if active || selection.ids.contains(&solid.id) || hover {
+            highlight_color(project, solid.id, selection)
+        } else {
+            crate::render::hardware_mesh::outline_for(solid.base)
+        };
+        mesh.add_solid(&solid, camera.target, face, edge);
+    }
     add_floor_shadow(&mut mesh, all, camera);
     let radius = if all.valid() {
         (0..3)
