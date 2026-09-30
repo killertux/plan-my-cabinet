@@ -58,3 +58,12 @@ marca/desmarca. Cancelar ou Escape mantém o projeto intacto; se o projeto mudar
 reabra a revisão. A confirmação registra a data de hoje para esse valor em uma
 edição que pode ser desfeita. Não certifica o plano nem a segurança do corte.
 Alterar a espessura de corte remove a confirmação.
+
+## Outros formatos
+
+A escolha **Formato** da Entrega também oferece o **CorteCloud**, uma lista de
+peças para pedir peças cortadas, com fita e furadas a uma marcenaria. Ele não
+precisa de revisão nem de plano de corte; veja
+[Pedindo peças pelo CorteCloud](cortecloud-pt-BR.md). A lista de peças do PDF
+mostra a fita de borda de cada peça e a fita a comprar; veja
+[Fita de borda](banding-pt-BR.md).
