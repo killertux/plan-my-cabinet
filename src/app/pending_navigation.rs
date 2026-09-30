@@ -52,6 +52,8 @@ pub(crate) enum Route {
         target: Option<Uuid>,
         additive: bool,
     },
+    /// Show an inspector in the current workspace.
+    Inspect(InspectorTarget),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -251,6 +253,9 @@ fn destination_exists(route: Route, project: &Project) -> bool {
             .hinge_installations
             .iter()
             .any(|installation| installation.id == id),
+        Route::Entity(Destination::Fitting(target)) | Route::Inspect(target) => {
+            target.exists(project)
+        }
     }
 }
 
@@ -268,12 +273,24 @@ fn navigate(
         Route::Selection { target, additive } => {
             selection.choose(target, additive);
             session.inspector = selection.active.and_then(|id| {
-                project
-                    .boards
-                    .iter()
-                    .any(|board| board.id == id)
-                    .then_some(InspectorTarget::Board(id))
+                if project.boards.iter().any(|board| board.id == id) {
+                    Some(InspectorTarget::Board(id))
+                } else if project.hardware.iter().any(|h| h.id == id) {
+                    Some(InspectorTarget::Hardware(id))
+                } else {
+                    None
+                }
             });
+        }
+        Route::Inspect(target) => {
+            // Hardware items are scene objects; relationships and models are not.
+            match target {
+                InspectorTarget::Hardware(id) | InspectorTarget::Board(id) => {
+                    selection.choose(Some(id), false);
+                }
+                _ => selection.choose(None, false),
+            }
+            session.inspector = Some(target);
         }
         Route::Entity(destination) => {
             if !session.navigate(project, selection, destination) {

@@ -20,7 +20,7 @@ use plan_my_cabinet::commands::ProjectEditor;
 use plan_my_cabinet::design_read_models::{DesignReadModel, DesignView};
 use plan_my_cabinet::dimension_input::{InputError, Locale, format_length, parse_length};
 use plan_my_cabinet::domain::{Board, BoardGrain, Project, SrgbColor, validate_grid_spacing};
-use plan_my_cabinet::edit_drafts::EditDrafts;
+use plan_my_cabinet::edit_drafts::{EditDrafts, FittingTarget};
 use plan_my_cabinet::export::{
     ExportIssue, ExportMode, ExportSettings, ExportStatus, OutputError, Overwrite, ReceiptSections,
     ReviewPreparationError, ReviewedPacket, ReviewedPacketKey, SheetIssue, write_reviewed_pdf,
@@ -60,11 +60,12 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, capture, catalog_ui, command_palette, currency_ui, door_joint_ui,
-    handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui, modal_chrome, modals, optimization_ui,
-    pending_navigation, placement_ui, project_name_ui, project_ui, receipt_ui, recovery_cleanup_ui,
-    sheet_ui, slide_ui, state, stock_ui, template_setup_ui, toasts, viewport, welcome_host,
-    widget_gallery, workspace_shell, workspace_state,
+    actions, assembly_ui, banding_ui, capture, catalog_ui, command_palette, currency_ui,
+    door_joint_ui, file_export_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui,
+    modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_name_ui,
+    project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, slide_ui, state, stock_ui,
+    template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
+    workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.
 use actions::{ActionId as A, Argument, Request, Target};
@@ -176,6 +177,7 @@ struct DesktopApp {
     template: state::TemplateHost,
     settings: state::SettingsHost,
     handoff: state::HandoffState,
+    file_export: file_export_ui::FileExportState,
 }
 
 impl Default for DesktopApp {
@@ -221,6 +223,7 @@ impl Default for DesktopApp {
             template: state::TemplateHost::default(),
             settings: state::SettingsHost::default(),
             handoff: state::HandoffState::default(),
+            file_export: file_export_ui::FileExportState::default(),
         }
     }
 }
@@ -427,6 +430,10 @@ impl DesktopApp {
             || (self.template.setup.is_some() && !self.template.guard_pending)
             || self.modals.is_open()
             || matches!(self.handoff.activity, Some(ExportActivity::Confirming(..)))
+            || matches!(
+                self.file_export.flow,
+                Some(file_export_ui::FileFlow::Confirming(..))
+            )
     }
 
     fn modal_open(&self) -> bool {
@@ -745,6 +752,32 @@ fn main() -> std::process::ExitCode {
                     plan_my_cabinet::reference_fixture::HDF_ID,
                     SrgbColor([122, 98, 70]),
                 );
+                // Edge bands the way a shop lists them, as defaults of the
+                // two MDF materials, so automatic banding shows in 3D.
+                for (material, name, color) in [
+                    (
+                        plan_my_cabinet::reference_fixture::WHITE_ID,
+                        "Fita Branca 1x22",
+                        SrgbColor([246, 245, 241]),
+                    ),
+                    (
+                        plan_my_cabinet::reference_fixture::OAK_ID,
+                        "Fita Carvalho 1x22",
+                        SrgbColor([170, 124, 80]),
+                    ),
+                ] {
+                    let band = plan_my_cabinet::domain::EdgeBand {
+                        id: uuid::Uuid::from_u128(material.as_u128() ^ 0xba4d),
+                        name: name.into(),
+                        thickness: plan_my_cabinet::units::Length::from_micrometres(1_000),
+                        height: plan_my_cabinet::units::Length::from_micrometres(22_000),
+                        color,
+                    };
+                    if let Some(m) = fixture.materials.iter_mut().find(|m| m.id == material) {
+                        m.default_band = Some(band.id);
+                    }
+                    fixture.edge_bands.push(band);
+                }
                 if config.empty_project {
                     fixture = Project::new("New cabinet", Currency::Brl);
                     plan_my_cabinet::material_presets::seed_defaults(&mut fixture, config.language);
@@ -759,6 +792,10 @@ fn main() -> std::process::ExitCode {
                 if config.workspace == Workspace::Stock && !config.empty_project {
                     app.session.stock_piece =
                         Some(plan_my_cabinet::reference_fixture::WHITE_STOCK_ID);
+                }
+                // Opt-in: review a part-list format instead of the PDF.
+                if let Ok(id) = std::env::var("PMCAB_CAPTURE_EXPORT_FORMAT") {
+                    app.file_export.format = plan_my_cabinet::formats::ExportFormat::from_id(&id);
                 }
                 if config.workspace == Workspace::Handoff {
                     let packet = Arc::new(

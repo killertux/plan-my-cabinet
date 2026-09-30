@@ -53,6 +53,14 @@ These snaps are temporary placement aids: the accepted pose is independent of
 the target. Moving the target later does not carry the board along unless both
 belong to a moved assembly. No snap creates a hinge or other mechanical joint.
 
+Hardware is part of the scene too. Click a foot or other hardware to select it
+like a board, and drag it with **Move board** (one undoable move, grid
+snapping only). Click a drawer slide or a hinge to open it in the inspector
+without leaving the workspace. Hinges are drawn as a cup in the door and a
+plate on the cabinet side, amber when they have a problem. They show where the
+hinge is, not where to drill. In **Hardware**, Move drags only hardware, never
+boards. Move is paused while the inspector has unsaved position values.
+
 From a board's row, **Numeric pose** opens a preview with an explicit **Local
 parent** or **World** coordinate frame. Position is in mm (unit suffixes are
 accepted); rotation is in degrees about X, Y, then Z. Untouched derived

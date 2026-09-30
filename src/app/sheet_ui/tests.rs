@@ -13,6 +13,8 @@ fn fixture() -> Project {
     let material = Uuid::new_v4();
     let stock = Uuid::new_v4();
     p.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material,
         name: "ply".into(),
         default_thickness: mm(18),
@@ -34,6 +36,7 @@ fn fixture() -> Project {
     for x in [0, 105] {
         let id = Uuid::new_v4();
         p.boards.push(Board {
+            banding: Default::default(),
             id,
             name: "same name".into(),
             material_id: material,
@@ -936,6 +939,8 @@ fn conflicts_are_derived_for_both_overlap_participants_and_current_witness() {
     p.allocations[1].origin[0] = mm(105);
     let other_material = Uuid::new_v4();
     p.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: other_material,
         name: "other".into(),
         default_thickness: mm(12),

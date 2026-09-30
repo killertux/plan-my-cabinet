@@ -26,12 +26,15 @@ fn fixture() -> Project {
     let mut p = Project::new("Armário / Cabinet", Currency::Brl);
     p.id = id(1);
     p.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: id(2),
         name: "Compensado".into(),
         default_thickness: mm(18),
         default_grain: BoardGrain::Length,
     });
     p.boards.push(Board {
+        banding: Default::default(),
         id: id(3),
         name: "Prateleira".into(),
         material_id: id(2),
@@ -157,6 +160,8 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     expected.schema_version = SCHEMA_VERSION;
     expected.stock_aliases.insert(id(4), "S1".into());
     expected.next_stock_s_alias = 2;
+    // Material kinds predate nothing in the file: they are inferred from names.
+    expected.materials[0].kind = plan_my_cabinet::domain::MaterialKind::Plywood;
     assert_eq!(p, &expected);
     assert_eq!(p.boards[0].thickness.micrometres(), 18_200);
     assert_eq!(p.materials[0].default_thickness.micrometres(), 19_000);
@@ -209,6 +214,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     original["stock_aliases"] = serde_json::json!({ id(4).to_string(): "S1" });
     original["next_stock_s_alias"] = 2.into();
     original["next_stock_o_alias"] = 1.into();
+    original["materials"][0]["kind"] = "Plywood".into();
     let saved: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&transferred).unwrap()).unwrap();
     assert_eq!(saved, original);

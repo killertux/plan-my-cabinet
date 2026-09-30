@@ -36,6 +36,12 @@ pub(crate) enum ActionId {
     RenameObject,
     EditDimensions,
     SetGrain,
+    ToggleBanding,
+    SetBanding,
+    ApplyBandingPreset,
+    NewEdgeBand,
+    EditEdgeBand,
+    RemoveEdgeBand,
     NewStock,
     EditStock,
     DuplicateStock,
@@ -57,6 +63,8 @@ pub(crate) enum ActionId {
     EditSlides,
     DeleteSlides,
     NewFoot,
+    RefitSlides,
+    RemoveCatalog,
     DeleteObject,
     StartMotion,
     CloseMotion,
@@ -79,6 +87,8 @@ pub(crate) enum ActionId {
     ConfirmKerf,
     OpenHandoff,
     ExportPdf,
+    SetExportFormat,
+    ExportFile,
     ReplacePdf,
     CancelExport,
     DirtySave,
@@ -100,6 +110,7 @@ pub(crate) enum ActionId {
     ViewNavigate,
     ViewMove,
     ViewMeasure,
+    ViewBand,
     ViewFrame,
     ViewPreset,
     ViewProjection,
@@ -189,6 +200,12 @@ registry! {
     RenameObject => ("object-rename", Design, "rename board assembly name", "renomear peça conjunto nome"),
     EditDimensions => ("board-edit-dimension", Design, "edit dimension", "editar dimensão"),
     SetGrain => ("board-grain", Design, "grain direction", "sentido veio"),
+    ToggleBanding => ("banding-toggle", Design, "band edge tape edge banding", "fita de borda colocar tirar"),
+    SetBanding => ("banding-set", Design, "edge banding automatic set", "fita de borda automática definir"),
+    ApplyBandingPreset => ("banding-preset", Design, "edge banding preset all front none automatic", "fita de borda todas frente nenhuma automática"),
+    NewEdgeBand => ("edge-band-new", Design, "new edge band tape", "nova fita de borda"),
+    EditEdgeBand => ("edge-band-edit", Design, "edit edge band tape", "editar fita de borda"),
+    RemoveEdgeBand => ("edge-band-remove", Design, "remove delete edge band tape", "remover excluir fita de borda"),
     NewStock => ("stock-new", Stock, "new stock sheet", "nova chapa estoque"),
     EditStock => ("stock-edit", Stock, "edit stock", "editar estoque"),
     DuplicateStock => ("stock-duplicate", Stock, "duplicate copy sheet offcut stock", "duplicar copiar chapa sobra estoque"),
@@ -210,6 +227,8 @@ registry! {
     EditSlides => ("slide-edit", Hardware, "edit drawer slides length", "editar corrediças comprimento"),
     DeleteSlides => ("slide-delete", Hardware, "remove drawer slides", "remover corrediças"),
     NewFoot => ("foot-new", Hardware, "add foot leg", "adicionar pé"),
+    RefitSlides => ("slide-refit", Hardware, "refit redetect drawer slides", "reajustar corrediças"),
+    RemoveCatalog => ("catalog-remove", Hardware, "remove unpin catalog model", "remover modelo catálogo"),
     DeleteObject => ("door-delete-object", Design, "delete selected object", "excluir objeto"),
     StartMotion => ("door-motion-start", Hardware, "preview door motion", "prévia movimento porta"),
     CloseMotion => ("door-motion-exit", Hardware, "close door preview", "fechar prévia porta"),
@@ -232,6 +251,8 @@ registry! {
     ConfirmKerf => ("export-confirm-kerf", Handoff, "confirm cutting kerf", "confirmar espessura corte"),
     OpenHandoff => ("shell-export", Handoff, "review export handoff", "revisar exportação entrega"),
     ExportPdf => ("export-choose", Handoff, "export pdf", "exportar pdf"),
+    SetExportFormat => ("export-format", Handoff, "export format pdf cortecloud", "formato exportação pdf cortecloud"),
+    ExportFile => ("cortecloud-export-button", Handoff, "export cortecloud json shop order cut", "exportar cortecloud json pedido marcenaria corte"),
     ReplacePdf => ("export-replace", Dialog, "replace pdf", "substituir pdf"),
     CancelExport => ("cancel", Dialog, "cancel export", "cancelar exportação"),
     DirtySave => ("project-save", Dialog, "save unsaved changes", "salvar alterações"),
@@ -253,6 +274,7 @@ registry! {
     ViewNavigate => ("viewport-navigate", Design, "navigate orbit camera", "navegar orbitar câmera"),
     ViewMove => ("viewport-move", Design, "move board tool", "mover peça ferramenta"),
     ViewMeasure => ("viewport-measure", Design, "measure bounding dimensions", "medir dimensões envolventes"),
+    ViewBand => ("viewport-band", Design, "edge banding tool tape edges", "ferramenta fita de borda bordas"),
     ViewFrame => ("viewport-frame", Design, "frame selection camera", "enquadrar seleção câmera"),
     ViewPreset => ("viewport-preset", Design, "isometric front right top camera", "isométrica frontal direita superior câmera"),
     ViewProjection => ("viewport-projection", Design, "perspective orthographic camera", "perspectiva ortográfica câmera"),
@@ -272,7 +294,9 @@ pub(crate) fn viewport_availability(
         return Err(Unavailable::ModalOpen);
     }
     match request.id {
-        A::ViewNavigate | A::ViewMove | A::ViewMeasure if preview_active || dragging => {
+        A::ViewNavigate | A::ViewMove | A::ViewMeasure | A::ViewBand
+            if preview_active || dragging =>
+        {
             Err(Unavailable::Busy)
         }
         A::ViewFrame | A::ViewPreset | A::ViewProjection if dragging => Err(Unavailable::Busy),
@@ -290,6 +314,7 @@ pub(crate) fn viewport_availability(
         A::ViewNavigate
         | A::ViewMove
         | A::ViewMeasure
+        | A::ViewBand
         | A::ViewFrame
         | A::ViewPreset
         | A::ViewProjection => Ok(()),
@@ -438,6 +463,8 @@ pub(crate) enum Target {
     Door(Uuid),
     /// A drawer's slide pair.
     Slide(Uuid),
+    /// An edge band record.
+    Band(Uuid),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -460,8 +487,18 @@ pub(crate) enum Argument {
     Angle(f64),
     Preset(viewport::Preset),
     Projection(viewport::Projection),
-    StockPriority { target: usize, subset: bool },
+    StockPriority {
+        target: usize,
+        subset: bool,
+    },
     Length(plan_my_cabinet::units::Length),
+    Edge(plan_my_cabinet::domain::BoardEdge),
+    EdgeSetting {
+        edge: plan_my_cabinet::domain::BoardEdge,
+        value: plan_my_cabinet::domain::EdgeBanding,
+    },
+    BandingPreset(plan_my_cabinet::banding::BandingPreset),
+    Format(plan_my_cabinet::formats::ExportFormat),
 }
 
 impl Request {
@@ -526,6 +563,10 @@ pub(crate) enum Unavailable {
     ExportNotReady,
     NoDialog,
     StockInUse,
+    CatalogInUse,
+    BandInUse,
+    NeedsBand,
+    NoBanding,
 }
 
 impl Unavailable {
@@ -545,6 +586,26 @@ impl Unavailable {
             (Language::PtBr, Self::NoUndo) => "Nada para desfazer",
             (Language::En, Self::NoRedo) => "Nothing to redo",
             (Language::PtBr, Self::NoRedo) => "Nada para refazer",
+            (Language::En, Self::BandInUse) => {
+                "Boards or materials still use this band; change them first"
+            }
+            (Language::PtBr, Self::BandInUse) => {
+                "Peças ou materiais ainda usam esta fita; altere-os primeiro"
+            }
+            (Language::En, Self::NeedsBand) => "Create an edge band first",
+            (Language::PtBr, Self::NeedsBand) => "Crie uma fita de borda primeiro",
+            (Language::En, Self::NoBanding) => {
+                "This board's material takes no edge banding (only MDF and MDP do)"
+            }
+            (Language::PtBr, Self::NoBanding) => {
+                "O material desta peça não leva fita de borda (só MDF e MDP levam)"
+            }
+            (Language::En, Self::CatalogInUse) => {
+                "Hinges, slides or feet still use this model; remove them first"
+            }
+            (Language::PtBr, Self::CatalogInUse) => {
+                "Dobradiças, corrediças ou pés ainda usam este modelo; remova-os primeiro"
+            }
             (Language::En, Self::StockInUse) => {
                 "Parts are placed on this piece; move or unallocate them first"
             }
@@ -706,6 +767,38 @@ impl DesktopApp {
             A::SetGrain if !matches!(request.argument, Argument::Grain(_)) => {
                 Err(Unavailable::MissingTarget)
             }
+            A::ToggleBanding if !matches!((request.target, request.argument), (T::Board(id), Argument::Edge(_)) if project.boards.iter().any(|b| b.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ToggleBanding | A::SetBanding | A::ApplyBandingPreset
+                if !self.banding_targets(request.target).iter().any(|id| {
+                    project
+                        .board(*id)
+                        .and_then(|b| project.material(b.material_id))
+                        .is_some_and(|m| m.kind.accepts_banding())
+                }) =>
+            {
+                if self.banding_targets(request.target).is_empty() {
+                    Err(Unavailable::NoSelection)
+                } else {
+                    Err(Unavailable::NoBanding)
+                }
+            }
+            A::ToggleBanding if matches!(request.target, T::Board(id) if self.click_band(id).is_none()) => {
+                Err(Unavailable::NeedsBand)
+            }
+            A::SetBanding if !matches!(request.argument, Argument::EdgeSetting { .. }) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ApplyBandingPreset if !matches!(request.argument, Argument::BandingPreset(_)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::EditEdgeBand | A::RemoveEdgeBand if !matches!(request.target, T::Band(id) if project.edge_band(id).is_some()) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::RemoveEdgeBand if matches!(request.target, T::Band(id) if { let (b, m) = plan_my_cabinet::banding::band_usage(project, id); !b.is_empty() || !m.is_empty() }) => {
+                Err(Unavailable::BandInUse)
+            }
             A::SetMeasurementFrame if matches!(request.argument, Argument::Frame(Frame::Object(target)) if !project.boards.iter().any(|b| b.id == target) && !project.assemblies.iter().any(|a| a.id == target)) => {
                 Err(Unavailable::MissingTarget)
             }
@@ -791,7 +884,13 @@ impl DesktopApp {
             A::EditDoor | A::DeleteDoor if !matches!(request.target, T::Door(id) if project.door_joints.iter().any(|j| j.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::EditSlides | A::DeleteSlides if !matches!(request.target, T::Slide(id) if project.slide_installations.iter().any(|s| s.id == id)) => {
+            A::RemoveCatalog if !matches!(request.target, T::Catalog(id) if project.catalog.iter().any(|c| c.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::RemoveCatalog if matches!(request.target, T::Catalog(id) if !plan_my_cabinet::hardware_catalog::usage(project, id).is_empty()) => {
+                Err(Unavailable::CatalogInUse)
+            }
+            A::EditSlides | A::DeleteSlides | A::RefitSlides if !matches!(request.target, T::Slide(id) if project.slide_installations.iter().any(|s| s.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
             A::StartMotion if !matches!(request.target, T::Door(id) | T::Slide(id) if door_joint_ui::motion_limit(project, id).is_some()) => {
@@ -835,6 +934,27 @@ impl DesktopApp {
                     request.argument,
                     Argument::ExportMode(ExportMode::ShopReady)
                 ) && !self.shop_ready_available() =>
+            {
+                Err(Unavailable::ExportNotReady)
+            }
+            A::SetExportFormat if !matches!(request.argument, Argument::Format(_)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ExportFile
+                if matches!(
+                    request.argument,
+                    Argument::Format(plan_my_cabinet::formats::ExportFormat::WorkshopPdf)
+                ) =>
+            {
+                Err(Unavailable::MissingTarget)
+            }
+            A::ExportFile if self.file_export.flow.is_some() => Err(Unavailable::Busy),
+            A::ExportFile
+                if plan_my_cabinet::part_list::build(
+                    project,
+                    &self.file_export_options().machining,
+                )
+                .is_err() =>
             {
                 Err(Unavailable::ExportNotReady)
             }
@@ -923,6 +1043,7 @@ impl DesktopApp {
                 | A::ViewNavigate
                 | A::ViewMove
                 | A::ViewMeasure
+                | A::ViewBand
                 | A::ViewFrame
                 | A::ViewPreset
                 | A::ViewProjection
@@ -934,6 +1055,7 @@ impl DesktopApp {
                 | A::SetExportMode
                 | A::SetExportLanguage
                 | A::SetExportUnits
+                | A::SetExportFormat
                 | A::ToggleVisibility
         ) && self.resolve_draft_before_action(request)?
         {
@@ -1146,6 +1268,55 @@ impl DesktopApp {
                     self.cut_plan.material_conflicts = allocation_conflicts(self.editor.project());
                 }
             }
+            (A::ToggleBanding, T::Board(id)) => {
+                let (Argument::Edge(edge), Some(band)) = (request.argument, self.click_band(id))
+                else {
+                    return Err(Unavailable::NeedsBand);
+                };
+                let result = self.editor.toggle_edge_banding(id, edge, band);
+                self.report_edit(result);
+            }
+            (A::SetBanding, target) => {
+                if let Argument::EdgeSetting { edge, value } = request.argument {
+                    let boards = self.banding_targets(target);
+                    let result = self.editor.set_edge_banding(&boards, &[edge], value);
+                    self.report_banding(result);
+                }
+            }
+            (A::ApplyBandingPreset, target) => {
+                if let Argument::BandingPreset(preset) = request.argument {
+                    let boards = self.banding_targets(target);
+                    let band = boards.first().and_then(|id| self.click_band(*id));
+                    if band.is_none()
+                        && matches!(
+                            preset,
+                            plan_my_cabinet::banding::BandingPreset::Front
+                                | plan_my_cabinet::banding::BandingPreset::AllFour
+                        )
+                    {
+                        return Err(Unavailable::NeedsBand);
+                    }
+                    let result = self.editor.apply_banding_preset(&boards, preset, band);
+                    self.report_banding(result);
+                }
+            }
+            (A::NewEdgeBand, _) => self
+                .modals
+                .set_edge_band(Some(banding_ui::EdgeBandDialog::new(locale))),
+            (A::EditEdgeBand, T::Band(id)) => {
+                let Some(band) = self.editor.project().edge_band(id) else {
+                    return Err(Unavailable::MissingTarget);
+                };
+                self.modals
+                    .set_edge_band(Some(banding_ui::EdgeBandDialog::edit(band, locale)));
+            }
+            (A::RemoveEdgeBand, T::Band(id)) => {
+                let result = self.editor.remove_edge_band(id);
+                if result.is_ok() && self.design.banding_band == Some(id) {
+                    self.design.banding_band = None;
+                }
+                self.report_edit(result);
+            }
             (A::NewStock, T::Material(id)) => {
                 self.modals
                     .set_stock(Some(stock_ui::StockDialog::new_for_material(
@@ -1223,12 +1394,15 @@ impl DesktopApp {
                         self.editor.project(),
                     )));
             }
-            (A::NewHardware, _) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, None))),
-            (A::EditHardware, T::Object(id)) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new(self, Some(id)))),
+            (A::NewHardware, _) => {
+                if !self.add_placeholder_now() {
+                    self.modals
+                        .set_hardware(Some(hardware_ui::HardwareDialog::new(self, None)));
+                }
+            }
+            (A::EditHardware, T::Object(id)) => {
+                self.request_inspect(InspectorTarget::Hardware(id));
+            }
             (A::DuplicateHardware, T::Object(id)) => {
                 if let Ok(copy) = self.editor.duplicate_placeholder(id) {
                     self.selection.choose(Some(copy), false);
@@ -1241,9 +1415,12 @@ impl DesktopApp {
                         door_joint_ui::DoorRemoval::Hardware(id),
                     )));
             }
-            (A::NewHinge, _) => self
-                .modals
-                .set_hinge(Some(hinge_ui::HingeDialog::new(self, None))),
+            (A::NewHinge, _) => {
+                if !self.add_hinge_now() {
+                    self.modals
+                        .set_hinge(Some(hinge_ui::HingeDialog::new(self, None)));
+                }
+            }
             (A::EditHinge, T::Hinge(id)) => self
                 .modals
                 .set_hinge(Some(hinge_ui::HingeDialog::new(self, Some(id)))),
@@ -1251,18 +1428,24 @@ impl DesktopApp {
                 let result = plan_my_cabinet::hinge_installation::remove(&mut self.editor, id);
                 self.report_edit(result);
             }
-            (A::NewDoor, _) => self
-                .modals
-                .set_door(Some(door_joint_ui::DoorDialog::new(self, None))),
-            (A::EditDoor, T::Door(id)) => self
-                .modals
-                .set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id)))),
-            (A::NewSlides, _) => self
-                .modals
-                .set_slide(Some(slide_ui::SlideDialog::new(self, None))),
-            (A::EditSlides, T::Slide(id)) => self
-                .modals
-                .set_slide(Some(slide_ui::SlideDialog::new(self, Some(id)))),
+            (A::NewDoor, _) => {
+                if !self.add_door_now() {
+                    self.modals
+                        .set_door(Some(door_joint_ui::DoorDialog::new(self, None)));
+                }
+            }
+            (A::EditDoor, T::Door(id)) => {
+                self.request_inspect(InspectorTarget::Door(id));
+            }
+            (A::NewSlides, _) => {
+                if !self.add_slides_now() {
+                    self.modals
+                        .set_slide(Some(slide_ui::SlideDialog::new(self, None)));
+                }
+            }
+            (A::EditSlides, T::Slide(id)) => {
+                self.request_inspect(InspectorTarget::Slide(id));
+            }
             (A::DeleteSlides, T::Slide(id)) => {
                 let result = plan_my_cabinet::slide_installation::remove(&mut self.editor, id);
                 if matches!(self.hardware.door_motion, Some((active, _)) if active == id) {
@@ -1270,9 +1453,34 @@ impl DesktopApp {
                 }
                 self.report_edit(result);
             }
-            (A::NewFoot, _) => self
-                .modals
-                .set_hardware(Some(hardware_ui::HardwareDialog::new_foot(self))),
+            (A::RefitSlides, T::Slide(id)) => {
+                let project = self.editor.project();
+                let refitted = project
+                    .slide_installations
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or(Unavailable::MissingTarget)
+                    .and_then(|s| {
+                        plan_my_cabinet::slide_installation::refitted(project, s)
+                            .map_err(|_| Unavailable::InvalidHardware)
+                    })?;
+                let result =
+                    plan_my_cabinet::slide_installation::update(&mut self.editor, refitted);
+                self.report_edit(result);
+            }
+            (A::RemoveCatalog, T::Catalog(id)) => {
+                let result = plan_my_cabinet::hardware_catalog::remove(&mut self.editor, id);
+                if result.is_ok() && self.session.inspector == Some(InspectorTarget::Catalog(id)) {
+                    self.session.inspector = None;
+                }
+                self.report_edit(result);
+            }
+            (A::NewFoot, _) => {
+                if !self.add_foot_now() {
+                    // No foot model yet: browse the catalog for one.
+                    self.open_catalog_dialog();
+                }
+            }
             (A::DeleteDoor, T::Door(id)) => {
                 self.modals
                     .set_removal(Some(door_joint_ui::RemovalDialog::new(
@@ -1370,6 +1578,19 @@ impl DesktopApp {
                 ) {
                     return Err(Unavailable::ModalOpen);
                 }
+            }
+            (A::SetExportFormat, _) => {
+                if let Argument::Format(format) = request.argument {
+                    self.file_export.format = Some(format);
+                    self.handoff.message = None;
+                }
+            }
+            (A::ExportFile, _) => {
+                let format = match request.argument {
+                    Argument::Format(format) => format,
+                    _ => self.file_export.format(),
+                };
+                self.start_file_export(format);
             }
             (A::ExportPdf, _) => {
                 let (tx, rx) = mpsc::channel();

@@ -1,5 +1,5 @@
 //! Dimensioned reference hardware editor. Draft fields never mutate the project.
-use crate::actions::{ActionId as A, Argument, Request, Target};
+use crate::actions::{ActionId as A, Request, Target};
 use crate::icons::Icon;
 use crate::theme_widgets as tw;
 use crate::*;
@@ -190,31 +190,10 @@ impl HardwareDialog {
     }
 }
 
-impl HardwareDialog {
-    /// A new catalog foot: the first pinned foot model, else the first in the catalog.
-    pub(crate) fn new_foot(app: &DesktopApp) -> Self {
-        let mut dialog = Self::new(app, None);
-        let pinned = app
-            .editor
-            .project()
-            .catalog
-            .iter()
-            .find(|c| c.foot().is_some())
-            .map(|c| FootModel::Pinned(c.id));
-        let catalog = || {
-            foot_models(app)
-                .into_iter()
-                .map(|(model, _)| model)
-                .find(|m| matches!(m, FootModel::Catalog { .. }))
-        };
-        dialog.foot = Some(pinned.or_else(catalog));
-        dialog.name = app.localizer.text("foot-default-name");
-        dialog
-    }
-}
+impl HardwareDialog {}
 
 /// Foot models to offer: pinned ones first, then every catalog variant.
-fn foot_models(app: &DesktopApp) -> Vec<(FootModel, String)> {
+pub(crate) fn foot_models(app: &DesktopApp) -> Vec<(FootModel, String)> {
     let language = app.localizer.language().tag();
     let project = app.editor.project();
     let mut out: Vec<(FootModel, String)> = project
@@ -256,7 +235,7 @@ fn foot_models(app: &DesktopApp) -> Vec<(FootModel, String)> {
 }
 
 /// The catalog id to use and, for a catalog variant, the snapshot to pin.
-fn resolve_foot(
+pub(crate) fn resolve_foot(
     app: &DesktopApp,
     model: &FootModel,
 ) -> Option<(Uuid, Option<plan_my_cabinet::domain::CatalogReference>)> {
@@ -277,7 +256,7 @@ fn resolve_foot(
     }
 }
 
-fn foot_size(app: &DesktopApp, model: &FootModel) -> Option<[Length; 3]> {
+pub(crate) fn foot_size(app: &DesktopApp, model: &FootModel) -> Option<[Length; 3]> {
     match model {
         FootModel::Pinned(id) => app
             .editor
@@ -302,14 +281,13 @@ impl DesktopApp {
         removed
     }
 
-    /// Secondary Hardware section for dimensioned reference items. Creation is
-    /// also in the Doors "+" menu, so the section only appears once it has rows.
-    pub(crate) fn show_hardware_list(&mut self, ui: &mut egui::Ui) {
-        let items: Vec<_> = self
-            .editor
-            .project()
+    /// The Feet & legs section (`feet`) or the Other hardware section.
+    pub(crate) fn show_hardware_list(&mut self, ui: &mut egui::Ui, feet: bool) {
+        let project = self.editor.project();
+        let items: Vec<_> = project
             .hardware
             .iter()
+            .filter(|h| project.foot_spec(h).is_some() == feet)
             .map(|h| match h.kind {
                 HardwareKind::Placeholder { dimensions } => {
                     (h.id, h.name.clone(), Some(dimensions), None, false)
@@ -323,10 +301,23 @@ impl DesktopApp {
                 ),
             })
             .collect();
-        if items.is_empty() {
-            return;
-        }
         let modal = self.modal_open();
+        let mut inspect = None;
+        let (section_id, title, add, empty) = if feet {
+            (
+                "hardware-feet-section",
+                "hardware-section-feet",
+                A::NewFoot,
+                "hardware-empty-feet",
+            )
+        } else {
+            (
+                "hardware-other-section",
+                "hardware-section-other",
+                A::NewHardware,
+                "hardware-empty-other",
+            )
+        };
         let mut run = None;
         tw::divider(ui);
         let open = egui::Frame::new()
@@ -339,15 +330,15 @@ impl DesktopApp {
             .show(ui, |ui| {
                 let (open, ()) = tw::collapsible_section_bar(
                     ui,
-                    egui::Id::new("design-hardware-section"),
-                    &self.localizer.text("hardware-list"),
+                    egui::Id::new(section_id),
+                    &self.localizer.text(title),
                     items.len(),
                     |ui| {
-                        let request = Request::new(A::NewHardware);
+                        let request = Request::new(add);
                         if tw::ghost_icon_sized(
                             ui,
                             Icon::Plus,
-                            &A::NewHardware.label(&self.localizer),
+                            &add.label(&self.localizer),
                             tw::MUTED,
                             15.0,
                             24.0,
@@ -378,9 +369,12 @@ impl DesktopApp {
                 })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
+                    if items.is_empty() {
+                        slide_ui::empty_hint(ui, &self.localizer.text(empty));
+                    }
                     for (id, name, dims, catalog_id, foot) in items {
                         let selected = self.selection.ids.contains(&id);
-                        let active = self.selection.active == Some(id);
+                        let active = self.session.inspector == Some(InspectorTarget::Hardware(id));
                         let catalog = catalog_id.map(|catalog_id| {
                             self.editor
                                 .project()
@@ -517,17 +511,14 @@ impl DesktopApp {
                                 }
                             }
                         });
-                        if run.is_none() && response.clicked() {
-                            let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-                            run = Some(
-                                Request::with(A::SelectObject, Target::Object(id))
-                                    .argument(Argument::Additive(additive)),
-                            );
-                        } else if run.is_none() && response.double_clicked() && editable {
-                            run = Some(edit);
+                        if run.is_none() && (response.clicked() || response.double_clicked()) {
+                            inspect = Some(id);
                         }
                     }
                 });
+        }
+        if let Some(id) = inspect {
+            self.request_inspect(InspectorTarget::Hardware(id));
         }
         if let Some(request) = run {
             self.invoke_or_report(request);

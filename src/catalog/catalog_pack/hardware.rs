@@ -95,6 +95,9 @@ pub struct RawHoleAt {
     pub offset: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diameter: Option<f64>,
+    /// Pilot depth in mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -397,13 +400,14 @@ fn holes(
         .enumerate()
         .map(|(n, hole)| {
             let hpath = format!("{path}[{n}]");
-            let (along, offset, diameter) = match hole {
-                RawHole::Along(along) => (*along, 0.0, None),
-                RawHole::At(at) => (at.along, at.offset, at.diameter),
+            let (along, offset, diameter, depth) = match hole {
+                RawHole::Along(along) => (*along, 0.0, None, None),
+                RawHole::At(at) => (at.along, at.offset, at.diameter, at.depth),
             };
             let along = length(issues, hpath.clone(), along, true);
             let offset = signed(issues, format!("{hpath}.offset"), offset);
             let diameter = diameter.map(|d| length(issues, format!("{hpath}.diameter"), d, false));
+            let depth = depth.map(|d| length(issues, format!("{hpath}.depth"), d, false));
             if along > member_length || 2 * offset.micrometres().abs() > member_height.micrometres()
             {
                 issue(issues, hpath, IssueKind::HoleOutsideMember);
@@ -412,6 +416,7 @@ fn holes(
                 along,
                 offset,
                 diameter,
+                depth,
             }
         })
         .collect();

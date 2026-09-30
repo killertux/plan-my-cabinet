@@ -64,6 +64,8 @@ pub enum Kind {
     Slide,
     /// A hardware item that is a catalog foot.
     Foot,
+    /// An edge band record.
+    Band,
 }
 
 impl Kind {
@@ -80,6 +82,7 @@ impl Kind {
             Self::Catalog => "catalog entry",
             Self::Slide => "drawer slide pair",
             Self::Foot => "foot",
+            Self::Band => "edge band",
         }
     }
 }
@@ -200,6 +203,11 @@ pub(crate) fn candidates(project: &Project, kind: Kind) -> Vec<(Uuid, String)> {
             .materials
             .iter()
             .map(|m| (m.id, m.name.clone()))
+            .collect(),
+        Kind::Band => project
+            .edge_bands
+            .iter()
+            .map(|b| (b.id, b.name.clone()))
             .collect(),
         Kind::Stock => project
             .stock

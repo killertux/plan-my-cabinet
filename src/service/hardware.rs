@@ -429,7 +429,7 @@ impl Workspace {
             "recommended_count": recommended_count(edge),
             "positions": fits,
             "catalog": entry.map(|e| entry_json(project, e)),
-            "default_pair": entry.and_then(|e| default_pair(e, mount_thickness)).map(|(k, r)| json!({ "k_mm": mm_f64(k), "r_or_f_mm": mm_f64(r) })),
+            "default_pair": entry.and_then(|e| hinge_installation::default_pair(e, mount_thickness)).map(|(k, r)| json!({ "k_mm": mm_f64(k), "r_or_f_mm": mm_f64(r) })),
             "note": if entry.is_none() { "No hinge is pinned yet; add_hinges pins the bundled kit automatically, or call add_catalog_hinge." } else { "" },
         }))
     }
@@ -518,7 +518,7 @@ impl Workspace {
             let mount_thickness = project.board(mount).map(|b| b.thickness);
             let (k, overlay) = match (k, overlay) {
                 (Some(k), Some(o)) => (k, o),
-                _ => default_pair(entry, mount_thickness).ok_or_else(|| {
+                _ => hinge_installation::default_pair(entry, mount_thickness).ok_or_else(|| {
                     ServiceError::new(ErrorCode::CatalogError, "the catalog has no K/R pairs")
                 })?,
             };
@@ -839,18 +839,4 @@ impl Workspace {
             .collect();
         Ok(json!({ "revision": project.revision, "doors": rows }))
     }
-}
-
-/// The K/R pair whose R equals the side thickness (a full overlay that covers
-/// the side edge), else the first pair in the table.
-fn default_pair(
-    entry: &CatalogReference,
-    mount_thickness: Option<Length>,
-) -> Option<(Length, Length)> {
-    let facts = hardware_catalog::facts(entry)?;
-    let table = &facts.overlay_by_cup_edge;
-    mount_thickness
-        .and_then(|t| table.iter().find(|p| p.overlay == t))
-        .or_else(|| table.first())
-        .map(|p| (p.cup_edge_setback, p.overlay))
 }

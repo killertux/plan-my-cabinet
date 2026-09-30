@@ -352,6 +352,8 @@ pub fn describe(
             solids.push(s);
         }
     }
+    // Hinges are left out on purpose: a cup sits inside the door by design
+    // and would read as an overlap.
     for slide in &project.slide_installations {
         if !slide
             .drawer_sides

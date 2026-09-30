@@ -304,3 +304,26 @@ fn slide_and_foot_edits_make_exports_stale() {
     assert_eq!(before.wood, after.wood, "slides are not wood");
     assert_ne!(before.packet, after.packet);
 }
+
+#[test]
+fn propose_and_update_with_catalog_are_what_the_ui_uses() {
+    let mut editor = generated(560, 500);
+    let installation = editor.project().slide_installations[0].clone();
+    let registry = plan_my_cabinet::catalog_pack::CatalogRegistry::bundled();
+    let tt35 = registry.slide_lengths("fgvtn-slides", "tt35-slowmotion", "en");
+    let proposal =
+        slide_installation::propose(editor.project(), installation.drawer_root_id, &tt35).unwrap();
+    assert_eq!(proposal.catalog.product_id, "0073.035500SX");
+    let revision = editor.project().revision;
+    slide_installation::update_with_catalog(
+        &mut editor,
+        Some(proposal.catalog.clone()),
+        SlideInstallation {
+            catalog_id: proposal.catalog.id,
+            ..installation
+        },
+    )
+    .unwrap();
+    assert_eq!(editor.project().revision, revision + 1);
+    assert_eq!(editor.project().catalog.len(), 2);
+}

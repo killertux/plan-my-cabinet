@@ -15,6 +15,8 @@ pub fn fixture() -> Project {
     project.id = id(1);
     project.cutting_kerf = mm(5);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: id(2),
         name: "Plywood".into(),
         default_thickness: mm(18),
@@ -22,6 +24,7 @@ pub fn fixture() -> Project {
     });
     for i in 0..100 {
         project.boards.push(Board {
+            banding: Default::default(),
             id: id(100 + i),
             name: format!("Part {:03}", i + 1),
             material_id: id(2),

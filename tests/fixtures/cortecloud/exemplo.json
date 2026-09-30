@@ -1,0 +1,244 @@
+{
+  "parts": [
+    {
+      "quantity": 1,
+      "c": 500,
+      "l": 500,
+      "function": "Lateral",
+      "complement": "Balcao A",
+      "c1": "Branco 0.4",
+      "c2": null,
+      "l1": null,
+      "l2": null,
+      "material": "Branco 18",
+      "machining": {
+        "x": 500,
+        "y": 500,
+        "z": 18,
+        "startSide": 0,
+        "horizontalDrills": [],
+        "verticalDrills": [
+          {
+            "x": 10,
+            "y": 58,
+            "face": "i",
+            "depth": 11,
+            "corner": 1,
+            "diameter": 8,
+            "bolthole": false
+          },
+          {
+            "x": 10,
+            "y": 90,
+            "face": "i",
+            "depth": 11,
+            "corner": 2,
+            "diameter": 8,
+            "bolthole": false
+          },
+          {
+            "x": 10,
+            "y": 90,
+            "face": "i",
+            "depth": 11,
+            "corner": 3,
+            "diameter": 8,
+            "bolthole": false
+          },
+          {
+            "x": 10,
+            "y": 58,
+            "face": "i",
+            "depth": 11,
+            "corner": 0,
+            "diameter": 8,
+            "bolthole": false
+          },
+          {
+            "x": 11.5,
+            "y": 38,
+            "face": "i",
+            "depth": 11,
+            "corner": 1,
+            "diameter": 5,
+            "bolthole": false
+          },
+          {
+            "x": 11.5,
+            "y": 70,
+            "face": "i",
+            "depth": 11,
+            "corner": 2,
+            "diameter": 5,
+            "bolthole": false
+          },
+          {
+            "x": 11.5,
+            "y": 38,
+            "face": "i",
+            "depth": 11,
+            "corner": 0,
+            "diameter": 5,
+            "bolthole": false
+          },
+          {
+            "x": 11.5,
+            "y": 70,
+            "face": "i",
+            "depth": 11,
+            "corner": 3,
+            "diameter": 5,
+            "bolthole": false
+          }
+        ],
+        "furrowMachining": null,
+        "furrowMachiningPair": null
+      }
+    },
+    {
+      "quantity": 1,
+      "c": 500,
+      "l": 500,
+      "function": "Lateral",
+      "complement": "Balcao A",
+      "c1": "Branco 0.4",
+      "c2": null,
+      "l1": null,
+      "l2": null,
+      "material": "Branco 18",
+      "machining": {
+        "x": 500,
+        "y": 500,
+        "z": 18,
+        "startSide": 0,
+        "horizontalDrills": [
+          {
+            "corner": 2,
+            "direction": "XP",
+            "x": 0,
+            "y": 69,
+            "z": 10.5,
+            "face": "i",
+            "depth": 24,
+            "diameter": 8
+          },
+          {
+            "corner": 1,
+            "direction": "XP",
+            "x": 0,
+            "y": 37,
+            "z": 10.5,
+            "face": "i",
+            "depth": 24,
+            "diameter": 8
+          },
+          {
+            "corner": 1,
+            "direction": "XP",
+            "x": 0,
+            "y": 57,
+            "z": 9,
+            "face": "i",
+            "depth": 22,
+            "diameter": 8
+          },
+          {
+            "corner": 2,
+            "direction": "XP",
+            "x": 0,
+            "y": 89,
+            "z": 9,
+            "face": "i",
+            "depth": 22,
+            "diameter": 8
+          },
+          {
+            "corner": 3,
+            "direction": "XP",
+            "x": 0,
+            "y": 69,
+            "z": 10.5,
+            "face": "i",
+            "depth": 24,
+            "diameter": 8
+          },
+          {
+            "corner": 0,
+            "direction": "XP",
+            "x": 0,
+            "y": 37,
+            "z": 10.5,
+            "face": "i",
+            "depth": 24,
+            "diameter": 8
+          },
+          {
+            "corner": 0,
+            "direction": "XP",
+            "x": 0,
+            "y": 57,
+            "z": 9,
+            "face": "i",
+            "depth": 22,
+            "diameter": 8
+          },
+          {
+            "corner": 3,
+            "direction": "XP",
+            "x": 0,
+            "y": 89,
+            "z": 9,
+            "face": "i",
+            "depth": 22,
+            "diameter": 8
+          }
+        ],
+        "verticalDrills": [
+          {
+            "corner": 2,
+            "bolthole": false,
+            "x": 25,
+            "y": 69,
+            "face": "i",
+            "depth": 12,
+            "diameter": 15
+          },
+          {
+            "corner": 1,
+            "bolthole": false,
+            "x": 25,
+            "y": 37,
+            "face": "i",
+            "depth": 12,
+            "diameter": 15
+          },
+          {
+            "corner": 3,
+            "bolthole": false,
+            "x": 25,
+            "y": 69,
+            "face": "i",
+            "depth": 12,
+            "diameter": 15
+          },
+          {
+            "corner": 0,
+            "bolthole": false,
+            "x": 25,
+            "y": 37,
+            "face": "i",
+            "depth": 12,
+            "diameter": 15
+          }
+        ],
+        "furrowMachining": {
+          "face": "i",
+          "depth": 8,
+          "width": 6.7,
+          "distance": 15
+        },
+        "furrowMachiningPair": null
+      }
+    }
+  ]
+}

@@ -5,12 +5,13 @@ use eframe::egui::{self, Color32, Image, ImageSource};
 
 macro_rules! icons {
     ($($variant:ident => $name:literal),+ $(,)?) => {
-        /// The complete original 40-icon handoff set.
+        /// The original 40-icon handoff set, plus icons drawn for the app in
+        /// the same style (see `APP_ICONS`).
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Icon { $($variant),+ }
 
         impl Icon {
-            pub const ALL: [Self; 40] = [$(Self::$variant),+];
+            pub const ALL: [Self; 41] = [$(Self::$variant),+];
 
             /// Stable asset identifier, not a localized action label.
             pub const fn name(self) -> &'static str {
@@ -37,8 +38,12 @@ icons! {
     Duplicate => "duplicate", Trash => "trash", Save => "save", Folder => "folder",
     Place => "place", Axes => "axes", Bolt => "bolt", Layers => "layers", Globe => "globe",
     Door => "door", Cube => "cube", Dots => "dots", List => "list", Command => "command",
-    Grain => "grain",
+    Grain => "grain", Band => "band",
 }
+
+/// Icons drawn for the app after the handoff, in its style (24 × 24,
+/// 1.7 stroke, round caps and joins). They have no handoff source.
+pub const APP_ICONS: &[&str] = &["band"];
 
 /// Install the pinned SVG loader once during app creation (safe to call again).
 /// SVG bytes are embedded; no filesystem or HTTP loader is enabled.

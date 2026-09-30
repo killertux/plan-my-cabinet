@@ -224,7 +224,9 @@ Portuguese:
 - [3D view](docs/viewport-en.md)
 - [Stock and cut planning](docs/stock-en.md)
 - [Hinges, drawer slides, feet and catalog packs](docs/hardware-en.md)
+- [Edge banding](docs/banding-en.md)
 - [Shop handoff](docs/shop-handoff-en.md)
+- [Ordering parts through CorteCloud](docs/cortecloud-en.md)
 - [Project files and recovery](docs/project-en.md)
 - [Using it from an AI agent (MCP)](docs/mcp-en.md)
 

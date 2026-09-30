@@ -1,6 +1,31 @@
 //! Canvas allocation and pointer/keyboard interaction. Camera projection, rays and drag math live in the parent.
 use super::*;
 
+/// Where a drag starts: a board (unless only hardware may move) or a
+/// hardware item.
+fn drag_start_pose(
+    project: &Project,
+    id: Uuid,
+    hardware_only: bool,
+) -> Option<plan_my_cabinet::units::Pose> {
+    if project.hardware.iter().any(|h| h.id == id) {
+        return plan_my_cabinet::assembly_edit::world_pose(project, id).ok();
+    }
+    if hardware_only {
+        return None;
+    }
+    plan_my_cabinet::placement::world_pose(project, id).ok()
+}
+
+#[cfg(test)]
+pub(super) fn drag_start_pose_for_tests(
+    project: &Project,
+    id: Uuid,
+    hardware_only: bool,
+) -> Option<plan_my_cabinet::units::Pose> {
+    drag_start_pose(project, id, hardware_only)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn interact_with_selection(
     ui: &mut egui::Ui,
@@ -55,6 +80,7 @@ pub(super) fn interact_with_selection(
         if action.is_none()
             && !resizing
             && tool.mode == ToolMode::Move
+            && tool.drag_enabled
             && !preview_active
             && response.drag_started_by(egui::PointerButton::Primary)
             && !ui.input(|i| i.modifiers.shift || i.modifiers.command)
@@ -62,7 +88,7 @@ pub(super) fn interact_with_selection(
             && let Some(start) = ui.input(|i| i.pointer.press_origin())
             && let Some(id) = selection.active
             && pick_visible(project, camera, start, rect, selection) == Some(id)
-            && let Ok(world) = plan_my_cabinet::placement::world_pose(project, id)
+            && let Some(world) = drag_start_pose(project, id, tool.hardware_only)
         {
             tool.drag = Some(MoveDrag {
                 board_id: id,
@@ -119,7 +145,42 @@ pub(super) fn interact_with_selection(
                 action = Some(DragAction::Preview(drag.board_id, pose));
             }
         }
+        if tool.mode == ToolMode::Band {
+            tool.band_hover = response
+                .hover_pos()
+                .filter(|_| !ui.input(|i| i.pointer.any_down()))
+                .and_then(|pointer| super::pick_edge(project, camera, pointer, rect, selection));
+            if let Some((board, _)) = tool.band_hover {
+                let accepts = project
+                    .board(board)
+                    .and_then(|b| project.material(b.material_id))
+                    .is_some_and(|m| m.kind.accepts_banding());
+                ui.ctx().set_cursor_icon(if accepts {
+                    egui::CursorIcon::PointingHand
+                } else {
+                    egui::CursorIcon::NotAllowed
+                });
+                super::set_hover(ui.ctx(), Some(board));
+            } else {
+                super::set_hover(ui.ctx(), None);
+            }
+            if !preview_active
+                && response.clicked_by(egui::PointerButton::Primary)
+                && let Some(pointer) = response.interact_pointer_pos()
+                && let Some((board, edge)) =
+                    super::pick_edge(project, camera, pointer, rect, selection)
+            {
+                interaction.band = Some(super::BandClick {
+                    board,
+                    edge,
+                    reset: ui.input(|i| i.modifiers.alt),
+                });
+            }
+        } else {
+            tool.band_hover = None;
+        }
         if tool.drag.is_none()
+            && tool.mode != ToolMode::Band
             && !resizing
             && tool.resize_hover.is_none()
             && !ui.input(|i| i.pointer.any_down())
@@ -138,6 +199,7 @@ pub(super) fn interact_with_selection(
             }
         }
         if !preview_active
+            && tool.mode != ToolMode::Band
             && response.clicked_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()
         {

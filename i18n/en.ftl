@@ -1639,7 +1639,179 @@ slide-save-failed = The slides could not be saved
 foot-new = Foot…
 foot-edit = Edit foot
 foot-default-name = Foot
+hardware-default-name = Hardware
+hardware-inspect-empty = Select hardware in the list or the 3D view to see and edit its details, or use Add hardware.
 foot-model = Foot model
 foot-choose-model = Choose a foot model
 foot-position-hint = Position is the corner of the foot's box on the floor. Raise the furniture by the foot height.
 catalogs-hardware-models-hint = Add drawer slides and feet from the Hardware + menu.
+hardware-rotation = Rotation
+hardware-invalid-rotation = Rotation must be a number of degrees
+hardware-kind-foot = Foot
+hardware-kind-catalog = Catalog hardware
+hardware-kind-other = Other hardware
+design-hardware-links = Hardware
+hardware-kind-door = Door
+hardware-open-inspector = Show details
+hardware-door-relationship = Door
+foot-below-floor = This foot reaches { $mm } mm below the floor.
+foot-raise = Raise { $name } by { $mm } mm
+door-moving-part = Moving part
+door-mount = Hung from
+door-opening-limit = Opens up to
+door-hinge-list = Hinges
+door-add-hinge = Add a hinge to this door
+door-reconfirm = Reconfirm
+catalog-kind-hinge = Hinge model
+catalog-kind-slide = Drawer slide model
+catalog-kind-foot = Foot model
+catalog-kind-other = Catalog record
+catalog-used-by = Used by
+catalog-unused = Nothing uses this model yet.
+catalog-remove = Remove model
+slide-refit = Refit slides
+slide-position = Position
+slide-profile-height = Profile height
+axis-x = X
+axis-y = Y
+axis-z = Z
+hardware-add-button = Add hardware
+hardware-add-door-or-hinge = Add a door or a hinge
+hardware-add-door-item = Door (hang the selected board)
+hardware-add-hinge-item = Hinge (on the selected board)
+hardware-add-slides-item = Drawer slides (on the selected drawer)
+hardware-add-foot-item = Foot (under the selected cabinet)
+hardware-add-other-item = Other hardware (a sized box)
+hardware-browse-catalog-item = Browse the catalog…
+hardware-section-doors = Doors & hinges
+hardware-section-slides = Drawers & slides
+hardware-section-feet = Feet & legs
+hardware-section-other = Other hardware
+hardware-section-catalog = Catalog models
+hardware-empty-doors = No doors yet. Select a door board and press + to hang it with hinges.
+hardware-empty-slides = No drawer slides. Select a drawer (or one of its boards) and press +.
+hardware-empty-feet = No feet. Select the cabinet and press + to put a foot under it.
+hardware-empty-other = Handles, rails or anything else: press + to add a sized box you can move.
+hardware-empty-catalog = No models pinned. Hinges, slides and feet you use are pinned here; press + to browse the catalog.
+catalog-kind-short-hinge = Hinge
+catalog-kind-short-slide = Slide
+catalog-kind-short-foot = Foot
+catalog-kind-short-other = Record
+catalog-unused-short = unused
+
+## Edge banding
+banding-title = Edge banding
+banding-not-accepted = { $material } is { $kind } · no edge banding
+banding-none-accepted = Only MDF and MDP boards take edge banding.
+banding-band = Band
+banding-new-band = New band…
+banding-preset-auto = Automatic
+banding-preset-none = None
+banding-preset-front = Front
+banding-preset-all = All 4
+banding-front = front
+banding-hint = Click an edge to band it or take its band off · A = automatic
+banding-auto-free = { $length } edge · automatic: free edge: { $band }
+banding-auto-joined = { $length } edge · automatic: against { $board }: no band
+banding-auto-partly = { $length } edge · automatic: only partly against { $board }: { $band }
+banding-auto-no-default = { $length } edge · automatic: the material has no default band
+banding-manual-on = { $length } edge · set by hand: { $band }
+banding-manual-off = { $length } edge · set by hand: no band
+banding-back-to-auto = Back to automatic
+banding-short-band = The { $band } band is lower than the { $thickness } board.
+banding-no-default = Automatic banding needs a default band on { $material }.
+banding-set-default = Choose a default band
+banding-mixed = { $count } of { $total }
+banding-edge-min-y = Bottom edge
+banding-edge-max-y = Top edge
+banding-edge-min-x = Left edge
+banding-edge-max-x = Right edge
+banding-skipped = { $count ->
+    [one] 1 board takes no banding and was left as it is.
+   *[other] { $count } boards take no banding and were left as they are.
+}
+banding-removed = { $count ->
+    [one] 1 edge lost its banding.
+   *[other] { $count } edges lost their banding.
+}
+banding-toggle = Band edge
+banding-set = Set edge banding
+banding-preset = Banding preset
+edge-bands-title = Edge bands
+edge-bands-empty = No edge bands yet. Press + to add the tape your shop uses.
+edge-band-new = New edge band
+edge-band-edit = Edit edge band
+edge-band-remove = Remove edge band
+edge-band-unused = unused
+edge-band-name = Name
+edge-band-thickness = Thickness
+edge-band-height = Height
+edge-band-color = Colour
+edge-band-hint = Name it as your shop lists it, for example "Fita Branca 1x22". The height should be at least the board thickness.
+material-kind = Type
+material-kind-mdf = MDF
+material-kind-mdp = MDP
+material-kind-hdf = HDF
+material-kind-plywood = Plywood
+material-kind-solid = Solid wood
+material-kind-other = Other
+material-kind-no-banding = { $kind } takes no edge banding.
+material-default-band = Default edge band
+material-default-band-hint = Automatic banding puts this band on every edge not joined to another board.
+material-no-band = No band
+viewport-band = Band edges
+viewport-band-hint = Click a board edge to band it or take its band off · Alt-click for automatic · drag to orbit
+
+## File exports (CorteCloud)
+export-format = Format
+export-format-pdf = Workshop PDF
+export-format-pdf-description = Print for your shop or yourself: parts, sheets and cut steps, hardware guidance.
+export-format-cortecloud = CorteCloud
+export-format-cortecloud-description = Order cut, banded and drilled parts from a shop. The shop picks the sheets and plans the cuts.
+cortecloud-summary = What the file lists
+cortecloud-parts = { $parts ->
+    [one] 1 part
+   *[other] { $parts } parts
+} in { $groups ->
+    [one] 1 line
+   *[other] { $groups } lines
+}
+cortecloud-banded = { $banded ->
+    [one] 1 part
+   *[other] { $banded } parts
+} with edge band · { $metres } m of band
+cortecloud-drilled = { $drilled ->
+    [one] 1 part
+   *[other] { $drilled } parts
+} drilled · { $holes ->
+    [one] 1 hole
+   *[other] { $holes } holes
+}
+cortecloud-left-out = Left out
+cortecloud-omit-issues = { $name }: { $holes } holes of hardware with issues
+cortecloud-omit-review = { $name }: { $holes } holes; the door needs review
+cortecloud-omit-pilot = { $name }: { $holes } screw holes with no pilot size
+cortecloud-no-boards = Add boards to export a part list.
+cortecloud-invalid-design = The design has a problem to fix before it can be exported.
+cortecloud-nothing = Nothing to export yet.
+cortecloud-pilots = Screw pilot holes
+cortecloud-pilots-enable = Ask the shop to drill screw pilots
+cortecloud-pilot-diameter = Diameter
+cortecloud-pilot-depth = Depth
+cortecloud-pilots-hint = Catalogs rarely give pilot sizes for hinge plates and slides. Without a size those holes are left for you to drill.
+cortecloud-import = How to import
+cortecloud-import-steps = In CorteCloud: Novo serviço › Serviço Completo › Carregar arquivo Cortecloud. Then link each material and band to the shop's stock.
+cortecloud-verify-note = Check the first import in CorteCloud's preview: holes and bands should be where the app shows them.
+cortecloud-last-current = Last exported: { $file } · matches the design
+cortecloud-last-outdated = Last exported: { $file } · the design changed since
+cortecloud-export-button = Export for CorteCloud…
+cortecloud-saved = Saved { $file }
+cortecloud-failed = Could not write the file. Choose another folder and try again.
+cortecloud-preview-title = Parts in the CorteCloud file
+cortecloud-col-quantity = Qty
+cortecloud-col-part = Part
+cortecloud-col-cabinet = Cabinet
+cortecloud-col-size = C × L × T
+cortecloud-col-material = Material
+cortecloud-col-banding = Band
+cortecloud-col-holes = Holes

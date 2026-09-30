@@ -1642,7 +1642,179 @@ slide-save-failed = Não foi possível salvar as corrediças
 foot-new = Pé…
 foot-edit = Editar pé
 foot-default-name = Pé
+hardware-default-name = Ferragem
+hardware-inspect-empty = Selecione uma ferragem na lista ou na vista 3D para ver e editar os detalhes, ou use Adicionar ferragem.
 foot-model = Modelo de pé
 foot-choose-model = Escolha um modelo de pé
 foot-position-hint = A posição é o canto da caixa do pé no chão. Levante o móvel na altura do pé.
 catalogs-hardware-models-hint = Adicione corrediças e pés pelo menu + de Ferragens.
+hardware-rotation = Rotação
+hardware-invalid-rotation = A rotação deve ser um número de graus
+hardware-kind-foot = Pé
+hardware-kind-catalog = Ferragem de catálogo
+hardware-kind-other = Outra ferragem
+design-hardware-links = Ferragens
+hardware-kind-door = Porta
+hardware-open-inspector = Mostrar detalhes
+hardware-door-relationship = Porta
+foot-below-floor = Este pé passa { $mm } mm abaixo do chão.
+foot-raise = Levantar { $name } { $mm } mm
+door-moving-part = Parte que abre
+door-mount = Presa em
+door-opening-limit = Abre até
+door-hinge-list = Dobradiças
+door-add-hinge = Adicionar dobradiça a esta porta
+door-reconfirm = Confirmar de novo
+catalog-kind-hinge = Modelo de dobradiça
+catalog-kind-slide = Modelo de corrediça
+catalog-kind-foot = Modelo de pé
+catalog-kind-other = Registro de catálogo
+catalog-used-by = Usado por
+catalog-unused = Nada usa este modelo ainda.
+catalog-remove = Remover modelo
+slide-refit = Reajustar corrediças
+slide-position = Posição
+slide-profile-height = Altura do perfil
+axis-x = X
+axis-y = Y
+axis-z = Z
+hardware-add-button = Adicionar ferragem
+hardware-add-door-or-hinge = Adicionar porta ou dobradiça
+hardware-add-door-item = Porta (pendurar a chapa selecionada)
+hardware-add-hinge-item = Dobradiça (na chapa selecionada)
+hardware-add-slides-item = Corrediças (na gaveta selecionada)
+hardware-add-foot-item = Pé (embaixo do móvel selecionado)
+hardware-add-other-item = Outra ferragem (uma caixa dimensionada)
+hardware-browse-catalog-item = Explorar o catálogo…
+hardware-section-doors = Portas e dobradiças
+hardware-section-slides = Gavetas e corrediças
+hardware-section-feet = Pés
+hardware-section-other = Outras ferragens
+hardware-section-catalog = Modelos do catálogo
+hardware-empty-doors = Nenhuma porta ainda. Selecione a chapa da porta e toque em + para pendurá-la com dobradiças.
+hardware-empty-slides = Nenhuma corrediça. Selecione uma gaveta (ou uma de suas chapas) e toque em +.
+hardware-empty-feet = Nenhum pé. Selecione o móvel e toque em + para colocar um pé embaixo.
+hardware-empty-other = Puxadores, trilhos ou outras peças: toque em + para adicionar uma caixa dimensionada que você pode mover.
+hardware-empty-catalog = Nenhum modelo fixado. Dobradiças, corrediças e pés usados ficam aqui; toque em + para explorar o catálogo.
+catalog-kind-short-hinge = Dobradiça
+catalog-kind-short-slide = Corrediça
+catalog-kind-short-foot = Pé
+catalog-kind-short-other = Registro
+catalog-unused-short = sem uso
+
+## Fita de borda
+banding-title = Fita de borda
+banding-not-accepted = { $material } é { $kind } · sem fita de borda
+banding-none-accepted = Só peças de MDF e MDP levam fita de borda.
+banding-band = Fita
+banding-new-band = Nova fita…
+banding-preset-auto = Automática
+banding-preset-none = Nenhuma
+banding-preset-front = Frente
+banding-preset-all = Todas
+banding-front = frente
+banding-hint = Toque numa borda para colocar ou tirar a fita · A = automática
+banding-auto-free = Borda de { $length } · automática: borda livre: { $band }
+banding-auto-joined = Borda de { $length } · automática: encostada em { $board }: sem fita
+banding-auto-partly = Borda de { $length } · automática: só parte encostada em { $board }: { $band }
+banding-auto-no-default = Borda de { $length } · automática: o material não tem fita padrão
+banding-manual-on = Borda de { $length } · definida à mão: { $band }
+banding-manual-off = Borda de { $length } · definida à mão: sem fita
+banding-back-to-auto = Voltar ao automático
+banding-short-band = A fita { $band } é mais baixa que a chapa de { $thickness }.
+banding-no-default = A fita automática precisa de uma fita padrão em { $material }.
+banding-set-default = Escolher fita padrão
+banding-mixed = { $count } de { $total }
+banding-edge-min-y = Borda de baixo
+banding-edge-max-y = Borda de cima
+banding-edge-min-x = Borda esquerda
+banding-edge-max-x = Borda direita
+banding-skipped = { $count ->
+    [one] 1 peça não leva fita e ficou como estava.
+   *[other] { $count } peças não levam fita e ficaram como estavam.
+}
+banding-removed = { $count ->
+    [one] 1 borda perdeu a fita.
+   *[other] { $count } bordas perderam a fita.
+}
+banding-toggle = Colocar fita na borda
+banding-set = Definir fita de borda
+banding-preset = Predefinição de fita
+edge-bands-title = Fitas de borda
+edge-bands-empty = Nenhuma fita de borda ainda. Toque em + para adicionar a fita que a sua marcenaria usa.
+edge-band-new = Nova fita de borda
+edge-band-edit = Editar fita de borda
+edge-band-remove = Remover fita de borda
+edge-band-unused = sem uso
+edge-band-name = Nome
+edge-band-thickness = Espessura
+edge-band-height = Altura
+edge-band-color = Cor
+edge-band-hint = Use o nome da lista da marcenaria, por exemplo "Fita Branca 1x22". A altura deve ser pelo menos a espessura da chapa.
+material-kind = Tipo
+material-kind-mdf = MDF
+material-kind-mdp = MDP
+material-kind-hdf = HDF
+material-kind-plywood = Compensado
+material-kind-solid = Madeira maciça
+material-kind-other = Outro
+material-kind-no-banding = { $kind } não leva fita de borda.
+material-default-band = Fita de borda padrão
+material-default-band-hint = A fita automática coloca esta fita em toda borda que não encosta em outra peça.
+material-no-band = Sem fita
+viewport-band = Fita nas bordas
+viewport-band-hint = Toque na borda de uma peça para colocar ou tirar a fita · Alt-toque para automático · arraste para orbitar
+
+## Exportação de arquivos (CorteCloud)
+export-format = Formato
+export-format-pdf = PDF da oficina
+export-format-pdf-description = Para imprimir: peças, chapas e passos de corte, orientação das ferragens.
+export-format-cortecloud = CorteCloud
+export-format-cortecloud-description = Pedir peças cortadas, com fita e furadas a uma marcenaria. Ela escolhe as chapas e faz o plano de corte.
+cortecloud-summary = O que o arquivo lista
+cortecloud-parts = { $parts ->
+    [one] 1 peça
+   *[other] { $parts } peças
+} em { $groups ->
+    [one] 1 linha
+   *[other] { $groups } linhas
+}
+cortecloud-banded = { $banded ->
+    [one] 1 peça
+   *[other] { $banded } peças
+} com fita de borda · { $metres } m de fita
+cortecloud-drilled = { $drilled ->
+    [one] 1 peça furada
+   *[other] { $drilled } peças furadas
+} · { $holes ->
+    [one] 1 furo
+   *[other] { $holes } furos
+}
+cortecloud-left-out = Ficou de fora
+cortecloud-omit-issues = { $name }: { $holes } furos de ferragem com problemas
+cortecloud-omit-review = { $name }: { $holes } furos; a porta precisa de revisão
+cortecloud-omit-pilot = { $name }: { $holes } furos de parafuso sem medida de pré-furo
+cortecloud-no-boards = Adicione peças para exportar uma lista.
+cortecloud-invalid-design = O projeto tem um problema a corrigir antes de exportar.
+cortecloud-nothing = Nada para exportar ainda.
+cortecloud-pilots = Pré-furos de parafuso
+cortecloud-pilots-enable = Pedir à marcenaria os pré-furos de parafuso
+cortecloud-pilot-diameter = Diâmetro
+cortecloud-pilot-depth = Profundidade
+cortecloud-pilots-hint = Os catálogos raramente dão a medida do pré-furo de calços e corrediças. Sem medida, esses furos ficam para você fazer.
+cortecloud-import = Como importar
+cortecloud-import-steps = No CorteCloud: Novo serviço › Serviço Completo › Carregar arquivo Cortecloud. Depois vincule cada material e fita ao estoque da marcenaria.
+cortecloud-verify-note = Confira a primeira importação na prévia do CorteCloud: furos e fitas devem estar onde o app mostra.
+cortecloud-last-current = Última exportação: { $file } · confere com o projeto
+cortecloud-last-outdated = Última exportação: { $file } · o projeto mudou desde então
+cortecloud-export-button = Exportar para o CorteCloud…
+cortecloud-saved = { $file } salvo
+cortecloud-failed = Não foi possível gravar o arquivo. Escolha outra pasta e tente de novo.
+cortecloud-preview-title = Peças no arquivo do CorteCloud
+cortecloud-col-quantity = Qtde.
+cortecloud-col-part = Peça
+cortecloud-col-cabinet = Móvel
+cortecloud-col-size = C × L × E
+cortecloud-col-material = Material
+cortecloud-col-banding = Fita
+cortecloud-col-holes = Furos

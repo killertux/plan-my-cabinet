@@ -295,12 +295,15 @@ pub fn bench(entry: &crate::domain::CatalogReference, setup: BenchSetup) -> Inst
     let mut project = Project::new("Bench", crate::money::Currency::Brl);
     let material = Uuid::new_v4();
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material,
         name: "Bench".into(),
         default_thickness: setup.door_thickness,
         default_grain: BoardGrain::Unrestricted,
     });
     let board = |name: &str, length_mm: i64, thickness: Length| Board {
+        banding: Default::default(),
         id: Uuid::new_v4(),
         name: name.into(),
         material_id: material,
@@ -485,6 +488,76 @@ pub fn fitted(
         mount_y,
         ..installation.clone()
     })
+}
+
+/// The table pair to start with: the one whose R equals the side's
+/// thickness, else the first.
+pub fn default_pair(
+    entry: &crate::domain::CatalogReference,
+    mount_thickness: Option<Length>,
+) -> Option<(Length, Length)> {
+    let facts = hardware_catalog::facts(entry)?;
+    let table = &facts.overlay_by_cup_edge;
+    mount_thickness
+        .and_then(|t| table.iter().find(|p| p.overlay == t))
+        .or_else(|| table.first())
+        .map(|p| (p.cup_edge_setback, p.overlay))
+}
+
+/// Standard hinges for a door on a side, not yet in the project: `count`
+/// (default by edge length) at the standard positions, the default K/R pair.
+pub fn standard_set(
+    project: &Project,
+    door: Uuid,
+    mount: Uuid,
+    catalog_id: Uuid,
+    count: Option<usize>,
+) -> Result<Vec<HingeInstallation>, FitError> {
+    let board = project.board(door).ok_or(FitError::MissingPart)?;
+    let entry = project
+        .catalog
+        .iter()
+        .find(|c| c.id == catalog_id)
+        .ok_or(FitError::MissingPart)?;
+    let facts = hardware_catalog::facts(entry).ok_or(FitError::MissingPart)?;
+    let mount_thickness = project.board(mount).map(|b| b.thickness);
+    let (k, overlay) = default_pair(entry, mount_thickness).ok_or(FitError::MissingPart)?;
+    let probe = [board.length, board.width]
+        .iter()
+        .find_map(|half| {
+            fit(
+                project,
+                door,
+                mount,
+                Length::from_micrometres(half.micrometres() / 2),
+            )
+            .ok()
+        })
+        .ok_or(FitError::NotParallel)?;
+    let edge = edge_length(probe.0.door_edge, board.length, board.width);
+    let positions = standard_positions(edge, count.unwrap_or_else(|| recommended_count(edge)));
+    positions
+        .into_iter()
+        .map(|door_y| {
+            let (side, mount_y) = fit(project, door, mount, door_y)?;
+            Ok(HingeInstallation {
+                id: Uuid::new_v4(),
+                door_board_id: door,
+                mounting_board_id: mount,
+                catalog_id,
+                side,
+                door_y,
+                mount_y,
+                cup_edge_setback: k,
+                overlay,
+                inset_depth: if facts.arm.is_inset() {
+                    board.thickness
+                } else {
+                    Length::ZERO
+                },
+            })
+        })
+        .collect()
 }
 
 /// Usual number of hinges for a door edge of this length.
@@ -687,6 +760,38 @@ pub fn space_evenly(
     })
 }
 
+/// Move a hinge along the door (the plate follows) or, with both values,
+/// set the door and plate positions independently; one step.
+pub fn set_positions(
+    editor: &mut ProjectEditor,
+    id: Uuid,
+    door_y: Option<Length>,
+    mount_y: Option<Length>,
+) -> Result<bool, EditError<InstallationEditError>> {
+    let current = editor
+        .project()
+        .hinge_installations
+        .iter()
+        .find(|h| h.id == id)
+        .cloned()
+        .ok_or(EditError::Command(
+            InstallationEditError::MissingInstallation,
+        ))?;
+    match (door_y, mount_y) {
+        (Some(door_y), None) => move_to(editor, id, door_y).map(|_| true),
+        (None, None) => Ok(false),
+        (door_y, mount_y) => update(
+            editor,
+            HingeInstallation {
+                door_y: door_y.unwrap_or(current.door_y),
+                mount_y: mount_y.unwrap_or(current.mount_y),
+                ..current
+            },
+        )
+        .map(|_| true),
+    }
+}
+
 pub fn remove(
     editor: &mut ProjectEditor,
     id: Uuid,
@@ -725,6 +830,8 @@ mod tests {
         let mut p = Project::new("Hinges", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "ply".into(),
             default_thickness: mm(18),
@@ -733,6 +840,7 @@ mod tests {
         let pose = Pose::new([500.0, 12.0, -30.0], Quaternion::IDENTITY).unwrap();
         for name in ["door", "mount"] {
             p.boards.push(Board {
+                banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: name.into(),
                 material_id: material,

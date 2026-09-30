@@ -125,13 +125,17 @@ impl Labels {
     }
 }
 
-type PartKey = (String, Uuid, i64, i64, i64, u8);
+type PartKey = (String, Uuid, i64, i64, i64, u8, [Option<Uuid>; 4]);
 
 /// Name keeps distinct design labels distinct; physical grouping additionally
 /// requires identical material, finished dimensions and effective grain.
 fn part_groups(project: &Project) -> BTreeMap<PartKey, Vec<&crate::domain::Board>> {
     let mut groups: BTreeMap<PartKey, Vec<_>> = BTreeMap::new();
+    let banding = crate::banding_rules::effective(project);
     for board in &project.boards {
+        let bands = banding
+            .get(&board.id)
+            .map_or([None; 4], crate::banding_rules::bands);
         let grain = project
             .materials
             .iter()
@@ -150,6 +154,7 @@ fn part_groups(project: &Project) -> BTreeMap<PartKey, Vec<&crate::domain::Board
                     Some(BoardGrain::Unrestricted) => 2,
                     None => 3,
                 },
+                bands,
             ))
             .or_default()
             .push(board);
@@ -1194,7 +1199,7 @@ pub fn build_workshop_document(
         let groups = part_groups(project);
         let rows = groups
             .iter()
-            .map(|((name, material_id, l, w, t, grain), boards)| {
+            .map(|((name, material_id, l, w, t, grain, bands), boards)| {
                 let numbers = boards
                     .iter()
                     .map(|b| labels.part(b.id))
@@ -1222,6 +1227,8 @@ pub fn build_workshop_document(
                         length(Length::from_micrometres(*w), settings.units, language),
                         length(Length::from_micrometres(*t), settings.units, language)
                     ),
+                    crate::banding_rules::describe(project, *bands, language)
+                        .unwrap_or_else(|| "—".into()),
                 ]
             })
             .collect::<Vec<_>>();
@@ -1230,9 +1237,53 @@ pub fn build_workshop_document(
                 translated(language, "Part / quantity", "Peça / quantidade").into(),
                 translated(language, "Material / grain", "Material / veio").into(),
                 translated(language, "Finished dimensions", "Medidas finais").into(),
+                translated(language, "Edge banding", "Fita de borda").into(),
             ],
             &rows,
         )?;
+        // Band to buy: metres per band over every banded edge, with the
+        // usual allowance for trimming the ends.
+        let totals: Vec<_> = crate::banding::band_lengths(project)
+            .into_iter()
+            .filter(|(_, um)| *um > 0)
+            .filter_map(|(id, um)| project.edge_band(id).map(|band| (band, um)))
+            .collect();
+        if !totals.is_empty() {
+            builder.section(translated(language, "Edge band", "Fita de borda"))?;
+            let rows = totals
+                .iter()
+                .map(|(band, um)| {
+                    let metres = *um as f64 / 1_000_000.0;
+                    let decimal = |value: f64| {
+                        let text = format!("{value:.1}");
+                        if language == Language::PtBr {
+                            text.replace('.', ",")
+                        } else {
+                            text
+                        }
+                    };
+                    vec![
+                        band.name.clone(),
+                        format!(
+                            "{} × {}",
+                            length(band.thickness, settings.units, language),
+                            length(band.height, settings.units, language)
+                        ),
+                        format!("{} m", decimal(metres)),
+                        format!("{} m", decimal(metres * 1.1)),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            builder.table(
+                &[
+                    translated(language, "Band", "Fita").into(),
+                    translated(language, "Thickness × height", "Espessura × altura").into(),
+                    translated(language, "Banded edges", "Bordas com fita").into(),
+                    translated(language, "To buy (+10 %)", "Comprar (+10 %)").into(),
+                ],
+                &rows,
+            )?;
+        }
         let placements = groups
             .values()
             .flatten()

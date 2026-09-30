@@ -334,6 +334,7 @@ impl DesktopApp {
             Destination::Sheet(id) => project.stock.iter().any(|s| s.id == id),
             Destination::Material(id) => project.materials.iter().any(|m| m.id == id),
             Destination::Installation(id) => project.hinge_installations.iter().any(|h| h.id == id),
+            Destination::Fitting(target) => target.exists(project),
         }
     }
 

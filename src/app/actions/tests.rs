@@ -197,6 +197,12 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::RenameObject, R::Design),
         (A::EditDimensions, R::Design),
         (A::SetGrain, R::Design),
+        (A::ToggleBanding, R::Design),
+        (A::SetBanding, R::Design),
+        (A::ApplyBandingPreset, R::Design),
+        (A::NewEdgeBand, R::Design),
+        (A::EditEdgeBand, R::Design),
+        (A::RemoveEdgeBand, R::Design),
         (A::NewStock, R::Stock),
         (A::EditStock, R::Stock),
         (A::DuplicateStock, R::Stock),
@@ -216,6 +222,8 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::EditSlides, R::Hardware),
         (A::DeleteSlides, R::Hardware),
         (A::NewFoot, R::Hardware),
+        (A::RefitSlides, R::Hardware),
+        (A::RemoveCatalog, R::Hardware),
         (A::EditDoor, R::Hardware),
         (A::DeleteDoor, R::Hardware),
         (A::DeleteObject, R::Design),
@@ -240,6 +248,8 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::ConfirmKerf, R::Handoff),
         (A::OpenHandoff, R::Handoff),
         (A::ExportPdf, R::Handoff),
+        (A::SetExportFormat, R::Handoff),
+        (A::ExportFile, R::Handoff),
         (A::ReplacePdf, R::Dialog),
         (A::CancelExport, R::Dialog),
         (A::DirtySave, R::Dialog),
@@ -261,6 +271,7 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::ViewNavigate, R::Design),
         (A::ViewMove, R::Design),
         (A::ViewMeasure, R::Design),
+        (A::ViewBand, R::Design),
         (A::ViewFrame, R::Design),
         (A::ViewPreset, R::Design),
         (A::ViewProjection, R::Design),
@@ -280,15 +291,20 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         include_str!("../shell.rs"),
         include_str!("../board_dialogs.rs"),
         include_str!("../export_flow.rs"),
+        include_str!("../file_export_ui.rs"),
         include_str!("../settings_host.rs"),
         include_str!("../navigation.rs"),
         include_str!("../project_ui.rs"),
         include_str!("../assembly_ui.rs"),
+        include_str!("../banding_ui.rs"),
         include_str!("../stock_ui.rs"),
         include_str!("../hardware_ui.rs"),
         include_str!("../hinge_ui.rs"),
         include_str!("../door_joint_ui.rs"),
         include_str!("../slide_ui.rs"),
+        include_str!("../hardware_inspector.rs"),
+        include_str!("../hardware_add.rs"),
+        include_str!("../hardware_panel.rs"),
         include_str!("../sheet_ui.rs"),
         include_str!("../optimization_ui.rs"),
         include_str!("../placement_ui.rs"),
@@ -550,7 +566,6 @@ fn real_entry_points_open_original_forms_and_view_choices_are_not_edits() {
         ActionId::NewStock,
         ActionId::EditCutFee,
         ActionId::EditCurrency,
-        ActionId::NewHardware,
         ActionId::NewHinge,
         ActionId::NewDoor,
     ] {
@@ -564,6 +579,18 @@ fn real_entry_points_open_original_forms_and_view_choices_are_not_edits() {
             "{id:?} edited before confirmation"
         );
     }
+    // Other hardware needs no choice: it is added at once, one undo step,
+    // and opened in the inspector.
+    let mut app = DesktopApp::default();
+    let revision = app.editor.project().revision;
+    app.invoke(Request::new(ActionId::NewHardware)).unwrap();
+    assert!(!app.modal_open());
+    assert_eq!(app.editor.project().revision, revision + 1);
+    let added = app.editor.project().hardware[0].id;
+    assert_eq!(
+        app.session.inspector,
+        Some(crate::workspace_state::InspectorTarget::Hardware(added))
+    );
     let mut app = DesktopApp::default();
     let original = app.editor.project().clone();
     for request in [

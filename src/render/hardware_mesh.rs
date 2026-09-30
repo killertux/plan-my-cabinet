@@ -18,6 +18,12 @@ use crate::units::Pose;
 const SEGMENTS: usize = 32;
 /// Polyurethane glides and similar dark parts, whatever the foot's color.
 const GLIDE: [f32; 3] = [0.13, 0.13, 0.14];
+/// Nickel-plated hinge, and the tint used when the hinge has issues.
+const NICKEL: [f32; 3] = [0.72, 0.73, 0.75];
+const HINGE_ISSUE: [f32; 3] = [0.93, 0.66, 0.25];
+/// How far the cup rim stands proud of the door face, so it stays visible.
+const CUP_LIP_MM: f64 = 1.5;
+
 /// Zinc-plated steel, per slide member.
 const ZINC: [[f32; 3]; 3] = [[0.70, 0.72, 0.74], [0.60, 0.62, 0.65], [0.80, 0.82, 0.84]];
 
@@ -25,6 +31,8 @@ const ZINC: [[f32; 3]; 3] = [[0.70, 0.72, 0.74], [0.60, 0.62, 0.65], [0.80, 0.82
 pub enum SolidKind {
     Foot,
     Slide,
+    /// A hinge cup and plate: representational only, never drilling data.
+    Hinge,
 }
 
 /// One triangle in world millimetres with a shade per vertex. `color`
@@ -447,6 +455,141 @@ pub fn slide_solid(
     })
 }
 
+fn um3(p: [i128; 3]) -> [f64; 3] {
+    p.map(|v| v as f64 / 1000.0)
+}
+
+/// The hinge's cup (in the door) and plate (on the cabinet side), from its
+/// checked references. `None` when the hinge has no references (unsupported
+/// settings or missing parts): nothing is drawn rather than a guess.
+pub fn hinge_solid(
+    project: &Project,
+    installation: &crate::domain::HingeInstallation,
+    poses: Option<&HashMap<Uuid, Pose>>,
+    show_plate: bool,
+) -> Option<Solid> {
+    let status = crate::hinge_installation::diagnose(project, installation);
+    let r = status.references.as_ref()?;
+    let pose_of = |id: Uuid| {
+        poses
+            .and_then(|p| p.get(&id).copied())
+            .or_else(|| crate::assembly_edit::world_pose(project, id).ok())
+    };
+    let door = project.board(installation.door_board_id)?;
+    let mount = project.board(installation.mounting_board_id)?;
+    let (door_pose, mount_pose) = (
+        pose_of(installation.door_board_id)?,
+        pose_of(installation.mounting_board_id)?,
+    );
+    let color = if status.issues.is_empty() {
+        NICKEL
+    } else {
+        HINGE_ISSUE
+    };
+    let mut tris = Vec::new();
+    let mut edges = Vec::new();
+    let mut boxes = Vec::new();
+    // Cup: a short cylinder sunk into the door face, its rim just proud.
+    let cup = um3(r.cup_center_um);
+    let t = mm(door.thickness);
+    let depth = mm(r.cup_depth);
+    let (z0, z1) = match r.cup_face {
+        crate::domain::BoardFace::MaxZ => (t - depth, t + CUP_LIP_MM),
+        crate::domain::BoardFace::MinZ => (-CUP_LIP_MM, depth),
+    };
+    let radius = mm(r.cup_diameter) / 2.0;
+    let mut b = Builder::default();
+    b.frustum([cup[0], cup[1]], [z0, z1], [radius, radius], Some(color));
+    let (t1, e1) = b.place(door_pose);
+    tris.extend(t1);
+    edges.extend(e1);
+    let corner = Pose::new(
+        door_pose
+            .transform_point([cup[0] - radius, cup[1] - radius, z0])
+            .ok()?,
+        door_pose.rotation,
+    )
+    .ok()?;
+    boxes.push((corner, [2.0 * radius, 2.0 * radius, z1 - z0]));
+    if show_plate {
+        // Plate: a small block around the two screw holes on the side.
+        let [a, c] = r.plate_hole_centers_um.map(um3);
+        let centre = [(a[0] + c[0]) / 2.0, (a[1] + c[1]) / 2.0];
+        let pitch = ((a[0] - c[0]).powi(2) + (a[1] - c[1]).powi(2)).sqrt();
+        let along_x = (a[0] - c[0]).abs() >= (a[1] - c[1]).abs() && pitch > 0.0;
+        let long = (pitch + 12.0).max(32.0);
+        let size = if along_x { [long, 14.0] } else { [14.0, long] };
+        let h = mm(r.plate_height).max(CUP_LIP_MM);
+        let mt = mm(mount.thickness);
+        let (p0, p1) = match r.plate_face {
+            crate::domain::BoardFace::MaxZ => (mt, mt + h),
+            crate::domain::BoardFace::MinZ => (-h, 0.0),
+        };
+        let mut b = Builder::default();
+        b.rect_frustum(centre, [p0, p1], size, size, Some(color));
+        let (t2, e2) = b.place(mount_pose);
+        tris.extend(t2);
+        edges.extend(e2);
+        let corner = Pose::new(
+            mount_pose
+                .transform_point([centre[0] - size[0] / 2.0, centre[1] - size[1] / 2.0, p0])
+                .ok()?,
+            mount_pose.rotation,
+        )
+        .ok()?;
+        boxes.push((corner, [size[0], size[1], p1 - p0]));
+    }
+    Some(Solid {
+        id: installation.id,
+        kind: SolidKind::Hinge,
+        boxes,
+        tris,
+        edges,
+        base: color,
+    })
+}
+
+/// One pickable fitting: its id, kind and posed boxes (size in mm).
+pub type PickBoxes = (Uuid, SolidKind, Vec<(Pose, [f64; 3])>);
+
+/// Boxes to pick slides and hinges by, without building their triangles.
+pub fn pick_boxes(
+    project: &Project,
+    selection: &Selection,
+    poses: Option<&HashMap<Uuid, Pose>>,
+) -> Vec<PickBoxes> {
+    let mut out = Vec::new();
+    for installation in &project.slide_installations {
+        if !installation
+            .drawer_sides
+            .iter()
+            .all(|id| selection.visible(project, *id))
+        {
+            continue;
+        }
+        let extension = crate::slide_installation::extension_in(project, installation, poses);
+        if let Some(members) =
+            crate::slide_installation::member_boxes(project, installation, extension)
+        {
+            out.push((
+                installation.id,
+                SolidKind::Slide,
+                members.into_iter().flatten().collect(),
+            ));
+        }
+    }
+    for hinge in &project.hinge_installations {
+        if !selection.visible(project, hinge.door_board_id) {
+            continue;
+        }
+        let plate = selection.visible(project, hinge.mounting_board_id);
+        if let Some(solid) = hinge_solid(project, hinge, poses, plate) {
+            out.push((hinge.id, SolidKind::Hinge, solid.boxes));
+        }
+    }
+    out
+}
+
 /// Visible feet and slides, posed like the rest of the scene.
 pub fn solids(
     project: &Project,
@@ -478,6 +621,15 @@ pub fn solids(
         }
         let extension = crate::slide_installation::extension_in(project, installation, poses);
         if let Some(solid) = slide_solid(project, installation, extension) {
+            out.push(solid);
+        }
+    }
+    for hinge in &project.hinge_installations {
+        if !selection.visible(project, hinge.door_board_id) {
+            continue;
+        }
+        let plate = selection.visible(project, hinge.mounting_board_id);
+        if let Some(solid) = hinge_solid(project, hinge, poses, plate) {
             out.push(solid);
         }
     }

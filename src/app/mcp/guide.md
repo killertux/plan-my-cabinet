@@ -44,6 +44,37 @@ After placing, run `describe_scene`: it confirms contacts ("Shelf touches Left s
 
 Numbers are millimetres. Strings may carry a unit: `"600"`, `"60 cm"`, `"0.6 m"`, `"23 5/8 in"`, `"2'"`, `"18,5"`. A value that is not a whole micrometre (many inch values) needs `allow_rounding: true`. Money: `"12.34"` or `12.34` in the project currency; `null` means unknown (not free).
 
+## Edge banding
+
+Only MDF and MDP boards take edge band (a material's `kind` says what it is;
+`list_materials` shows `takes_banding`). Every board edge is **automatic** by
+default: it gets its material's `default_band` when it is free, and no band
+when another board sits flat against it (at least half of the edge face, gap
+0.5 mm or less). Doors and drawers only join boards that move with them.
+`get_board` shows each edge (`length_1`, `length_2` along the length,
+`width_1`, `width_2` along the width) with its band, whether it is `auto`,
+`on` or `off`, what it touches and whether it faces the front.
+
+1. `list_edge_bands`; `create_edge_band` with the name the shop uses
+   ("Fita Branca 1x22"), thickness and height.
+2. `update_material` with `default_band` so automatic edges get it.
+3. Change only the exceptions with `set_board_banding`: a `preset`
+   (`auto`, `none`, `front`, `all_four`) or `edges` with `value`
+   (`auto`, `on`, `off`). Boards that take no banding are skipped.
+
+Sizes stay finished sizes, band included; the shop deducts the tape.
+
+## Ordering parts from a shop (CorteCloud)
+
+`get_part_list` previews the parts a shop would cut: identical boards grouped
+with a quantity, the cabinet, material, size, banding and holes (hinge cups;
+screw pilots when sized), plus what drilling is left out and why.
+`export_design` writes the CorteCloud file (`format: "cortecloud-json"`). It
+needs only a valid design: no sheets, cut plan or kerf, because the shop nests
+the parts. Pass `screw_pilot` (diameter and depth) to have hinge-plate and
+slide screws drilled. The user imports the file in CorteCloud with
+*Serviço Completo › Carregar arquivo Cortecloud* and links materials and bands.
+
 ## Cut planning
 
 1. Boards are placed on stock automatically when created, if a sheet of their material and thickness has room.
@@ -62,6 +93,7 @@ All cuts are straight, full-length (guillotine) cuts and include the kerf. Grain
 2. `suggest_hinges {"door":"Left door"}` finds the mount, hinge edge and positions without changing anything.
 3. `add_hinges {"door":"Left door"}` pins the bundled hinge if none is pinned, chooses the count (2 up to 900 mm, 3 up to 1500 …), positions (100 mm from each end), and the K/R pair whose R equals the side thickness.
 4. `create_door {"moving":"Left door"}` turns it into a swinging door; `render_door_opening {"door":"Left door","angle_degrees":90}` shows it open.
+5. Pictures draw each hinge as a cup in the door and a plate on the side, and list it in the legend ("Left door hinge 1"). A hinge with a problem is amber; one whose references can't be placed is not drawn. `describe_scene` leaves hinges out, since a cup sits inside the door.
 
 ## Drawer slides
 

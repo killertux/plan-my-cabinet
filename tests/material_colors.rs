@@ -25,12 +25,15 @@ fn ready_editor() -> ProjectEditor {
     let board_id = Uuid::new_v4();
     let stock_id = Uuid::new_v4();
     p.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material_id,
         name: "Plywood".into(),
         default_thickness: mm(18),
         default_grain: BoardGrain::Unrestricted,
     });
     p.boards.push(Board {
+        banding: Default::default(),
         id: board_id,
         name: "Side".into(),
         material_id,

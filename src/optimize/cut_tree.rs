@@ -1154,12 +1154,15 @@ mod tests {
     fn fixture() -> (Project, CutTree) {
         let mut project = Project::new("test", Currency::Brl);
         let material = Material {
+            default_band: None,
+            kind: Default::default(),
             id: Uuid::new_v4(),
             name: "ply".into(),
             default_thickness: mm(18),
             default_grain: BoardGrain::Length,
         };
         let board = Board {
+            banding: Default::default(),
             id: Uuid::new_v4(),
             name: "part".into(),
             material_id: material.id,

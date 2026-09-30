@@ -470,7 +470,7 @@ pub(crate) fn unit_suffix(unit: Unit) -> &'static str {
 }
 
 /// Field text without a unit suffix or needless trailing zeros.
-fn field_text(field: &plan_my_cabinet::edit_drafts::LengthField) -> String {
+pub(crate) fn field_text(field: &plan_my_cabinet::edit_drafts::LengthField) -> String {
     field.text.clone().unwrap_or_else(|| {
         let formatted = format_length(field.committed, field.unit, field.locale, 3);
         let number = formatted.split_whitespace().next().unwrap_or("").to_owned();
@@ -1490,6 +1490,10 @@ impl DesktopApp {
             }
         });
         theme_widgets::divider(ui);
+        egui::Frame::new().inner_margin(pad).show(ui, |ui| {
+            self.show_edge_band_list(ui);
+        });
+        theme_widgets::divider(ui);
         let holding: std::collections::HashSet<Uuid> = self
             .editor
             .project()
@@ -1594,7 +1598,7 @@ impl DesktopApp {
 
     /// `rename` is the object whose name the title shows; clicking the title
     /// (or F2, or the Rename action) edits it in place.
-    fn inspector_header(
+    pub(crate) fn inspector_header(
         &mut self,
         ui: &mut egui::Ui,
         icon: icons::Icon,
@@ -1659,7 +1663,7 @@ impl DesktopApp {
         theme_widgets::divider(ui);
     }
 
-    fn show_rename_field(&mut self, ui: &mut egui::Ui, id: Uuid) {
+    pub(crate) fn show_rename_field(&mut self, ui: &mut egui::Ui, id: Uuid) {
         let Some(draft) = self.design.rename.as_mut() else {
             return;
         };
@@ -1945,6 +1949,7 @@ impl DesktopApp {
                                 .argument(Argument::Grain(grain)),
                         );
                     }
+                    self.show_banding_section(ui, &[board.id]);
                     theme_widgets::inspector_heading(
                         ui,
                         &self.localizer.text("design-dimensions-title"),
@@ -2249,6 +2254,17 @@ impl DesktopApp {
                                 }
                             }
                         });
+                    }
+                    let boards: Vec<Uuid> = self
+                        .editor
+                        .project()
+                        .boards
+                        .iter()
+                        .filter(|b| self.selection.ids.contains(&b.id))
+                        .map(|b| b.id)
+                        .collect();
+                    if !boards.is_empty() {
+                        self.show_banding_section(ui, &boards);
                     }
                     self.inspector_actions(
                         ui,

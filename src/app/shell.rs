@@ -598,6 +598,7 @@ impl DesktopApp {
                     (Workspace::Design, viewport::ToolMode::Measure) => {
                         Some("viewport-measure-hint")
                     }
+                    (Workspace::Design, viewport::ToolMode::Band) => Some("viewport-band-hint"),
                     _ => None,
                 };
                 if self.preferences.navigation_hints
@@ -724,8 +725,31 @@ impl DesktopApp {
         let target = self.session.inspector;
         match self.session.active {
             Workspace::Design => {
-                if let Some(model) = self.design_model() {
+                // Hardware (a selected foot, or slides/hinges/doors picked in
+                // the view) uses the same editable inspector as Hardware.
+                let fitting = target.filter(|t| {
+                    t.is_fitting()
+                        && match t {
+                            InspectorTarget::Hardware(id) => self.selection.active == Some(*id),
+                            _ => self.selection.active.is_none(),
+                        }
+                });
+                if let Some(fitting) = fitting {
+                    self.show_fitting_inspector(ui, fitting);
+                } else if let Some(model) = self.design_model() {
                     self.show_design_inspector(ui, &model);
+                    let owner = match &model.inspector {
+                        plan_my_cabinet::design_read_models::DesignInspector::Board(b) => {
+                            Some(b.id)
+                        }
+                        plan_my_cabinet::design_read_models::DesignInspector::Assembly(a) => {
+                            Some(a.id)
+                        }
+                        _ => None,
+                    };
+                    if let Some(id) = owner {
+                        self.show_hardware_links(ui, id);
+                    }
                 } else {
                     ui.label(self.localizer.text("measurement-invalid"));
                 }
@@ -761,24 +785,16 @@ impl DesktopApp {
                 );
             }
             Workspace::Hardware => {
-                if let Some(InspectorTarget::Installation(id)) = target {
-                    self.show_selected_installation_inspector(ui, id);
-                } else if let Some(InspectorTarget::Slide(id)) = target {
-                    self.show_slide_inspector(ui, id);
+                if let Some(target) = target.filter(|t| t.is_fitting()) {
+                    self.show_fitting_inspector(ui, target);
                 } else {
                     egui::Frame::new()
                         .inner_margin(egui::Margin::symmetric(14, 16))
                         .show(ui, |ui| {
                             ui.label(
-                                egui::RichText::new(self.localizer.text(
-                                    if self.editor.project().hinge_installations.is_empty() {
-                                        "hardware-no-installations"
-                                    } else {
-                                        "hardware-select-installation"
-                                    },
-                                ))
-                                .size(12.5)
-                                .color(theme_widgets::MUTED),
+                                egui::RichText::new(self.localizer.text("hardware-inspect-empty"))
+                                    .size(12.5)
+                                    .color(theme_widgets::MUTED),
                             );
                         });
                 }
@@ -823,16 +839,6 @@ impl DesktopApp {
             // Options scroll above a pinned export footer.
             self.show_export_preparation(ui);
             return;
-        }
-        if active == Workspace::Hardware {
-            egui::Panel::bottom(egui::Id::new("hardware-controls-footer"))
-                .resizable(false)
-                .frame(
-                    egui::Frame::new()
-                        .fill(theme_widgets::PANEL)
-                        .inner_margin(egui::Margin::symmetric(12, 10)),
-                )
-                .show(ui, |ui| self.show_hardware_footer(ui));
         }
         if active == Workspace::CutPlan {
             // "+ Sheet or offcut" stays pinned under the scrolling sheet list.
@@ -884,12 +890,7 @@ impl DesktopApp {
                             self.invoke_or_report(request);
                         }
                     }
-                    Workspace::Hardware => {
-                        self.show_pinned_catalog(ui);
-                        self.show_hinge_list(ui);
-                        self.show_slide_list(ui);
-                        self.show_hardware_list(ui);
-                    }
+                    Workspace::Hardware => self.show_hardware_panel(ui),
                     // Laid out by `show_export_preparation` above.
                     Workspace::Handoff => {}
                 }
@@ -1011,6 +1012,12 @@ impl DesktopApp {
                     self.invoke_or_report(Request::new(A::NewBoard));
                 }
             }
+            Workspace::Handoff
+                if self.file_export.format()
+                    != plan_my_cabinet::formats::ExportFormat::WorkshopPdf =>
+            {
+                self.show_file_export_preview(ui);
+            }
             Workspace::Handoff => {
                 let packet = self.handoff.candidate.as_ref().and_then(|(key, result)| {
                     (key == &self.export_key())
@@ -1106,6 +1113,14 @@ impl DesktopApp {
                     .existing_board(self.editor.project().id, id)
                     .is_none_or(|draft| !draft.dirty())
             });
+        self.design.move_tool.hardware_only = self.session.active == Workspace::Hardware;
+        self.design.move_tool.drag_enabled = self.dirty_fitting().is_none();
+        // The Band tool belongs to Design; Hardware has only Navigate and Move.
+        if self.session.active == Workspace::Hardware
+            && self.design.move_tool.mode == viewport::ToolMode::Band
+        {
+            self.design.move_tool.mode = viewport::ToolMode::Navigate;
+        }
         let surface = ui.allocate_ui_with_layout(
             ui.available_size(),
             egui::Layout::top_down(egui::Align::Min),
@@ -1146,10 +1161,59 @@ impl DesktopApp {
         if self.design.move_tool.take_grid_edit_request() {
             self.invoke_or_report(Request::new(A::EditGrid));
         }
-        if let Some(proposal) = action.selection {
-            self.request_scene_selection(proposal.picked, proposal.additive);
+        if let Some(click) = action.band {
+            if self.selection.active != Some(click.board) {
+                self.request_scene_selection(Some(click.board), false);
+            }
+            let request = if click.reset {
+                Request::with(A::SetBanding, Target::Board(click.board)).argument(
+                    Argument::EdgeSetting {
+                        edge: click.edge,
+                        value: plan_my_cabinet::domain::EdgeBanding::Auto,
+                    },
+                )
+            } else {
+                Request::with(A::ToggleBanding, Target::Board(click.board))
+                    .argument(Argument::Edge(click.edge))
+            };
+            self.invoke_or_report(request);
         }
+        if let Some(proposal) = action.selection {
+            let project = self.editor.project();
+            let fitting = proposal.picked.and_then(|id| {
+                if project.slide_installations.iter().any(|s| s.id == id) {
+                    Some(InspectorTarget::Slide(id))
+                } else if project.hinge_installations.iter().any(|h| h.id == id) {
+                    Some(InspectorTarget::Installation(id))
+                } else {
+                    None
+                }
+            });
+            match fitting {
+                Some(target) if !proposal.additive => {
+                    self.request_inspect(target);
+                }
+                Some(_) => {}
+                None => {
+                    self.request_scene_selection(proposal.picked, proposal.additive);
+                }
+            }
+        }
+        let is_hardware =
+            |app: &Self, id: Uuid| app.editor.project().hardware.iter().any(|h| h.id == id);
         match action.drag {
+            Some(viewport::DragAction::Preview(id, pose)) if is_hardware(self, id) => {
+                if self.editor.preview_hardware_world(id, pose).is_ok() {
+                    ui.ctx().request_repaint();
+                }
+            }
+            Some(viewport::DragAction::Accept(id, pose)) if is_hardware(self, id) => {
+                self.editor.cancel_preview();
+                if let Some(pose) = pose {
+                    let result = self.editor.move_hardware(id, pose);
+                    self.report_edit(result);
+                }
+            }
             Some(viewport::DragAction::Preview(id, pose)) => {
                 if let Ok(mut session) =
                     plan_my_cabinet::placement::PlacementSession::resume(&mut self.editor, id)
@@ -1245,6 +1309,7 @@ impl DesktopApp {
     pub(crate) fn show_workspace(&mut self, ui: &mut egui::Ui) {
         self.tick_project_files(ui.ctx());
         self.poll_pdf_export(ui.ctx());
+        self.poll_file_export(ui.ctx());
         self.tick_export_preparation(ui.ctx());
         // Worker completion belongs to the app session, not the Cut plan pane.
         // Its candidate is still only applied after explicit review there.
@@ -1439,6 +1504,7 @@ impl DesktopApp {
         self.show_kerf_confirmation(ui.ctx());
         self.show_stock_dialog(ui.ctx());
         self.show_cut_fee_dialog(ui.ctx());
+        self.show_edge_band_dialog(ui.ctx());
         self.show_currency_dialog(ui.ctx());
         self.show_assembly_dialog(ui.ctx());
         self.show_hardware_dialog(ui.ctx());

@@ -109,6 +109,8 @@ mod tests {
         let mut project = Project::new("auto", Currency::Brl);
         let material = Uuid::new_v4();
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "White MDF".into(),
             default_thickness: mm(15),
@@ -116,6 +118,7 @@ mod tests {
         });
         for index in 0..5 {
             project.boards.push(Board {
+                banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: format!("b{index}"),
                 material_id: material,

@@ -36,6 +36,11 @@ pub enum DraftError {
     InvalidProject(DomainError),
     RevisionExhausted,
     InvalidRotation(usize),
+    /// The hardware item, slide pair or hinge no longer exists.
+    MissingFitting,
+    Hardware(crate::assembly_edit::AssemblyEditError),
+    Slide(crate::slide_installation::SlideEditError),
+    Hinge(crate::hinge_installation::InstallationEditError),
 }
 
 fn edit_error<E>(error: EditError<E>, command: impl FnOnce(E) -> DraftError) -> DraftError {
@@ -252,6 +257,7 @@ impl BoardDraft {
 pub struct EditDrafts {
     boards: HashMap<(Uuid, Uuid), BoardDraft>,
     poses: HashMap<(Uuid, Uuid), PoseDraft>,
+    fittings: HashMap<(Uuid, FittingTarget), FittingDraft>,
 }
 
 impl EditDrafts {
@@ -336,9 +342,309 @@ impl EditDrafts {
         self.poses.remove(&(project_id, board_id));
     }
 
+    pub fn existing_fitting(
+        &self,
+        project_id: Uuid,
+        target: FittingTarget,
+    ) -> Option<&FittingDraft> {
+        self.fittings.get(&(project_id, target))
+    }
+
+    pub fn existing_fitting_mut(
+        &mut self,
+        project_id: Uuid,
+        target: FittingTarget,
+    ) -> Option<&mut FittingDraft> {
+        self.fittings.get_mut(&(project_id, target))
+    }
+
+    /// The draft for a hardware item, slide pair or hinge. A pristine draft
+    /// refreshes from newer committed values; pending text is never replaced.
+    pub fn fitting(
+        &mut self,
+        editor: &ProjectEditor,
+        target: FittingTarget,
+        unit: Unit,
+        locale: Locale,
+    ) -> Result<&mut FittingDraft, DraftError> {
+        let key = (editor.project().id, target);
+        if self
+            .fittings
+            .get(&key)
+            .is_some_and(|draft| !draft.dirty() && draft.check(editor).is_err())
+        {
+            self.fittings.remove(&key);
+        }
+        let draft = match self.fittings.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(FittingDraft::new(editor, target, unit, locale)?),
+        };
+        draft.check(editor)?;
+        for field in &mut draft.fields {
+            field.set_presentation(unit, locale);
+        }
+        Ok(draft)
+    }
+
+    pub fn cancel_fitting(&mut self, project_id: Uuid, target: FittingTarget) {
+        self.fittings.remove(&(project_id, target));
+    }
+
+    /// Any hardware draft with pending text.
+    pub fn dirty_fitting(&self, project_id: Uuid) -> Option<FittingTarget> {
+        self.fittings
+            .iter()
+            .find(|((project, _), draft)| *project == project_id && draft.dirty())
+            .map(|((_, target), _)| *target)
+    }
+
     pub fn clear(&mut self) {
         self.boards.clear();
         self.poses.clear();
+        self.fittings.clear();
+    }
+}
+
+/// What a [`FittingDraft`] edits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FittingTarget {
+    /// A foot or placeholder: world position and rotation; placeholders also
+    /// their dimensions.
+    Hardware(Uuid),
+    /// A slide pair: height on the box side and setback.
+    Slide(Uuid),
+    /// A hinge: door and plate positions.
+    Hinge(Uuid),
+}
+
+/// Pending text for hardware fields. `fields` holds, by target:
+/// hardware `[x, y, z]` world position (plus `[dx, dy, dz]` for a
+/// placeholder); slide `[height, setback]`; hinge `[door_y, mount_y]`.
+/// Nothing reaches the project until `accept`, which is one undo step.
+#[derive(Clone, Debug)]
+pub struct FittingDraft {
+    pub project_id: Uuid,
+    pub revision: u64,
+    pub target: FittingTarget,
+    pub fields: Vec<LengthField>,
+    /// Hardware only: rotation text (degrees, X then Y then Z).
+    pub rotation: [Option<String>; 3],
+    pub rotation_degrees: [f64; 3],
+    original_rotation: crate::units::Quaternion,
+}
+
+impl FittingDraft {
+    fn committed(
+        editor: &ProjectEditor,
+        target: FittingTarget,
+    ) -> Result<(Vec<Length>, crate::units::Quaternion), DraftError> {
+        let project = editor.project();
+        let mm = |v: f64| Length::from_micrometres((v * 1000.0).round() as i64);
+        match target {
+            FittingTarget::Hardware(id) => {
+                let item = project
+                    .hardware
+                    .iter()
+                    .find(|h| h.id == id)
+                    .ok_or(DraftError::MissingFitting)?;
+                let world =
+                    crate::assembly_edit::world_pose(project, id).map_err(DraftError::Hardware)?;
+                let mut values: Vec<Length> = world.translation_mm.map(mm).to_vec();
+                if let crate::domain::HardwareKind::Placeholder { dimensions } = item.kind {
+                    values.extend(dimensions);
+                }
+                Ok((values, world.rotation))
+            }
+            FittingTarget::Slide(id) => {
+                let slide = project
+                    .slide_installations
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or(DraftError::MissingFitting)?;
+                Ok((
+                    vec![slide.height, slide.setback],
+                    crate::units::Quaternion::IDENTITY,
+                ))
+            }
+            FittingTarget::Hinge(id) => {
+                let hinge = project
+                    .hinge_installations
+                    .iter()
+                    .find(|h| h.id == id)
+                    .ok_or(DraftError::MissingFitting)?;
+                Ok((
+                    vec![hinge.door_y, hinge.mount_y],
+                    crate::units::Quaternion::IDENTITY,
+                ))
+            }
+        }
+    }
+
+    pub fn new(
+        editor: &ProjectEditor,
+        target: FittingTarget,
+        unit: Unit,
+        locale: Locale,
+    ) -> Result<Self, DraftError> {
+        let (values, rotation) = Self::committed(editor, target)?;
+        Ok(Self {
+            project_id: editor.project().id,
+            revision: editor.project().revision,
+            target,
+            fields: values
+                .into_iter()
+                .map(|v| LengthField::new(v, unit, locale))
+                .collect(),
+            rotation: [None, None, None],
+            rotation_degrees: crate::placement::euler_degrees_xyz(rotation),
+            original_rotation: rotation,
+        })
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.fields.iter().any(|f| f.text.is_some()) || self.rotation.iter().any(Option::is_some)
+    }
+
+    pub fn cancel(&mut self) {
+        for field in &mut self.fields {
+            field.cancel();
+        }
+        self.rotation = [None, None, None];
+    }
+
+    fn check(&self, editor: &ProjectEditor) -> Result<(), DraftError> {
+        if editor.project().id != self.project_id || editor.project().revision != self.revision {
+            return Err(DraftError::Stale);
+        }
+        let (values, rotation) = Self::committed(editor, self.target)?;
+        if values.len() != self.fields.len()
+            || values
+                .iter()
+                .zip(&self.fields)
+                .any(|(value, field)| *value != field.committed)
+            || rotation != self.original_rotation
+        {
+            return Err(DraftError::Stale);
+        }
+        Ok(())
+    }
+
+    /// The values the draft would commit, checked.
+    pub fn values(&self) -> Result<Vec<Length>, DraftError> {
+        self.fields
+            .iter()
+            .enumerate()
+            .map(|(axis, field)| {
+                // Positions may be negative; sizes and distances may not.
+                let positive = matches!(self.target, FittingTarget::Hardware(_)) && axis >= 3;
+                let value = field.value(axis, positive)?;
+                if !matches!(self.target, FittingTarget::Hardware(_)) && value.micrometres() < 0 {
+                    return Err(DraftError::InvalidField {
+                        axis,
+                        error: InputError::Unit(crate::units::UnitError::OutOfBounds),
+                    });
+                }
+                Ok(value)
+            })
+            .collect()
+    }
+
+    fn rotation(&self) -> Result<crate::units::Quaternion, DraftError> {
+        if self.rotation.iter().all(Option::is_none) {
+            return Ok(self.original_rotation);
+        }
+        let mut angles = self.rotation_degrees;
+        for (axis, angle) in angles.iter_mut().enumerate() {
+            if let Some(text) = &self.rotation[axis] {
+                *angle = text
+                    .trim()
+                    .replace(',', ".")
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|a| a.is_finite())
+                    .ok_or(DraftError::InvalidRotation(axis))?;
+            }
+        }
+        crate::placement::rotation_from_degrees_xyz(angles).map_err(DraftError::Placement)
+    }
+
+    /// Check the whole proposal on a scratch copy of the project.
+    pub fn preview(&self, editor: &ProjectEditor) -> Result<(), DraftError> {
+        self.check(editor)?;
+        let mut scratch =
+            ProjectEditor::new(editor.project().clone()).map_err(DraftError::InvalidProject)?;
+        self.apply(&mut scratch).map(|_| ())
+    }
+
+    fn apply(&self, editor: &mut ProjectEditor) -> Result<bool, DraftError> {
+        let values = self.values()?;
+        let project = editor.project();
+        match self.target {
+            FittingTarget::Hardware(id) => {
+                let item = project
+                    .hardware
+                    .iter()
+                    .find(|h| h.id == id)
+                    .cloned()
+                    .ok_or(DraftError::MissingFitting)?;
+                let world = Pose::new(
+                    [0, 1, 2].map(|i| values[i].micrometres() as f64 / 1000.0),
+                    self.rotation()?,
+                )
+                .map_err(|e| DraftError::Placement(PlacementError::InvalidPose(e)))?;
+                match item.kind {
+                    crate::domain::HardwareKind::Placeholder { .. } => editor
+                        .edit_placeholder(
+                            id,
+                            item.name,
+                            [values[3], values[4], values[5]],
+                            item.parent_id,
+                            world,
+                        )
+                        .map_err(|e| edit_error(e, DraftError::Hardware)),
+                    crate::domain::HardwareKind::Catalog { .. } => editor
+                        .move_hardware(id, world)
+                        .map_err(|e| edit_error(e, DraftError::Hardware)),
+                }
+            }
+            FittingTarget::Slide(id) => {
+                let slide = project
+                    .slide_installations
+                    .iter()
+                    .find(|s| s.id == id)
+                    .cloned()
+                    .ok_or(DraftError::MissingFitting)?;
+                crate::slide_installation::update(
+                    editor,
+                    crate::domain::SlideInstallation {
+                        height: values[0],
+                        setback: values[1],
+                        ..slide
+                    },
+                )
+                .map_err(|e| edit_error(e, DraftError::Slide))
+            }
+            FittingTarget::Hinge(id) => {
+                let edited = |i: usize| self.fields[i].text.is_some().then_some(values[i]);
+                crate::hinge_installation::set_positions(editor, id, edited(0), edited(1))
+                    .map_err(|e| edit_error(e, DraftError::Hinge))
+            }
+        }
+    }
+
+    /// Commit as one undo step. Failure keeps the draft.
+    pub fn accept(&mut self, editor: &mut ProjectEditor) -> Result<bool, DraftError> {
+        self.check(editor)?;
+        if !self.dirty() {
+            return Ok(false);
+        }
+        let changed = self.apply(editor)?;
+        let (unit, locale) = self
+            .fields
+            .first()
+            .map_or((Unit::Mm, Locale::En), |f| (f.unit, f.locale));
+        *self = Self::new(editor, self.target, unit, locale)?;
+        Ok(changed)
     }
 }
 

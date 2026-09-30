@@ -1,0 +1,157 @@
+{
+  "parts": [
+    {
+      "quantity": 3,
+      "c": 1500,
+      "l": 300,
+      "function": "Base",
+      "complement": null,
+      "c1": "Branca TX 1x22 mm",
+      "c2": "Branca TX 1x22 mm",
+      "l1": "Branca TX 1x22 mm",
+      "l2": "Branca TX 1x22 mm",
+      "material": "MDF Branco 18 TX 2F Berneck",
+      "machining": {
+        "x": 1500,
+        "y": 300,
+        "z": 18,
+        "startSide": 0,
+        "horizontalDrills": [],
+        "verticalDrills": [
+          {
+            "face": "i",
+            "corner": 0,
+            "bolthole": false,
+            "x": 11,
+            "y": 37,
+            "depth": 11,
+            "diameter": 5
+          },
+          {
+            "face": "i",
+            "corner": 3,
+            "bolthole": false,
+            "x": 11,
+            "y": 69,
+            "depth": 11,
+            "diameter": 5
+          },
+          {
+            "face": "i",
+            "corner": 1,
+            "bolthole": false,
+            "x": 11,
+            "y": 37,
+            "depth": 11,
+            "diameter": 5
+          },
+          {
+            "face": "i",
+            "corner": 2,
+            "bolthole": false,
+            "x": 11,
+            "y": 69,
+            "depth": 11,
+            "diameter": 5
+          },
+          {
+            "face": "i",
+            "corner": 2,
+            "bolthole": false,
+            "x": 9,
+            "y": 89,
+            "depth": 11,
+            "diameter": 8
+          },
+          {
+            "face": "i",
+            "corner": 1,
+            "bolthole": false,
+            "x": 9,
+            "y": 57,
+            "depth": 11,
+            "diameter": 8
+          },
+          {
+            "face": "i",
+            "corner": 3,
+            "bolthole": false,
+            "x": 9,
+            "y": 89,
+            "depth": 11,
+            "diameter": 8
+          },
+          {
+            "face": "i",
+            "corner": 0,
+            "bolthole": false,
+            "x": 9,
+            "y": 57,
+            "depth": 11,
+            "diameter": 8
+          }
+        ],
+        "furrowMachining": {
+          "face": "i",
+          "depth": 11,
+          "width": 3.2,
+          "distance": 0
+        },
+        "furrowMachiningPair": null
+      }
+    },
+    {
+      "quantity": 3,
+      "c": 1200,
+      "l": 300,
+      "function": "Lateral Direita",
+      "complement": "campo complemento - peca x lateral direita",
+      "c1": "Branca TX 1x22 mm",
+      "c2": "Branca TX 1x22 mm",
+      "l1": null,
+      "l2": null,
+      "material": "MDF Branco 18 TX 2F Berneck"
+    },
+    {
+      "quantity": 7,
+      "c": 300,
+      "l": 300,
+      "function": "Porta",
+      "complement": null,
+      "c1": "Branca TX 1x22 mm",
+      "c2": "Branca TX 1x22 mm",
+      "l1": "Branca TX 1x22 mm",
+      "l2": "Branca TX 1x22 mm",
+      "material": "MDF Branco 18 TX 2F Berneck",
+      "machining": {
+        "x": 300,
+        "y": 300,
+        "z": 18,
+        "startSide": 0,
+        "horizontalDrills": [],
+        "verticalDrills": [
+          {
+            "face": "i",
+            "corner": 2,
+            "bolthole": false,
+            "x": 100,
+            "y": 21.5,
+            "depth": 12,
+            "diameter": 35
+          },
+          {
+            "face": "i",
+            "corner": 3,
+            "bolthole": false,
+            "x": 100,
+            "y": 21.5,
+            "depth": 12,
+            "diameter": 35
+          }
+        ],
+        "furrowMachining": null,
+        "furrowMachiningPair": null
+      }
+    }
+  ]
+}

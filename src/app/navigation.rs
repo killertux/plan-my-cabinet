@@ -1,7 +1,33 @@
 //! Pending-edit guard: routes, drafts and previews that must resolve before navigating.
 use crate::*;
 
+/// The hardware draft an inspector target edits, if any.
+pub(crate) fn fitting_target(target: Option<InspectorTarget>) -> Option<FittingTarget> {
+    match target? {
+        InspectorTarget::Hardware(id) => Some(FittingTarget::Hardware(id)),
+        InspectorTarget::Slide(id) => Some(FittingTarget::Slide(id)),
+        InspectorTarget::Installation(id) => Some(FittingTarget::Hinge(id)),
+        _ => None,
+    }
+}
+
 impl DesktopApp {
+    /// Show an inspector in the current workspace, through the edit guard.
+    pub(crate) fn request_inspect(&mut self, target: InspectorTarget) -> Outcome {
+        if self.session.inspector == Some(target) {
+            return Outcome::Navigated;
+        }
+        self.request_navigation(NavigationRoute::Inspect(target))
+    }
+
+    pub(crate) fn dirty_fitting(&self) -> Option<FittingTarget> {
+        fitting_target(self.session.inspector).filter(|target| {
+            self.edit_drafts
+                .existing_fitting(self.editor.project().id, *target)
+                .is_some_and(|draft| draft.dirty())
+        })
+    }
+
     // Every mounted draft is owned by the app session, not either editing surface.
     pub(crate) fn navigation_edit(&mut self) -> Option<EditBlock> {
         let (kind, target, can_commit) = if self.cut_plan.repair.active() {
@@ -40,13 +66,17 @@ impl DesktopApp {
                 EditKind::Preview,
                 self.selection.active.map(InspectorTarget::Board),
                 self.selection.active.is_some_and(|id| {
-                    self.editor
-                        .project()
-                        .boards
-                        .iter()
-                        .any(|board| board.id == id)
+                    let project = self.editor.project();
+                    project.boards.iter().any(|board| board.id == id)
+                        || project.hardware.iter().any(|h| h.id == id)
                 }),
             )
+        } else if let Some(target) = self.dirty_fitting() {
+            let valid = self
+                .edit_drafts
+                .existing_fitting(self.editor.project().id, target)
+                .is_some_and(|draft| draft.preview(&self.editor).is_ok());
+            (EditKind::Field, self.session.inspector, valid)
         } else if let Some(InspectorTarget::Board(id)) = self.session.inspector {
             if let Some(draft) = self
                 .edit_drafts
@@ -140,9 +170,15 @@ impl DesktopApp {
         if self.navigation.pending().is_some() {
             return Err(actions::Unavailable::PendingEdit);
         }
-        let Some(InspectorTarget::Board(id)) = self.session.inspector else {
-            return Ok(false);
+        let dirty_fitting = self.dirty_fitting().is_some();
+        let board = match self.session.inspector {
+            Some(InspectorTarget::Board(id)) => Some(id),
+            _ => None,
         };
+        if board.is_none() && !dirty_fitting {
+            return Ok(false);
+        }
+        let id = board.unwrap_or_default();
         let dirty_dimensions = self
             .edit_drafts
             .existing_board(self.editor.project().id, id)
@@ -151,7 +187,7 @@ impl DesktopApp {
             .edit_drafts
             .existing_pose(self.editor.project().id, id)
             .is_some_and(|draft| draft.dirty());
-        if !dirty_dimensions && !dirty_pose {
+        if !dirty_dimensions && !dirty_pose && !dirty_fitting {
             return Ok(false);
         }
         match self.request_navigation(NavigationRoute::Workspace(self.session.active)) {
@@ -206,6 +242,18 @@ impl DesktopApp {
             {
                 Some(id)
             }
+            _ => None,
+        };
+        let draft_fitting = match block {
+            Some(EditBlock {
+                kind: EditKind::Field,
+                target,
+                ..
+            }) => fitting_target(target).filter(|t| {
+                self.edit_drafts
+                    .existing_fitting(self.editor.project().id, *t)
+                    .is_some_and(|draft| draft.dirty())
+            }),
             _ => None,
         };
         let return_selection = self
@@ -272,6 +320,15 @@ impl DesktopApp {
                         editor.cancel_preview();
                     }
                     self.design.move_tool.cancel();
+                } else if let Some(target) = draft_fitting {
+                    if decision == NavigationDecision::Commit {
+                        drafts
+                            .existing_fitting_mut(editor.project().id, target)
+                            .ok_or(())?
+                            .accept(editor)
+                            .map_err(|_| ())?;
+                    }
+                    drafts.cancel_fitting(editor.project().id, target);
                 } else if let Some(id) = draft_board {
                     if decision == NavigationDecision::Commit {
                         drafts

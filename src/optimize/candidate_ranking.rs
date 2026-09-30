@@ -227,12 +227,15 @@ mod tests {
     fn fixture() -> Project {
         let mut p = Project::new("ranking", Currency::Brl);
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: id(1),
             name: "ply".into(),
             default_thickness: mm(18),
             default_grain: BoardGrain::Unrestricted,
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: id(2),
             name: "part".into(),
             material_id: id(1),

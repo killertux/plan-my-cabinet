@@ -201,6 +201,62 @@ fn check_world_bounds(project: &Project) -> Result<(), AssemblyEditError> {
     Ok(())
 }
 
+fn set_hardware_world(p: &mut Project, id: Uuid, world: Pose) -> Result<(), AssemblyEditError> {
+    let parent = p
+        .hardware
+        .iter()
+        .find(|h| h.id == id)
+        .ok_or(AssemblyEditError::MissingObject(id))?
+        .parent_id;
+    let pose = relative(assembly_parent(p, parent)?, world)?;
+    if let Some(item) = p.hardware.iter_mut().find(|h| h.id == id) {
+        item.pose = pose;
+    }
+    check_world_bounds(p)
+}
+
+/// Inset from the parent's body corner for a new foot.
+const FOOT_INSET_MM: f64 = 20.0;
+
+/// Where a new foot of `size` goes: under the parent's bottom, 20 mm in from
+/// its left-front corner, its mounting face against the bottom. The origin
+/// when there is no parent (or it has nothing to measure).
+pub fn default_foot_world(project: &Project, parent: Option<Uuid>, size_mm: [f64; 3]) -> Pose {
+    let bounds = parent.and_then(|id| {
+        crate::measurements::measure(
+            project,
+            &[id],
+            crate::measurements::Scope::Body,
+            crate::measurements::Frame::World,
+        )
+        .ok()
+    });
+    let position = bounds.map_or([0.0; 3], |m| {
+        [
+            m.minimum_mm[0] + FOOT_INSET_MM,
+            m.minimum_mm[1] + FOOT_INSET_MM,
+            m.minimum_mm[2] - size_mm[2],
+        ]
+    });
+    Pose::new(position, Quaternion::IDENTITY).unwrap_or(identity())
+}
+
+/// Where a new reference box goes: the parent's body minimum corner, or the origin.
+pub fn default_placeholder_world(project: &Project, parent: Option<Uuid>) -> Pose {
+    let position = parent
+        .and_then(|id| {
+            crate::measurements::measure(
+                project,
+                &[id],
+                crate::measurements::Scope::Body,
+                crate::measurements::Frame::World,
+            )
+            .ok()
+        })
+        .map_or([0.0; 3], |m| m.minimum_mm);
+    Pose::new(position, Quaternion::IDENTITY).unwrap_or(identity())
+}
+
 fn all_world(project: &Project) -> Result<Vec<(Uuid, Pose)>, AssemblyEditError> {
     project
         .assemblies
@@ -352,6 +408,28 @@ impl ProjectEditor {
             item.pose = pose;
             check_world_bounds(p)
         })
+    }
+
+    /// Move a hardware item to a world pose, keeping its parent; one step.
+    pub fn move_hardware(
+        &mut self,
+        id: Uuid,
+        world: Pose,
+    ) -> Result<bool, EditError<AssemblyEditError>> {
+        self.transact(|p| set_hardware_world(p, id, world))
+    }
+
+    /// Show a hardware item at a world pose without editing (a drag in
+    /// progress). Starts a preview when none is active.
+    pub fn preview_hardware_world(
+        &mut self,
+        id: Uuid,
+        world: Pose,
+    ) -> Result<(), EditError<AssemblyEditError>> {
+        if self.preview().is_none() {
+            self.begin_preview();
+        }
+        self.update_preview(|p| set_hardware_world(p, id, world))
     }
 
     /// Edit the reference, including a possible parent change, in one transaction.
@@ -650,6 +728,8 @@ mod tests {
         let mut p = Project::new("hierarchy", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "wood".into(),
             default_thickness: Length::from_micrometres(1000),
@@ -676,6 +756,7 @@ mod tests {
             pose: Pose::new([-200.0, 0.0, 0.0], turn).unwrap(),
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: ids[3],
             name: "board".into(),
             material_id: material,

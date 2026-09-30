@@ -1,5 +1,6 @@
 pub mod assembly_edit;
 pub mod auto_place;
+pub mod banding;
 pub mod board_commands;
 pub mod board_dimensions;
 pub mod color_commands;

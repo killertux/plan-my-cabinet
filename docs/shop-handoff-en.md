@@ -54,3 +54,11 @@ choose **Confirm kerf**. Enter on the checkbox only toggles it. Cancel or Escape
 leaves the project untouched, and a changed project requires reopening the review.
 Confirmation records today's date for that value as one undoable edit; it does
 not certify a plan or cutting safety. Changing the kerf clears that confirmation.
+
+## Other formats
+
+Handoff's **Format** choice also offers **CorteCloud**, a part list for
+ordering cut, banded and drilled parts from a shop. It needs no review or cut
+plan; see [Ordering parts through CorteCloud](cortecloud-en.md). The PDF's
+parts list shows each part's edge banding and the band to buy; see
+[Edge banding](banding-en.md).

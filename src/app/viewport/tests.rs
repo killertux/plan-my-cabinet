@@ -169,6 +169,8 @@ fn measurement_readout_uses_nested_rotated_bounds_and_discloses_missing_hardware
     part.width = Length::from_micrometres(50_000);
     let material_id = part.material_id;
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material_id,
         name: "Panel".into(),
         default_thickness: part.thickness,
@@ -323,6 +325,8 @@ fn tint_is_only_face_presentation_and_hidden_geometry_casts_no_shadow() {
     let part = board(board_id, [0.0; 3], None);
     let material_id = part.material_id;
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material_id,
         name: "Veneer".into(),
         default_thickness: part.thickness,
@@ -765,6 +769,8 @@ fn independent_snap_modes_alt_and_spacing_leave_committed_poses_alone() {
     assert!(!tool.take_grid_edit_request());
     for board in &project.boards {
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: board.material_id,
             name: board.name.clone(),
             default_thickness: board.thickness,
@@ -896,6 +902,8 @@ fn grid_snap_is_screen_limited_and_preserves_z_rotation_and_rotated_parent() {
         .boards
         .push(board(id, [15.0, 25.0, 0.0005], Some(parent)));
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: project.boards[0].material_id,
         name: "Wood".into(),
         default_thickness: project.boards[0].thickness,
@@ -989,6 +997,8 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
     let mut project = Project::new("Move", Currency::Brl);
     let source = board(id, [0.0; 3], None);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: source.material_id,
         name: "Wood".into(),
         default_thickness: source.thickness,
@@ -1110,6 +1120,7 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
 
 fn board(id: Uuid, translation: [f64; 3], parent_id: Option<Uuid>) -> Board {
     Board {
+        banding: Default::default(),
         id,
         name: "Part".into(),
         material_id: Uuid::new_v4(),
@@ -1587,6 +1598,8 @@ fn guarded_camera_actions_match_shader_projection_and_picking_without_project_ed
     project.boards.push(board(id, [150.0, -80.0, 30.0], None));
     let source = &project.boards[0];
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: source.material_id,
         name: "Wood".into(),
         default_thickness: source.thickness,
@@ -1730,6 +1743,8 @@ fn top_frame_uses_nested_assembly_bounds_and_rejects_hidden_selection() {
     let mut panel = board(Uuid::new_v4(), [40.0, 10.0, 25.0], Some(group));
     panel.width = Length::from_micrometres(840_000);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: panel.material_id,
         name: "Panel".into(),
         default_thickness: panel.thickness,
@@ -1816,6 +1831,7 @@ fn project_mesh_and_selection_bounds_follow_parent_pose_and_dimensions() {
     });
     let board_id = Uuid::new_v4();
     project.boards.push(Board {
+        banding: Default::default(),
         id: board_id,
         name: "Shelf".into(),
         material_id: Uuid::new_v4(),
@@ -1921,4 +1937,62 @@ fn placeholder_is_rendered_pickable_and_hidden_independently() {
     let (hidden, _) = scene(&project, &camera, &selection);
     assert!(hidden.faces.is_empty());
     assert!(hidden.shadow.is_empty());
+}
+
+#[test]
+fn hinges_are_picked_in_3d_and_only_hardware_drags_in_hardware() {
+    use plan_my_cabinet::render::hardware_mesh::{SolidKind, pick_boxes};
+    let project = plan_my_cabinet::reference_fixture::project();
+    let hinge = project.hinge_installations[0].clone();
+    // Look at the inside of the door: the cup rim stands proud of its face.
+    let selection = Selection {
+        hidden: project
+            .boards
+            .iter()
+            .map(|b| b.id)
+            .filter(|id| *id != hinge.door_board_id)
+            .collect(),
+        ..Default::default()
+    };
+    let boxes = pick_boxes(&project, &selection, None);
+    let (_, kind, cup) = boxes.iter().find(|(id, _, _)| *id == hinge.id).unwrap();
+    assert_eq!(*kind, SolidKind::Hinge);
+    let (pose, size) = cup[0];
+    let centre = pose
+        .transform_point([size[0] / 2.0, size[1] / 2.0, size[2] / 2.0])
+        .unwrap();
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let found = [Preset::Front, Preset::Isometric, Preset::Right, Preset::Top]
+        .into_iter()
+        .any(|preset| {
+            let mut camera = Camera::default();
+            camera.set_preset(preset);
+            camera.yaw += std::f64::consts::PI;
+            camera.target = centre;
+            camera.distance = 400.0;
+            let pointer = camera.project(centre, rect).unwrap();
+            pick_visible(&project, &camera, pointer, rect, &selection) == Some(hinge.id)
+        });
+    assert!(found, "the hinge cup can be clicked from inside the door");
+
+    // A foot is dragged like a board: preview, then one undo step.
+    let mut editor = plan_my_cabinet::commands::ProjectEditor::new(project).unwrap();
+    let foot = editor
+        .create_placeholder(
+            "Foot".into(),
+            [Length::from_micrometres(40_000); 3],
+            None,
+            Pose::new([0.0, 0.0, -40.0], Quaternion::IDENTITY).unwrap(),
+        )
+        .unwrap();
+    assert!(canvas::drag_start_pose_for_tests(editor.project(), foot, true).is_some());
+    assert!(
+        canvas::drag_start_pose_for_tests(
+            editor.project(),
+            plan_my_cabinet::reference_fixture::LEFT_SIDE_ID,
+            true
+        )
+        .is_none(),
+        "boards do not drag in the Hardware workspace"
+    );
 }

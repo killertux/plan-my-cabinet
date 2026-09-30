@@ -69,6 +69,8 @@ pub fn project() -> Project {
         (HDF_ID, "HDF", 3, BoardGrain::Unrestricted),
     ] {
         p.materials.push(Material {
+            default_band: None,
+            kind: crate::domain::MaterialKind::infer(name),
             id,
             name: name.into(),
             default_thickness: mm(thickness),
@@ -171,6 +173,7 @@ pub fn project() -> Project {
         ),
     ] {
         p.boards.push(Board {
+            banding: Default::default(),
             id,
             name: name.into(),
             material_id,

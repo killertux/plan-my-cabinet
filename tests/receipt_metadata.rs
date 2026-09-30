@@ -38,7 +38,7 @@ fn successful_write_records_mode_sections_baseline_and_history_is_immutable() {
     assert_eq!(receipt.metadata.mode, Some(ExportMode::Draft));
     assert_eq!(receipt.metadata.sections, Some(ReceiptSections::default()));
     assert_eq!(receipt.metadata.metadata_version, Some(1));
-    assert_eq!(receipt.metadata.fingerprint_version, Some(5));
+    assert_eq!(receipt.metadata.fingerprint_version, Some(6));
     assert_eq!(receipt.completed_at(), Some(receipt.completed_unix_ms));
     assert!(
         receipt
@@ -142,6 +142,8 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
     let mut project = Project::new("evidence", Currency::Brl);
     let id = Uuid::new_v4();
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id,
         name: "Birch".into(),
         default_thickness: plan_my_cabinet::units::Length::from_micrometres(18_000),
@@ -165,6 +167,8 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
 fn oversized_evidence_blocks_export_before_destination_is_touched() {
     let mut project = Project::new("oversized", Currency::Brl);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: Uuid::new_v4(),
         name: "a".repeat(MAX_COMPARISON_BYTES),
         default_thickness: plan_my_cabinet::units::Length::from_micrometres(18_000),

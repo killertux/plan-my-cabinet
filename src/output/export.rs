@@ -65,7 +65,7 @@ impl Default for ReceiptSections {
 }
 
 pub const RECEIPT_METADATA_VERSION: u16 = 1;
-const CURRENT_FINGERPRINT_VERSION: u16 = 5;
+const CURRENT_FINGERPRINT_VERSION: u16 = 6;
 pub const MAX_COMPARISON_ENTRIES: usize = 4096;
 pub const MAX_COMPARISON_BYTES: usize = 512 * 1024;
 
@@ -1068,9 +1068,30 @@ fn fingerprint_version(project: &Project, version: u16) -> ManufacturingFingerpr
         |h| h.id,
         |h| json!([h.id, project.foot_spec(h)]),
     );
-    ManufacturingFingerprint {
+    let v5 = ManufacturingFingerprint {
         wood: v4.wood,
         packet: digest(&json!(["packet-v5", v4.packet, slides, feet])),
+    };
+    if version == 5 {
+        return v5;
+    }
+    // Edge banding is printed per part and changes what the shop orders; the
+    // automatic rule makes it depend on geometry, so hash the effective bands.
+    let states = crate::banding_rules::effective(project);
+    let banding = sorted(
+        &project.boards,
+        |b| b.id,
+        |b| {
+            let bands = states
+                .get(&b.id)
+                .map(|s| s.map(|e| e.band.and_then(|id| project.edge_band(id))));
+            json!([b.id, bands])
+        },
+    );
+    let wood = digest(&json!(["wood-v6", v5.wood, banding]));
+    ManufacturingFingerprint {
+        packet: digest(&json!(["packet-v6", v5.packet, wood])),
+        wood,
     }
 }
 
@@ -1315,8 +1336,40 @@ pub enum OutputError {
     PreparationBlocked,
     OverwriteRequired,
     Pdf(PdfExportError),
+    /// A part-list format could not be built or encoded.
+    Format(crate::formats::FormatError),
     Write(SaveError),
     Verify(ExportError),
+}
+
+/// Commit bytes at `path` atomically: replace only with `Overwrite::Confirm`,
+/// otherwise refuse an existing file. Shared by every export format.
+pub fn write_file(path: &Path, bytes: &[u8], overwrite: Overwrite) -> Result<(), OutputError> {
+    commit_bytes(path, bytes, overwrite, &NoFailure)
+}
+
+fn commit_bytes(
+    path: &Path,
+    bytes: &[u8],
+    overwrite: Overwrite,
+    stages: &impl SaveStages,
+) -> Result<(), OutputError> {
+    if path.symlink_metadata().is_ok() && overwrite != Overwrite::Confirm {
+        return Err(OutputError::OverwriteRequired);
+    }
+    match overwrite {
+        Overwrite::Confirm => atomic_write_with_stages(path, bytes, stages, || {}),
+        Overwrite::Decline => atomic_write_new_with_stages(path, bytes, stages, || {}),
+    }
+    .map_err(|error| match error {
+        SaveError::Io(ref io_error)
+            if overwrite == Overwrite::Decline
+                && io_error.kind() == io::ErrorKind::AlreadyExists =>
+        {
+            OutputError::OverwriteRequired
+        }
+        other => OutputError::Write(other),
+    })
 }
 
 /// Render an owned snapshot and commit it in the destination directory. A
@@ -1414,22 +1467,7 @@ fn write_bytes_with_stages(
     }
     // Recheck immediately before committing, including destinations created
     // while rendering. The UI must request confirmation again in that case.
-    if path.symlink_metadata().is_ok() && overwrite != Overwrite::Confirm {
-        return Err(OutputError::OverwriteRequired);
-    }
-    match overwrite {
-        Overwrite::Confirm => atomic_write_with_stages(path, &bytes, stages, || {}),
-        Overwrite::Decline => atomic_write_new_with_stages(path, &bytes, stages, || {}),
-    }
-    .map_err(|error| match error {
-        SaveError::Io(ref io_error)
-            if overwrite == Overwrite::Decline
-                && io_error.kind() == io::ErrorKind::AlreadyExists =>
-        {
-            OutputError::OverwriteRequired
-        }
-        other => OutputError::Write(other),
-    })?;
+    commit_bytes(path, &bytes, overwrite, stages)?;
     let hash = format!("{:x}", Sha256::digest(&bytes));
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1584,6 +1622,8 @@ mod tests {
         let stock_id = Uuid::new_v4();
         let catalog_id = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material_id,
             name: "Ply".into(),
             default_thickness: mm(18),
@@ -1605,6 +1645,7 @@ mod tests {
         for _ in 0..2 {
             let id = Uuid::new_v4();
             p.boards.push(Board {
+                banding: Default::default(),
                 id,
                 name: "Shelf".into(),
                 material_id,

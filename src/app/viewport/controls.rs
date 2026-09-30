@@ -48,6 +48,44 @@ pub(super) fn hardware_overlay(
                                 );
                             }
                         });
+                        // Navigate or Move (feet and other hardware drag here).
+                        for (mode, icon, action) in [
+                            (
+                                ToolMode::Navigate,
+                                crate::icons::Icon::Orbit,
+                                A::ViewNavigate,
+                            ),
+                            (ToolMode::Move, crate::icons::Icon::Move, A::ViewMove),
+                        ] {
+                            let request = Request::new(action);
+                            let allowed = actions::viewport_availability(
+                                request,
+                                modal,
+                                preview_active,
+                                tool.dragging(),
+                                project,
+                                selection,
+                            );
+                            let active = tool.mode == mode;
+                            if crate::theme_widgets::ghost_icon_sized(
+                                ui,
+                                icon,
+                                &action.label(&localizer),
+                                if active {
+                                    crate::theme_widgets::ACCENT
+                                } else {
+                                    crate::theme_widgets::SECONDARY
+                                },
+                                16.0,
+                                28.0,
+                                allowed.is_ok(),
+                                active,
+                            )
+                            .clicked()
+                            {
+                                pending = Some(request);
+                            }
+                        }
                         let frame = Request::new(A::ViewFrame);
                         let allowed = actions::viewport_availability(
                             frame,
@@ -144,6 +182,11 @@ pub(super) fn show(
                             Request::new(A::ViewMeasure),
                             tool.mode == ToolMode::Measure,
                             Icon::Measure,
+                        ),
+                        (
+                            Request::new(A::ViewBand),
+                            tool.mode == ToolMode::Band,
+                            Icon::Band,
                         ),
                     ] {
                         let allowed = availability(request, tool);

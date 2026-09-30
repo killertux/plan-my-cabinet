@@ -2,14 +2,53 @@
 
 ## Hardware workspace
 
-The pinned catalog card shows the project's saved kit and plate IDs, reviewed
-revision and source; **Browse snapshots** examines the project's own records
-offline without refreshing them. The relationship tree lists each door with
-its stationary board and child hinge installations. Unassigned installations
-and dimensioned reference hardware remain available separately for selection,
-editing, positioning, duplication and removal. A warning follows the affected
-installation, not another hinge with a similar name. Removing a referenced
-board or hardware object requires the affected-relationship confirmation.
+The Hardware panel starts with **Add hardware ▾** and then has one section per
+kind. The sections are always shown, even when empty, and each has its own
+**+**:
+
+| Section | Lists | **+** adds |
+|---|---|---|
+| **Doors & hinges** | Each door with its hinges, then hinges that are not on a door | A door (on the selected board) or a single hinge |
+| **Drawers & slides** | One row per drawer with its slide code | Slides on the selected drawer |
+| **Feet & legs** | Catalog feet | A foot under the selected cabinet |
+| **Other hardware** | Sized boxes for handles, rails and the like | A 100 mm box you can resize and move |
+| **Catalog models** | Every model pinned to the project: hinges, slides and feet, with how many items use each | Opens the catalog browser |
+
+Adding creates the item at once, as one undo step, and opens it in the
+inspector so you can adjust it:
+
+- **Foot.** It uses the last foot model you used, goes under the selected
+  cabinet 20 mm in from its corner, and hangs its height below the floor. The
+  inspector offers **Raise <cabinet> by N mm**.
+- **Slides.** They go on the drawer of the selection, with the last slide
+  family you used (TT45 by default). If that drawer already has slides, they
+  are opened instead.
+- **Door.** The selected board is hung from the nearest cabinet side, using its
+  loose hinges or a standard set.
+- **Hinge.** It joins the selected board's door.
+
+A picker opens only when something must be chosen first: for example, adding
+slides with nothing selected, or a foot when no foot model is available.
+
+Every item opens in an editable inspector, both here and in **Design**. Click
+its row, its link under a board or group in Design, or (for slides and hinges)
+the item itself in the 3D view. The inspectors are:
+
+| Item | What you can change |
+|---|---|
+| Feet and other hardware | Model, parent group, world position and rotation. Other hardware also has its dimensions. |
+| Slides | Model and length, which apply at once; height and setback; **Refit slides** |
+| Hinges | Mounting inspector below |
+| Doors | Moving part, the board it hangs from, which hinges it uses, opening limit and **Reconfirm**. **+** adds another hinge. |
+| Catalog models | Facts, source and where the model is used. **Remove model** works only when nothing uses it. |
+
+Typed values follow the usual rule: **Enter** or **Apply** saves, **Escape**
+or **Discard** reverts, and clicking elsewhere never saves. Leaving an item
+with unsaved values asks first.
+
+A warning follows the affected installation, not another hinge with a
+similar name. Removing a referenced board or hardware object requires the
+affected-relationship confirmation.
 
 Selecting an installation connects its tree row, mounting inspector and
 projected viewport reference. The dashed axis, cup/plate markers and connector
@@ -175,8 +214,10 @@ A drawer slide pair joins a drawer to the two cabinet sides beside it. The
 drawer is a group of boards (an assembly): the **Drawers** template makes one
 group per drawer; for a drawer you built yourself, group its boards first.
 
-**Hardware ▸ + ▸ Drawer slides…** opens the slide dialog. Pick the drawer (or
-select one of its boards first) and a slide model. The app finds the box sides
+Select a drawer (or one of its boards) and press **+** in **Drawers &
+slides**. The slides are added at once and open in the inspector, where the
+model, length, height and setback can be changed. With nothing selected, the
+slide dialog opens: pick the drawer and a slide model. The app finds the box sides
 and the cabinet sides next to them, measures the gaps, and picks the longest
 length that fits. It shows the product code and whether it fits. You can
 choose a length, the height on the box side (centred by default) and the
@@ -222,11 +263,14 @@ each drawer, the hole distances on both boards of each side.
 
 # Feet
 
-Feet are catalog hardware placed like any hardware item: **Hardware ▸ + ▸
-Foot…**, then choose the model, the group it belongs to and its position. The
-position is the corner of the foot's box on the floor; the mounting face is on
-top. Feet are not cut from stock and they do not lift the furniture: raise
-the cabinet by the foot height (for 100 mm feet, move it up 100 mm).
+Feet are catalog hardware. Select the cabinet and press **+** in **Feet &
+legs**: the foot goes under it, 20 mm in from the corner, and opens in the
+inspector. There you can change the model (the mounting face stays where it
+is), the group it belongs to and its world position. You can also drag it in
+the 3D view with **Move board**. The position is the corner of the foot's box on the
+floor; the mounting face is on top. Feet are not cut from stock and they do
+not lift the furniture. While a foot reaches below the floor, the inspector
+offers **Raise <cabinet> by N mm**.
 
 Feet are drawn with the product's shape, so you can see how the piece will
 look: a plastic cone, a chrome post with its flange and levelling glide, an

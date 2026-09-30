@@ -48,7 +48,7 @@ fn draft(text: String) -> DimensionDraft {
 }
 
 /// Slide families: from the loaded packs, then any pinned in the project.
-fn families(app: &DesktopApp) -> Vec<(FamilyKey, String)> {
+pub(crate) fn families(app: &DesktopApp) -> Vec<(FamilyKey, String)> {
     let language = app.localizer.language().tag();
     let mut out: Vec<(FamilyKey, String)> = app
         .hardware
@@ -83,7 +83,7 @@ fn families(app: &DesktopApp) -> Vec<(FamilyKey, String)> {
 
 /// Every length of a family as snapshots (pinned siblings when the pack is
 /// not loaded).
-fn lengths(app: &DesktopApp, key: &FamilyKey) -> Vec<CatalogReference> {
+pub(crate) fn lengths(app: &DesktopApp, key: &FamilyKey) -> Vec<CatalogReference> {
     let language = app.localizer.language().tag();
     let from_packs = app
         .hardware
@@ -174,35 +174,18 @@ impl SlideDialog {
         if let Some(length) = self.length {
             lengths.retain(|c| c.slide().is_some_and(|s| s.length == length));
         }
-        let detected = slide_installation::detect(project, drawer).map_err(|e| {
+        let suggestion = slide_installation::propose(project, drawer, &lengths).map_err(|e| {
             l.text(match e {
-                slide_installation::SlideFitError::NoDrawerAssembly => "slide-no-drawer-assembly",
-                slide_installation::SlideFitError::NoSides => "slide-no-sides",
-                _ => "slide-issue-not-parallel",
+                slide_installation::SlideEditError::Fit(
+                    slide_installation::SlideFitError::NoDrawerAssembly,
+                ) => "slide-no-drawer-assembly",
+                slide_installation::SlideEditError::Fit(
+                    slide_installation::SlideFitError::NoSides,
+                ) => "slide-no-sides",
+                slide_installation::SlideEditError::Fit(_) => "slide-issue-not-parallel",
+                _ => "slide-no-length-fits",
             })
         })?;
-        let suggestion = match slide_installation::suggest(project, detected.clone(), &lengths) {
-            Ok(s) => s,
-            Err(_) if lengths.len() == 1 => Suggestion {
-                catalog: lengths[0].clone(),
-                height: Length::from_micrometres(
-                    detected.geometry[0]
-                        .box_height
-                        .min(detected.geometry[1].box_height)
-                        .micrometres()
-                        / 2,
-                ),
-                setback: lengths[0].slide().map_or(Length::ZERO, |s| s.front_setback),
-                status: SlideStatus {
-                    id: Uuid::nil(),
-                    issues: Vec::new(),
-                    notices: Vec::new(),
-                    references: None,
-                },
-                detected,
-            },
-            Err(_) => return Err(l.text("slide-no-length-fits")),
-        };
         let height = Self::optional(&self.height).map_err(|()| l.text("slide-invalid-length"))?;
         let setback = Self::optional(&self.setback).map_err(|()| l.text("slide-invalid-length"))?;
         let pinned = project.catalog.iter().find(|c| {
@@ -222,6 +205,15 @@ impl SlideDialog {
         };
         Ok((suggestion, installation))
     }
+}
+
+/// A muted, wrapped hint for an empty panel section.
+pub(crate) fn empty_hint(ui: &mut egui::Ui, text: &str) {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.add(egui::Label::new(egui::RichText::new(text).size(12.0).color(tw::FAINT)).wrap());
+        });
 }
 
 fn issue_lines(l: &Localizer, status: &SlideStatus) -> Vec<String> {
@@ -500,9 +492,6 @@ impl DesktopApp {
                 (s.id, name, code, status.issues.is_empty())
             })
             .collect();
-        if rows.is_empty() {
-            return;
-        }
         let modal = self.modal_open();
         let mut run = None;
         let mut inspect = None;
@@ -518,7 +507,7 @@ impl DesktopApp {
                 let (open, ()) = tw::collapsible_section_bar(
                     ui,
                     egui::Id::new("hardware-slides-section"),
-                    &self.localizer.text("slide-list"),
+                    &self.localizer.text("hardware-section-slides"),
                     rows.len(),
                     |ui| {
                         let request = Request::new(A::NewSlides);
@@ -551,6 +540,9 @@ impl DesktopApp {
                 })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
+                    if rows.is_empty() {
+                        empty_hint(ui, &self.localizer.text("hardware-empty-slides"));
+                    }
                     for (id, name, code, ok) in &rows {
                         let active = self.session.inspector == Some(InspectorTarget::Slide(*id));
                         let edit = Request::with(A::EditSlides, Target::Slide(*id));
@@ -633,36 +625,40 @@ impl DesktopApp {
                                 );
                             },
                         );
-                        if run.is_none() && response.double_clicked() {
-                            run = Some(edit);
-                        } else if run.is_none() && response.clicked() {
+                        if run.is_none() && (response.clicked() || response.double_clicked()) {
                             inspect = Some(*id);
                         }
                     }
                 });
         }
         if let Some(id) = inspect {
-            self.session.inspector = Some(InspectorTarget::Slide(id));
+            self.request_inspect(InspectorTarget::Slide(id));
         }
         if let Some(request) = run {
             self.invoke_or_report(request);
         }
     }
 
-    /// Inspector for one drawer's slides: product, gaps, holes and issues.
+    /// Inspector for one drawer's slides: model and length (commit at once),
+    /// height and setback (draft), then gaps, holes and issues.
     pub(crate) fn show_slide_inspector(&mut self, ui: &mut egui::Ui, id: Uuid) {
         let project = self.editor.project();
-        let Some(installation) = project.slide_installations.iter().find(|s| s.id == id) else {
+        let Some(installation) = project
+            .slide_installations
+            .iter()
+            .find(|s| s.id == id)
+            .cloned()
+        else {
             return;
         };
-        let l = &self.localizer;
-        let status = slide_installation::diagnose(project, installation);
+        let status = slide_installation::diagnose(project, &installation);
         let entry = project
             .catalog
             .iter()
-            .find(|c| c.id == installation.catalog_id);
-        let spec = entry.and_then(CatalogReference::slide);
-        let name = |id| {
+            .find(|c| c.id == installation.catalog_id)
+            .cloned();
+        let spec = entry.as_ref().and_then(CatalogReference::slide).cloned();
+        let board_name = |id| {
             project
                 .board(id)
                 .map_or_else(String::new, |b| b.name.clone())
@@ -672,31 +668,128 @@ impl DesktopApp {
             .iter()
             .find(|a| a.id == installation.drawer_root_id)
             .map_or_else(String::new, |a| a.name.clone());
-        let edit = Request::with(A::EditSlides, Target::Slide(id));
-        let delete = Request::with(A::DeleteSlides, Target::Slide(id));
-        let motion = Request::with(A::StartMotion, Target::Slide(id));
-        let mut run = None;
+        let l = &self.localizer;
+        let list = |values: &[Length]| {
+            values
+                .iter()
+                .map(|v| mm_text(*v))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let sides: Vec<[String; 4]> = status
+            .references
+            .as_ref()
+            .map(|r| {
+                r.sides
+                    .iter()
+                    .map(|side| {
+                        [
+                            format!(
+                                "{} · {} {} mm",
+                                board_name(side.cabinet_board),
+                                l.text("slide-gap"),
+                                mm_text(side.gap)
+                            ),
+                            format!(
+                                "{} {} mm · {} {} mm",
+                                l.text("pdf-slide-holes-from-front"),
+                                list(&side.cabinet_hole_distances),
+                                l.text("pdf-slide-centre-line"),
+                                mm_text(side.cabinet_centre_from_bottom)
+                            ),
+                            board_name(side.drawer_board),
+                            format!(
+                                "{} {} mm · {} {} mm",
+                                l.text("pdf-slide-holes-from-front"),
+                                list(&side.drawer_hole_distances),
+                                l.text("pdf-slide-centre-line"),
+                                mm_text(side.drawer_centre_from_bottom)
+                            ),
+                        ]
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let current_family = entry
+            .as_ref()
+            .and_then(|e| e.origin.as_ref())
+            .map(|o| FamilyKey {
+                pack: o.pack_id.clone(),
+                family: o.item_id.clone(),
+            });
+        let families = families(self);
+        let family_lengths: Vec<Length> = current_family
+            .as_ref()
+            .map(|f| lengths(self, f))
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|c| c.slide().map(|s| s.length))
+            .collect();
+        let subline = entry
+            .as_ref()
+            .map_or_else(String::new, |e| format!("{} · {}", e.product_id, e.name));
+        self.inspector_header(
+            ui,
+            crate::icons::Icon::Layers,
+            &drawer,
+            Some(installation.drawer_root_id),
+            &format!("s-{}", &id.to_string()[..6]),
+            &subline,
+        );
+        let editable = !self.modal_open();
+        let mut new_family = current_family.clone();
+        let mut new_length = spec.as_ref().map(|s| s.length);
         egui::Frame::new()
-            .inner_margin(egui::Margin::symmetric(14, 14))
+            .inner_margin(egui::Margin::symmetric(14, 6))
             .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 5.0;
-                ui.label(tw::semibold(ui, &drawer, 15.0).color(tw::TEXT));
-                if let Some(entry) = entry {
-                    ui.label(
-                        egui::RichText::new(format!("{} · {}", entry.product_id, entry.name))
-                            .size(12.0)
-                            .color(tw::MUTED),
-                    );
-                    if let Some(chip) = plan_my_cabinet::hardware_catalog::trust(entry) {
-                        catalog_ui::trust_chip(ui, l, Some(chip));
-                    }
-                }
-                if let Some(spec) = spec {
+                let l = &self.localizer;
+                tw::prop_row(ui, &l.text("slide-family"), 88.0, |ui| {
+                    ui.add_enabled_ui(editable, |ui| {
+                        egui::ComboBox::from_id_salt(("slide-family", id))
+                            .width(ui.available_width())
+                            .selected_text(
+                                new_family
+                                    .as_ref()
+                                    .and_then(|k| families.iter().find(|(f, _)| f == k))
+                                    .map_or_else(
+                                        || {
+                                            spec.as_ref()
+                                                .map_or_else(String::new, |s| s.family.clone())
+                                        },
+                                        |(_, n)| n.clone(),
+                                    ),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (key, name) in &families {
+                                    combo_option(ui, &mut new_family, Some(key.clone()), name);
+                                }
+                            });
+                    });
+                });
+                tw::prop_row(ui, &l.text("slide-length"), 88.0, |ui| {
+                    ui.add_enabled_ui(editable, |ui| {
+                        egui::ComboBox::from_id_salt(("slide-length", id))
+                            .width(ui.available_width())
+                            .selected_text(
+                                new_length
+                                    .map_or_else(String::new, |v| format!("{} mm", mm_text(v))),
+                            )
+                            .show_ui(ui, |ui| {
+                                for length in &family_lengths {
+                                    combo_option(
+                                        ui,
+                                        &mut new_length,
+                                        Some(*length),
+                                        format!("{} mm", mm_text(*length)),
+                                    );
+                                }
+                            });
+                    });
+                });
+                if let Some(spec) = &spec {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{} {} mm · {} {} mm · {} {} mm (+{} / -{})",
-                            l.text("slide-length"),
-                            mm_text(spec.length),
+                            "{} {} mm · {} {} mm (+{} / -{})",
                             l.text("slide-travel"),
                             mm_text(spec.travel),
                             l.text("slide-clearance"),
@@ -705,10 +798,69 @@ impl DesktopApp {
                             mm_text(spec.clearance_minus),
                         ))
                         .size(12.0)
-                        .color(tw::TEXT_2),
+                        .color(tw::MUTED),
                     );
                 }
+            });
+        // Another model or length replaces the pinned slide in one step.
+        if new_family != current_family || new_length != spec.as_ref().map(|s| s.length) {
+            let chosen = new_family
+                .as_ref()
+                .map(|f| lengths(self, f))
+                .unwrap_or_default();
+            let pick = if new_family != current_family {
+                slide_installation::propose(
+                    self.editor.project(),
+                    installation.drawer_root_id,
+                    &chosen,
+                )
+                .ok()
+                .map(|p| p.catalog)
+            } else {
+                chosen
+                    .into_iter()
+                    .find(|c| c.slide().is_some_and(|s| Some(s.length) == new_length))
+            };
+            if let Some(catalog) = pick {
+                let pinned = self.editor.project().catalog.iter().find(|c| {
+                    c.product_id == catalog.product_id
+                        && c.item == catalog.item
+                        && c.origin == catalog.origin
+                });
+                let (catalog_id, pin) = match pinned {
+                    Some(p) => (p.id, None),
+                    None => (catalog.id, Some(catalog)),
+                };
+                let result = slide_installation::update_with_catalog(
+                    &mut self.editor,
+                    pin,
+                    plan_my_cabinet::domain::SlideInstallation {
+                        catalog_id,
+                        ..installation.clone()
+                    },
+                );
+                self.report_edit(result);
+            }
+        }
+        let requests = [
+            Request::with(A::StartMotion, Target::Slide(id)),
+            Request::with(A::RefitSlides, Target::Slide(id)),
+            Request::with(A::DeleteSlides, Target::Slide(id)),
+        ];
+        let enabled = requests.map(|r| self.action_availability(r).is_ok());
+        let mut run = None;
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(14, 0))
+            .show(ui, |ui| {
+                tw::inspector_heading(ui, &self.localizer.text("slide-position"), |_| {});
+                self.fitting_fields(
+                    ui,
+                    FittingTarget::Slide(id),
+                    &[("slide-height", 0), ("slide-setback", 1)],
+                    false,
+                );
                 ui.add_space(6.0);
+                let l = &self.localizer;
                 if status.issues.is_empty() {
                     ui.label(
                         egui::RichText::new(l.text("slide-fits"))
@@ -720,60 +872,25 @@ impl DesktopApp {
                         ui.label(egui::RichText::new(line).size(12.0).color(tw::WARN_INK));
                     }
                 }
-                if let Some(references) = &status.references {
-                    for (i, side) in references.sides.iter().enumerate() {
-                        ui.add_space(6.0);
-                        ui.label(
-                            tw::semibold(
-                                ui,
-                                l.text(if i == 0 { "pdf-left" } else { "pdf-right" }),
-                                12.5,
-                            )
-                            .color(tw::TEXT),
-                        );
-                        let list = |values: &[Length]| {
-                            values
-                                .iter()
-                                .map(|v| mm_text(*v))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        };
-                        for line in [
-                            format!(
-                                "{} · {} {} mm",
-                                name(side.cabinet_board),
-                                l.text("slide-gap"),
-                                mm_text(side.gap)
-                            ),
-                            format!(
-                                "{} {} mm · {} {} mm",
-                                l.text("pdf-slide-holes-from-front"),
-                                list(&side.cabinet_hole_distances),
-                                l.text("pdf-slide-centre-line"),
-                                mm_text(side.cabinet_centre_from_bottom)
-                            ),
-                            name(side.drawer_board),
-                            format!(
-                                "{} {} mm · {} {} mm",
-                                l.text("pdf-slide-holes-from-front"),
-                                list(&side.drawer_hole_distances),
-                                l.text("pdf-slide-centre-line"),
-                                mm_text(side.drawer_centre_from_bottom)
-                            ),
-                        ] {
-                            ui.label(egui::RichText::new(line).size(11.5).color(tw::MUTED));
-                        }
+                for (i, lines) in sides.iter().enumerate() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        tw::semibold(
+                            ui,
+                            l.text(if i == 0 { "pdf-left" } else { "pdf-right" }),
+                            12.5,
+                        )
+                        .color(tw::TEXT),
+                    );
+                    for line in lines {
+                        ui.label(egui::RichText::new(line).size(11.5).color(tw::MUTED));
                     }
                 }
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    for request in [motion, edit, delete] {
-                        if ui
-                            .add_enabled(
-                                self.action_availability(request).is_ok(),
-                                egui::Button::new(request.id.label(l)),
-                            )
-                            .clicked()
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                    for (request, enabled) in requests.into_iter().zip(enabled) {
+                        if tw::secondary_button_enabled(ui, &request.id.label(l), enabled).clicked()
                         {
                             run = Some(request);
                         }

@@ -419,6 +419,8 @@ mod tests {
         let mut project = Project::new("Cabinet", Currency::Brl);
         let material_id = Uuid::new_v4();
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material_id,
             name: "Plywood".into(),
             default_thickness: mm(18),
@@ -441,6 +443,7 @@ mod tests {
         });
         let board_id = Uuid::new_v4();
         project.boards.push(Board {
+            banding: Default::default(),
             id: board_id,
             name: "Shelf".into(),
             material_id,
