@@ -607,6 +607,8 @@ mod tests {
         let mut project = Project::new("candidates", Currency::Brl);
         project.id = id(1);
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: id(2),
             name: "ply".into(),
             default_thickness: mm(18),
@@ -614,6 +616,7 @@ mod tests {
         });
         for (index, size) in [(0, 100), (1, 100)] {
             project.boards.push(Board {
+                banding: Default::default(),
                 id: id(10 + index),
                 name: "part".into(),
                 material_id: id(2),

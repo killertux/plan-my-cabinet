@@ -12,7 +12,7 @@ pub use crate::hardware_spec::{
 use crate::money::{Currency, Money};
 use crate::units::{Length, Pose, Unit, UnitError};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
 /// Provisional project cutting assumption; confirm against the actual saw before shop use.
 pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
@@ -66,6 +66,110 @@ pub struct Material {
     pub name: String,
     pub default_thickness: Length,
     pub default_grain: BoardGrain,
+    /// What the sheet is made of. Only MDF and MDP take edge banding. Files
+    /// older than schema 5 infer it from the name on load.
+    #[serde(default)]
+    pub kind: MaterialKind,
+    /// The band automatic banding puts on this material's free edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_band: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MaterialKind {
+    Mdf,
+    Mdp,
+    Hdf,
+    Plywood,
+    SolidWood,
+    #[default]
+    Other,
+}
+
+impl MaterialKind {
+    pub const ALL: [Self; 6] = [
+        Self::Mdf,
+        Self::Mdp,
+        Self::Hdf,
+        Self::Plywood,
+        Self::SolidWood,
+        Self::Other,
+    ];
+
+    /// Edge banding is glued to the exposed particle or fibre core of MDF
+    /// and MDP; other sheets are left as they are.
+    pub const fn accepts_banding(self) -> bool {
+        matches!(self, Self::Mdf | Self::Mdp)
+    }
+
+    /// Best guess from a material name, for files that predate material kinds.
+    pub fn infer(name: &str) -> Self {
+        let name = name.to_lowercase();
+        let has = |word: &str| {
+            name.split(|c: char| !c.is_alphanumeric())
+                .any(|token| token == word)
+        };
+        if has("mdf") {
+            Self::Mdf
+        } else if has("mdp") || has("aglomerado") || has("particleboard") {
+            Self::Mdp
+        } else if has("hdf") || has("eucatex") {
+            Self::Hdf
+        } else if has("compensado") || has("plywood") || has("naval") {
+            Self::Plywood
+        } else if has("madeira") || has("maciça") || has("maciço") || has("solid") {
+            Self::SolidWood
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// A roll of edge band. The name is what a shop sees (for example
+/// "Fita Branca 1x22"); thickness and height are the tape's own size.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EdgeBand {
+    pub id: Uuid,
+    pub name: String,
+    pub thickness: Length,
+    pub height: Length,
+    pub color: SrgbColor,
+}
+
+/// Banding on one board edge. `Auto` follows the automatic rule (the
+/// material's default band on edges not joined to another board); `On` and
+/// `Off` are the user's overrides.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EdgeBanding {
+    #[default]
+    Auto,
+    On(Uuid),
+    Off,
+}
+
+/// Per-edge banding, indexed like `BoardEdge::ALL` (MinX, MaxX, MinY, MaxY).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BoardBanding(pub [EdgeBanding; 4]);
+
+impl BoardBanding {
+    pub fn is_automatic(&self) -> bool {
+        self.0.iter().all(|edge| *edge == EdgeBanding::Auto)
+    }
+
+    pub fn get(&self, edge: BoardEdge) -> EdgeBanding {
+        self.0[edge.index()]
+    }
+
+    pub fn set(&mut self, edge: BoardEdge, value: EdgeBanding) {
+        self.0[edge.index()] = value;
+    }
+
+    pub fn bands(&self) -> impl Iterator<Item = Uuid> + '_ {
+        self.0.iter().filter_map(|edge| match edge {
+            EdgeBanding::On(band) => Some(*band),
+            _ => None,
+        })
+    }
 }
 
 /// Portable sRGB channels, independent of any renderer or display profile.
@@ -90,6 +194,8 @@ pub struct Board {
     pub grain_override: Option<BoardGrain>,
     pub parent_id: Option<Uuid>,
     pub pose: Pose,
+    #[serde(default, skip_serializing_if = "BoardBanding::is_automatic")]
+    pub banding: BoardBanding,
 }
 
 impl Board {
@@ -329,6 +435,16 @@ impl BoardEdge {
     pub const ALL: [Self; 4] = [Self::MinX, Self::MaxX, Self::MinY, Self::MaxY];
 
     /// Local axis the edge runs along (0 = X, 1 = Y).
+    /// Position in `ALL`, and in `BoardBanding`.
+    pub const fn index(self) -> usize {
+        match self {
+            Self::MinX => 0,
+            Self::MaxX => 1,
+            Self::MinY => 2,
+            Self::MaxY => 3,
+        }
+    }
+
     pub const fn along_axis(self) -> usize {
         match self {
             Self::MinX | Self::MaxX => 1,
@@ -408,6 +524,8 @@ pub struct Project {
     /// opening and explicitly saving an uncolored legacy file adds no color data.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub material_colors: BTreeMap<Uuid, SrgbColor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_bands: Vec<EdgeBand>,
     pub boards: Vec<Board>,
     pub assemblies: Vec<Assembly>,
     pub stock: Vec<Stock>,
@@ -436,13 +554,19 @@ pub struct Project {
 pub enum DomainError {
     UnsupportedVersion(u32),
     DuplicateId(Uuid),
-    DanglingReference { owner: Uuid, target: Uuid },
+    DanglingReference {
+        owner: Uuid,
+        target: Uuid,
+    },
     HierarchyCycle(Uuid),
     InvalidDimension(Uuid),
     InvalidGridSpacing(UnitError),
     InvalidCuttingKerf(UnitError),
     InvalidKerfConfirmationDate,
-    InvalidPose { owner: Uuid, reason: UnitError },
+    InvalidPose {
+        owner: Uuid,
+        reason: UnitError,
+    },
     InvalidPrice(Uuid),
     InvalidCutFee,
     DuplicateAllocation(Uuid),
@@ -452,6 +576,8 @@ pub enum DomainError {
     InvalidDoorJoint(Uuid),
     InvalidSlide(Uuid),
     InvalidStockAlias,
+    /// Banding on a material that does not take it.
+    BandingNotAccepted(Uuid),
 }
 
 impl Project {
@@ -468,6 +594,10 @@ impl Project {
 
     pub fn material(&self, id: Uuid) -> Option<&Material> {
         self.materials.iter().find(|material| material.id == id)
+    }
+
+    pub fn edge_band(&self, id: Uuid) -> Option<&EdgeBand> {
+        self.edge_bands.iter().find(|band| band.id == id)
     }
 
     pub fn stock_piece(&self, id: Uuid) -> Option<&Stock> {
@@ -537,6 +667,7 @@ impl Project {
             cut_fee: None,
             materials: Vec::new(),
             material_colors: BTreeMap::new(),
+            edge_bands: Vec::new(),
             boards: Vec::new(),
             assemblies: Vec::new(),
             stock: Vec::new(),
@@ -714,11 +845,28 @@ impl Project {
             }
             Ok(())
         };
+        let bands: HashSet<_> = self.edge_bands.iter().map(|v| v.id).collect();
+        for band in &self.edge_bands {
+            positive(band.id, &[band.thickness, band.height])?;
+        }
         for material in &self.materials {
             positive(material.id, &[material.default_thickness])?;
+            if let Some(band) = material.default_band {
+                reference(material.id, band, &bands)?;
+            }
         }
         for board in &self.boards {
             reference(board.id, board.material_id, &materials)?;
+            for band in board.banding.bands() {
+                reference(board.id, band, &bands)?;
+            }
+            if board.banding.bands().next().is_some()
+                && self
+                    .material(board.material_id)
+                    .is_some_and(|m| !m.kind.accepts_banding())
+            {
+                return Err(DomainError::BandingNotAccepted(board.id));
+            }
             check_parent(board.id, board.parent_id, &parents)?;
             positive(board.id, &board.blank_dimensions())?;
             check_pose(board.id, board.pose)?;
@@ -875,12 +1023,15 @@ mod tests {
     fn fixture() -> Project {
         let mut project = Project::new("Cabinet", Currency::Brl);
         let material = Material {
+            default_band: None,
+            kind: Default::default(),
             id: Uuid::new_v4(),
             name: "Plywood".into(),
             default_thickness: mm(18),
             default_grain: BoardGrain::Length,
         };
         let board = Board {
+            banding: Default::default(),
             id: Uuid::new_v4(),
             name: "Side".into(),
             material_id: material.id,

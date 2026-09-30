@@ -180,6 +180,8 @@ mod tests {
         let foot = Uuid::new_v4();
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "wood".into(),
             default_thickness: mm(2300),
@@ -198,6 +200,7 @@ mod tests {
             pose: pose(0.0, 100.0),
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: board,
             name: "body".into(),
             material_id: material,
@@ -278,12 +281,15 @@ mod tests {
             pose: Pose::new([3.0, 4.0, 0.0], turn).unwrap(),
         });
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "wood".into(),
             default_thickness: mm(1),
             default_grain: BoardGrain::Length,
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: board,
             name: "board".into(),
             material_id: material,

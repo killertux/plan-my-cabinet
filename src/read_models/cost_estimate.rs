@@ -128,6 +128,8 @@ mod tests {
     fn fixture() -> Project {
         let mut p = Project::new("Cut costs", crate::money::Currency::Brl);
         let material = Material {
+            default_band: None,
+            kind: Default::default(),
             id: Uuid::new_v4(),
             name: "plywood".into(),
             default_thickness: mm(18),
@@ -157,6 +159,7 @@ mod tests {
                 trim,
             };
             let board = Board {
+                banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: "part".into(),
                 material_id: material.id,

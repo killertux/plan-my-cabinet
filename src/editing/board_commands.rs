@@ -87,6 +87,8 @@ impl ProjectEditor {
         let id = Uuid::new_v4();
         self.transact(|project| {
             project.materials.push(Material {
+                default_band: None,
+                kind: Default::default(),
                 id,
                 name: input.name,
                 default_thickness: input.thickness,
@@ -109,6 +111,8 @@ impl ProjectEditor {
         let id = Uuid::new_v4();
         self.transact(|project| {
             project.materials.push(Material {
+                default_band: None,
+                kind: Default::default(),
                 id,
                 name: input.name,
                 default_thickness: input.thickness,
@@ -203,6 +207,7 @@ impl ProjectEditor {
         let mut fit = None;
         self.transact(|project| {
             project.boards.push(Board {
+                banding: Default::default(),
                 id,
                 name: input.name,
                 material_id: input.material_id,

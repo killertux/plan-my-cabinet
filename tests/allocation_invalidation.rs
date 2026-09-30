@@ -23,6 +23,8 @@ fn fixture() -> ProjectEditor {
     let material = Uuid::new_v4();
     let stock = Uuid::new_v4();
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material,
         name: "plywood".into(),
         default_thickness: mm(18),
@@ -44,6 +46,7 @@ fn fixture() -> ProjectEditor {
     for x in [0, 105] {
         let board = Uuid::new_v4();
         project.boards.push(Board {
+            banding: Default::default(),
             id: board,
             name: "shelf".into(),
             material_id: material,

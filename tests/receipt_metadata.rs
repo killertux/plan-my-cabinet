@@ -142,6 +142,8 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
     let mut project = Project::new("evidence", Currency::Brl);
     let id = Uuid::new_v4();
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id,
         name: "Birch".into(),
         default_thickness: plan_my_cabinet::units::Length::from_micrometres(18_000),
@@ -165,6 +167,8 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
 fn oversized_evidence_blocks_export_before_destination_is_touched() {
     let mut project = Project::new("oversized", Currency::Brl);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: Uuid::new_v4(),
         name: "a".repeat(MAX_COMPARISON_BYTES),
         default_thickness: plan_my_cabinet::units::Length::from_micrometres(18_000),

@@ -1779,6 +1779,8 @@ impl Workspace {
                         thickness: ProposedLength::new(Conversion::Exact(m.default_thickness)),
                         grain: m.default_grain,
                         color: project.material_colors.get(&m.id).copied(),
+                        kind: m.kind,
+                        band: m.default_band.and_then(|b| project.edge_band(b)).cloned(),
                     });
                 }
             }

@@ -241,6 +241,7 @@ impl ProjectEditor {
         candidate
             .assign_missing_stock_aliases()
             .map_err(EditError::InvalidProject)?;
+        crate::banding::strip_unaccepted(&mut candidate);
         candidate.validate().map_err(EditError::InvalidProject)?;
         if candidate == self.project {
             return Ok(false);
@@ -461,6 +462,8 @@ mod tests {
         let stock = Uuid::new_v4();
         let catalog = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "Plywood".into(),
             default_thickness: mm(18),
@@ -482,6 +485,7 @@ mod tests {
         for name in ["Side", "Side"] {
             let board = Uuid::new_v4();
             p.boards.push(Board {
+                banding: Default::default(),
                 id: board,
                 name: name.into(),
                 material_id: material,

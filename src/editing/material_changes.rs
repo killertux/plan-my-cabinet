@@ -483,6 +483,8 @@ mod tests {
         let material = Uuid::new_v4();
         let parent = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "Plywood".into(),
             default_thickness: mm(18),
@@ -502,6 +504,7 @@ mod tests {
             let board = Uuid::new_v4();
             let stock = Uuid::new_v4();
             p.boards.push(Board {
+                banding: Default::default(),
                 id: board,
                 name: "Side".into(),
                 material_id: material,
@@ -849,6 +852,8 @@ mod tests {
             .transact(|p| -> Result<(), ()> {
                 p.stock[0].name = "Different label".into();
                 p.materials.push(Material {
+                    default_band: None,
+                    kind: Default::default(),
                     id: Uuid::new_v4(),
                     name: p.materials[0].name.clone(),
                     default_thickness: mm(18),
@@ -931,6 +936,8 @@ mod tests {
         editor
             .transact(|p| -> Result<(), ()> {
                 p.materials.push(Material {
+                    default_band: None,
+                    kind: Default::default(),
                     id: other,
                     name: "Plywood".into(),
                     default_thickness: mm(15),
@@ -966,6 +973,8 @@ mod tests {
         editor
             .transact(|p| -> Result<(), ()> {
                 p.materials.push(Material {
+                    default_band: None,
+                    kind: Default::default(),
                     id: other,
                     name: "Plywood".into(),
                     default_thickness: mm(15),

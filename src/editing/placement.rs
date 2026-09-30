@@ -739,6 +739,8 @@ mod tests {
         let mut project = Project::new("placement", Currency::Brl);
         let material = Uuid::new_v4();
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "wood".into(),
             default_thickness: Length::from_micrometres(20_000),
@@ -771,6 +773,7 @@ mod tests {
             (target, [150.0, 10.0, 0.0], None),
         ] {
             project.boards.push(Board {
+                banding: Default::default(),
                 id,
                 name: "board".into(),
                 material_id: material,

@@ -7,11 +7,12 @@ use uuid::Uuid;
 use crate::auto_place::{AddedSheets, add_needed_sheets};
 use crate::commands::{EditError, ProjectEditor};
 use crate::domain::{
-    BoardGrain, CatalogReference, DomainError, Material, Project, SlideInstallation, SrgbColor,
+    BoardGrain, CatalogReference, DomainError, EdgeBand, Material, MaterialKind, Project,
+    SlideInstallation, SrgbColor,
 };
 use crate::first_fit::{FirstFit, allocate_new_board};
 use crate::i18n::Language;
-use crate::material_presets::BR_STANDARD;
+use crate::material_presets::{BR_BANDS, BR_STANDARD};
 use crate::money::Currency;
 use crate::slide_installation;
 use crate::template_recipes::{
@@ -116,6 +117,10 @@ pub struct DraftMaterial {
     pub thickness: ProposedLength,
     pub grain: BoardGrain,
     pub color: Option<SrgbColor>,
+    pub kind: MaterialKind,
+    /// The band automatic banding uses on this material, carried whole so a
+    /// fresh project can add it.
+    pub band: Option<EdgeBand>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -191,6 +196,8 @@ pub struct TemplateReview {
     /// the overlay back's outside face is at `back_outside`.
     pub datums: TemplateDatums,
     pub materials: Vec<Material>,
+    /// The bands the materials band with.
+    pub bands: Vec<EdgeBand>,
     pub colors: BTreeMap<Uuid, SrgbColor>,
     /// In candidate board order. Without `add_sheets` a fresh project has no
     /// declared stock, so nothing fits.
@@ -258,12 +265,15 @@ impl TemplateSetup {
         color: Option<SrgbColor>,
     ) -> Uuid {
         let id = Uuid::new_v4();
+        let name = name.into();
         self.materials.push(DraftMaterial {
             id,
-            name: name.into(),
+            kind: MaterialKind::infer(&name),
+            name,
             thickness,
             grain,
             color,
+            band: None,
         });
         id
     }
@@ -277,6 +287,18 @@ impl TemplateSetup {
         if !self.materials.is_empty() {
             return;
         }
+        let white_band = BR_BANDS.first().map(|preset| {
+            let [thickness, height] = preset
+                .size_hundredths
+                .map(|h| Length::from_micrometres(h * 10));
+            EdgeBand {
+                id: Uuid::new_v4(),
+                name: preset.name(language).to_owned(),
+                thickness,
+                height,
+                color: preset.color,
+            }
+        });
         let mut ids = Vec::with_capacity(BR_STANDARD.len());
         for preset in BR_STANDARD {
             let id = self.add_material(
@@ -285,6 +307,12 @@ impl TemplateSetup {
                 preset.grain,
                 Some(preset.color),
             );
+            if let Some(draft) = self.materials.last_mut()
+                && draft.kind.accepts_banding()
+                && preset.name_en.starts_with("White")
+            {
+                draft.band.clone_from(&white_band);
+            }
             ids.push((preset, id));
         }
         let find = |name_en: &str, thickness_mm: i64| {
@@ -324,6 +352,8 @@ impl TemplateSetup {
             match m.thickness.accepted() {
                 Some(value) if value.micrometres() > 0 => {
                     materials.push(Material {
+                        default_band: m.band.as_ref().map(|b| b.id),
+                        kind: m.kind,
                         id: m.id,
                         name: m.name.clone(),
                         default_thickness: value,
@@ -433,7 +463,16 @@ impl TemplateSetup {
 
         let mut disposable = Project::new(&self.project_name, self.currency);
         disposable.display_unit = self.input_unit;
+        let mut bands: Vec<EdgeBand> = Vec::new();
+        for band in self.materials.iter().filter_map(|m| m.band.as_ref()) {
+            if materials.iter().any(|m| m.default_band == Some(band.id))
+                && !bands.iter().any(|b| b.id == band.id)
+            {
+                bands.push(band.clone());
+            }
+        }
         disposable.materials = materials.clone();
+        disposable.edge_bands = bands.clone();
         disposable.material_colors = colors.clone();
         disposable.assemblies = candidate.assemblies.clone();
         let mut fits = Vec::with_capacity(candidate.boards.len());
@@ -472,6 +511,7 @@ impl TemplateSetup {
             candidate,
             datums,
             materials,
+            bands,
             colors,
             fits,
             sheets,
@@ -489,10 +529,17 @@ impl TemplateSetup {
         fresh.display_unit = self.input_unit;
         let mut editor = ProjectEditor::new(fresh).map_err(GenerateError::Project)?;
         let mut remap = HashMap::new();
+        let mut band_remap = HashMap::new();
+        for band in &mut review.bands {
+            let old = band.id;
+            band.id = Uuid::new_v4();
+            band_remap.insert(old, band.id);
+        }
         for material in &mut review.materials {
             let old = material.id;
             material.id = Uuid::new_v4();
             remap.insert(old, material.id);
+            material.default_band = material.default_band.map(|b| band_remap[&b]);
         }
         for board in &mut review.candidate.boards {
             board.material_id = remap[&board.material_id];
@@ -512,6 +559,7 @@ impl TemplateSetup {
                     p.catalog.push(slides.catalog);
                     p.slide_installations.extend(slides.installations);
                 }
+                p.edge_bands.extend(review.bands);
                 p.materials.extend(review.materials);
                 p.material_colors.extend(review.colors);
                 p.assemblies.extend(review.candidate.assemblies);
@@ -552,6 +600,25 @@ impl TemplateSetup {
     ) -> Result<InsertedTemplate, GenerateError> {
         let mut review = self.review().map_err(GenerateError::Setup)?;
         let existing: BTreeSet<Uuid> = editor.project().materials.iter().map(|m| m.id).collect();
+        // A band the project already has (same name and size) is reused.
+        let mut band_remap = HashMap::new();
+        let mut added_bands = Vec::new();
+        for mut band in review.bands {
+            let same = editor.project().edge_bands.iter().find(|b| {
+                b.id == band.id
+                    || (b.name == band.name
+                        && b.thickness == band.thickness
+                        && b.height == band.height)
+            });
+            if let Some(same) = same {
+                band_remap.insert(band.id, same.id);
+            } else {
+                let old = band.id;
+                band.id = Uuid::new_v4();
+                band_remap.insert(old, band.id);
+                added_bands.push(band);
+            }
+        }
         let mut remap = HashMap::new();
         let mut added = Vec::new();
         for mut material in review.materials {
@@ -561,6 +628,7 @@ impl TemplateSetup {
                 let old = material.id;
                 material.id = Uuid::new_v4();
                 remap.insert(old, material.id);
+                material.default_band = material.default_band.map(|b| band_remap[&b]);
                 added.push(material);
             }
         }
@@ -611,6 +679,7 @@ impl TemplateSetup {
                     p.catalog.extend(pin);
                     p.slide_installations.extend(installations);
                 }
+                p.edge_bands.extend(added_bands);
                 p.materials.extend(added);
                 p.material_colors.extend(colors);
                 p.assemblies.extend(review.candidate.assemblies);

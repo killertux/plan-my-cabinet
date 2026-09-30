@@ -1,5 +1,6 @@
 //! Hardware catalog, doors and cabinet templates.
 
+pub mod banding_rules;
 pub mod board_frame;
 pub mod catalog_pack;
 pub mod door_joint;

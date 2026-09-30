@@ -10,12 +10,15 @@ fn fixture() -> ProjectEditor {
     let material = Uuid::new_v4();
     let mm = |n: i64| Length::from_micrometres(n * 1000);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material,
         name: "ply".into(),
         default_thickness: mm(18),
         default_grain: BoardGrain::Unrestricted,
     });
     project.boards.push(Board {
+        banding: Default::default(),
         id: Uuid::new_v4(),
         name: "part".into(),
         material_id: material,

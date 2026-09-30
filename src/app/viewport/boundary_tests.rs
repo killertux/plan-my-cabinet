@@ -70,6 +70,7 @@ fn moving_and_resizing_canvas_keeps_projection_pick_drag_and_overlay_capture_ali
     let id = Uuid::from_u128(42);
     let mut project = Project::new("Viewport", Currency::Brl);
     project.boards.push(Board {
+        banding: Default::default(),
         id,
         name: "Panel".into(),
         material_id: Uuid::from_u128(43),

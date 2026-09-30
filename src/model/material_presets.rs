@@ -5,7 +5,7 @@
 //! them into ordinary `Material` records the user can rename or edit.
 use uuid::Uuid;
 
-use crate::domain::{BoardGrain, Material, Project, SrgbColor};
+use crate::domain::{BoardGrain, EdgeBand, Material, MaterialKind, Project, SrgbColor};
 use crate::i18n::Language;
 use crate::units::Length;
 
@@ -26,6 +26,10 @@ impl MaterialPreset {
             Language::En => self.name_en,
             Language::PtBr => self.name_pt,
         }
+    }
+
+    pub fn kind(&self) -> MaterialKind {
+        MaterialKind::infer(self.name_en)
     }
 
     pub fn thickness(&self) -> Length {
@@ -169,19 +173,89 @@ pub const SWATCHES: &[(&str, SrgbColor)] = &[
     ("color-navy", SrgbColor([52, 70, 104])),
 ];
 
+/// A standard edge band roll, named as Brazilian shops list them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BandPreset {
+    pub name_en: &'static str,
+    pub name_pt: &'static str,
+    /// Thickness and height in hundredths of a millimetre.
+    pub size_hundredths: [i64; 2],
+    pub color: SrgbColor,
+}
+
+impl BandPreset {
+    pub fn name(&self, language: Language) -> &'static str {
+        match language {
+            Language::En => self.name_en,
+            Language::PtBr => self.name_pt,
+        }
+    }
+}
+
+/// Bands seeded into new projects. The first is the default band of the white
+/// MDF and MDP presets.
+pub const BR_BANDS: &[BandPreset] = &[
+    BandPreset {
+        name_en: "White band 1x22",
+        name_pt: "Fita Branca 1x22",
+        size_hundredths: [100, 2200],
+        color: WHITE_MDF,
+    },
+    BandPreset {
+        name_en: "White band 0.45x22",
+        name_pt: "Fita Branca 0,45x22",
+        size_hundredths: [45, 2200],
+        color: WHITE_MDF,
+    },
+    BandPreset {
+        name_en: "White band 1x35",
+        name_pt: "Fita Branca 1x35",
+        size_hundredths: [100, 3500],
+        color: WHITE_MDF,
+    },
+    BandPreset {
+        name_en: "Raw band 0.45x22",
+        name_pt: "Fita Crua 0,45x22",
+        size_hundredths: [45, 2200],
+        color: RAW_MDF,
+    },
+];
+
 /// Adds the standard set to a project that has no materials yet. Returns the
 /// number of materials added (zero when the project already has some).
+/// Standard bands are added alongside, and white sheets band in white.
 pub fn seed_defaults(project: &mut Project, language: Language) -> usize {
     if !project.materials.is_empty() {
         return 0;
     }
+    let mut white_band = None;
+    if project.edge_bands.is_empty() {
+        for preset in BR_BANDS {
+            let id = Uuid::new_v4();
+            white_band.get_or_insert(id);
+            let [thickness, height] = preset
+                .size_hundredths
+                .map(|h| Length::from_micrometres(h * 10));
+            project.edge_bands.push(EdgeBand {
+                id,
+                name: preset.name(language).to_owned(),
+                thickness,
+                height,
+                color: preset.color,
+            });
+        }
+    }
     for preset in BR_STANDARD {
         let id = Uuid::new_v4();
+        let kind = preset.kind();
+        let white = preset.color == WHITE_MDF || preset.color == WHITE_MDP;
         project.materials.push(Material {
             id,
             name: preset.name(language).to_owned(),
             default_thickness: preset.thickness(),
             default_grain: preset.grain,
+            kind,
+            default_band: white_band.filter(|_| kind.accepts_banding() && white),
         });
         project.material_colors.insert(id, preset.color);
     }

@@ -117,6 +117,7 @@ pub(crate) fn fit_new_board(
         .expect("validated material");
     let id = Uuid::new_v4();
     project.boards.push(Board {
+        banding: Default::default(),
         id,
         name,
         material_id: key.material_id,
@@ -2477,6 +2478,8 @@ impl DesktopApp {
                     .editor
                     .transact(|project| -> Result<(), ()> {
                         project.materials.push(plan_my_cabinet::domain::Material {
+                            default_band: None,
+                            kind: Default::default(),
                             id,
                             name: draft.name.clone(),
                             default_thickness: thickness,

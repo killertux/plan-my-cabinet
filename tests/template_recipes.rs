@@ -124,6 +124,8 @@ fn assert_bounds_and_identity(c: &RecipeCandidate, front: Length) {
         .collect::<HashSet<_>>()
     {
         project.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id,
             name: "Chosen".into(),
             default_thickness: thickness,

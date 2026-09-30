@@ -175,6 +175,8 @@ fn dense_document(language: Language) -> Document {
     let material_id = Uuid::from_u128(1);
     let stock_id = Uuid::from_u128(2);
     project.materials.push(Material {
+        default_band: None,
+        kind: Default::default(),
         id: material_id,
         name: "Madeira de ação".into(),
         default_thickness: Length::from_micrometres(18_000),
@@ -197,6 +199,7 @@ fn dense_document(language: Language) -> Document {
     for n in 0..28_u128 {
         let board_id = Uuid::from_u128(100 + n);
         project.boards.push(Board {
+            banding: Default::default(),
             id: board_id,
             name: format!("Prateleira número {n:02} — ação"),
             material_id,

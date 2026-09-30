@@ -325,9 +325,17 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         // Version 2 predates catalog packs: its hinge snapshots have no origin,
         // arm (all were full overlay) or inset depth, which default exactly.
         // Version 3 predates slides and feet: no catalog items and no slide
-        // installations, which also default exactly.
+        // installations, which also default exactly. Version 4 predates
+        // banding; material kinds are inferred below.
         project.schema_version = SCHEMA_VERSION;
         validate(&project)?;
+    }
+    if version < 5 {
+        // Version 4 predates material kinds and banding: no board has
+        // banding, so inferring a kind from the name cannot invalidate it.
+        for material in &mut project.materials {
+            material.kind = crate::domain::MaterialKind::infer(&material.name);
+        }
     }
     project
         .assign_missing_stock_aliases()
@@ -442,6 +450,8 @@ mod tests {
         let stock = Uuid::new_v4();
         let catalog = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "Plywood".into(),
             default_thickness: mm(18),
@@ -456,6 +466,7 @@ mod tests {
         for _ in 0..2 {
             let board = Uuid::new_v4();
             p.boards.push(Board {
+                banding: Default::default(),
                 id: board,
                 name: "Side".into(),
                 material_id: material,
@@ -823,8 +834,8 @@ mod tests {
             assert!(editor.preview().is_some());
         }
         assert!(matches!(
-            prepare_bytes(b"{\"schema_version\":5}"),
-            Err(PersistenceError::UnsupportedVersion(5))
+            prepare_bytes(b"{\"schema_version\":6}"),
+            Err(PersistenceError::UnsupportedVersion(6))
         ));
         assert!(matches!(
             prepare_bytes(b"{\"schema_version\":4294967296}"),

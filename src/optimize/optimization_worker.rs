@@ -318,12 +318,15 @@ mod tests {
         let material = Uuid::new_v4();
         let board = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "ply".into(),
             default_thickness: mm(18),
             default_grain: BoardGrain::Unrestricted,
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: board,
             name: "part".into(),
             material_id: material,

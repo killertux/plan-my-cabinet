@@ -272,6 +272,7 @@ mod tests {
         let id = Uuid::from_u128(7);
         let mut project = Project::new("Resize", Currency::Brl);
         project.boards.push(Board {
+            banding: Default::default(),
             id,
             name: "Panel".into(),
             material_id: Uuid::from_u128(8),

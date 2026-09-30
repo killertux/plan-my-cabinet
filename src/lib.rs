@@ -22,11 +22,11 @@ pub mod ui;
 
 // Flat paths (`plan_my_cabinet::commands`, `crate::domain`) stay valid.
 pub use catalog::{
-    board_frame, catalog_pack, door_joint, hardware_catalog, hinge_installation,
+    banding_rules, board_frame, catalog_pack, door_joint, hardware_catalog, hinge_installation,
     slide_installation, template_recipes, template_setup, user_pack,
 };
 pub use editing::{
-    assembly_edit, auto_place, board_commands, board_dimensions, color_commands, commands,
+    assembly_edit, auto_place, banding, board_commands, board_dimensions, color_commands, commands,
     edit_drafts, material_changes, placement, sheet_edit, stock_commands,
 };
 pub use model::{

@@ -728,6 +728,8 @@ mod tests {
         let mut p = Project::new("hierarchy", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            default_band: None,
+            kind: Default::default(),
             id: material,
             name: "wood".into(),
             default_thickness: Length::from_micrometres(1000),
@@ -754,6 +756,7 @@ mod tests {
             pose: Pose::new([-200.0, 0.0, 0.0], turn).unwrap(),
         });
         p.boards.push(Board {
+            banding: Default::default(),
             id: ids[3],
             name: "board".into(),
             material_id: material,

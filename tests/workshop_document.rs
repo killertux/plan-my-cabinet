@@ -22,12 +22,16 @@ fn fixture(count: usize) -> Project {
     project.revision = 42;
     project.materials = vec![
         Material {
+            default_band: None,
+            kind: Default::default(),
             id: id(2),
             name: "Carvalho Ação".into(),
             default_thickness: mm(18),
             default_grain: BoardGrain::Length,
         },
         Material {
+            default_band: None,
+            kind: Default::default(),
             id: id(3),
             name: "Carvalho Ação".into(),
             default_thickness: mm(18),
@@ -49,6 +53,7 @@ fn fixture(count: usize) -> Project {
     });
     for n in 0..count {
         project.boards.push(Board {
+            banding: Default::default(),
             id: id(100 + n as u128),
             name: if n < 5 {
                 "Prateleira São João".into()

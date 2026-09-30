@@ -217,6 +217,9 @@ impl From<DomainError> for ServiceError {
                 format!("drawer slides {id} are inconsistent with their drawer or catalog entry")
             }
             DomainError::InvalidStockAlias => "stock labels are inconsistent".into(),
+            DomainError::BandingNotAccepted(id) => {
+                format!("board {id} has edge banding but its material does not take banding")
+            }
         };
         Self::new(
             ErrorCode::InvalidProject,
