@@ -74,17 +74,7 @@ fn length_draft(value: f64) -> DimensionDraft {
 }
 
 fn euler(pose: Pose) -> [f64; 3] {
-    let q = pose.rotation;
-    let sin_pitch = 2.0 * (q.w * q.y - q.z * q.x);
-    [
-        (2.0 * (q.w * q.x + q.y * q.z))
-            .atan2(1.0 - 2.0 * (q.x * q.x + q.y * q.y))
-            .to_degrees(),
-        sin_pitch.clamp(-1.0, 1.0).asin().to_degrees(),
-        (2.0 * (q.w * q.z + q.x * q.y))
-            .atan2(1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-            .to_degrees(),
-    ]
+    plan_my_cabinet::placement::euler_degrees_xyz(pose.rotation)
 }
 
 fn framed_pose(project: &Project, board_id: Uuid, frame: CoordinateFrame) -> Option<Pose> {

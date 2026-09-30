@@ -2,7 +2,7 @@
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
-    mpsc::{self, Receiver, TryRecvError},
+    mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
 };
 use std::thread;
 use std::time::{Duration, Instant};
@@ -120,6 +120,8 @@ pub enum WorkerError {
     Generation(Box<GenerationError>),
     Ranking(Box<RankingError>),
     Disconnected,
+    /// [`OptimizationWorker::wait`] gave up before the search reported back.
+    Timeout,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -228,6 +230,31 @@ impl OptimizationWorker {
             }
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(WorkerError::Disconnected),
+        }
+    }
+
+    /// Block until the search completes, discarding progress, or until
+    /// `timeout` passes. The search deadline given to [`Self::start`] bounds
+    /// the search itself; this bounds the wait. A timeout cancels the search.
+    pub fn wait(&mut self, timeout: Duration) -> Result<Box<CompletedSearch>, WorkerError> {
+        if self.finished {
+            return Err(WorkerError::Disconnected);
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.receiver.recv_timeout(left) {
+                Ok(WorkerMessage::Progress { .. }) => continue,
+                Ok(WorkerMessage::Completed(result)) => {
+                    self.finished = true;
+                    return result;
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    self.cancel();
+                    return Err(WorkerError::Timeout);
+                }
+                Err(RecvTimeoutError::Disconnected) => return Err(WorkerError::Disconnected),
+            }
         }
     }
 

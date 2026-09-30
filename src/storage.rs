@@ -4,3 +4,4 @@ pub mod local_preferences;
 pub mod persistence;
 pub mod recent_projects;
 pub mod recovery;
+pub mod user_dirs;

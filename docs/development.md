@@ -26,6 +26,31 @@ verify high-DPI window resizing on actual target hardware.
 GitHub Actions runs format, all-target checks, strict Clippy, headless library
 tests, and all tests on macOS and Ubuntu. Interactive GUI checks are manual.
 
+## MCP server (`--mcp`)
+
+`plan-my-cabinet --mcp` serves the agent API over stdio with `rmcp`. The layers:
+
+- `src/service/`: the transport-free agent API. Each tool is a `Workspace`
+  method with a `Deserialize + JsonSchema` input and a serializable result or a
+  `ServiceError { code, message, hint, details }`. Library errors convert there
+  with exhaustive matches, so a new error variant fails to compile until it has
+  a message.
+- `src/render/`: the camera, scene mesh and a CPU rasterizer shared by the
+  viewport, the saved thumbnail and agent pictures; sheet diagrams are SVG
+  rendered with resvg. No GPU is needed, so it runs in CI.
+- `src/read_models/scene_description.rs`: contacts, overlaps and gaps in words.
+- `src/app/mcp.rs`, `src/app/mcp/server.rs`: the thin rmcp adapter, the
+  server instructions (`instructions.md`) and guide (`guide.md`).
+
+Nothing on the `--mcp` path may write to stdout: it carries the protocol. Use
+stderr for diagnostics.
+
+Tests: `tests/service_cabinet.rs` drives the API end to end with JSON inputs,
+`tests/render_pictures.rs` checks pictures and the scene description, and
+`tests/mcp_stdio.rs` spawns the binary and speaks JSON-RPC. Set
+`PMCAB_RENDER_DUMP=/some/dir` to write the test pictures there. For manual
+checks: `npx @modelcontextprotocol/inspector target/debug/plan-my-cabinet --mcp`.
+
 ## Desktop redesign acceptance
 
 See [redesign acceptance](redesign-acceptance.md) for the ten-screen reference

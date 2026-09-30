@@ -301,6 +301,19 @@ impl ProjectEditor {
         })
     }
 
+    /// Remove a dimensioned reference item in one undoable edit.
+    pub fn remove_placeholder(&mut self, id: Uuid) -> Result<bool, EditError<AssemblyEditError>> {
+        self.transact(|p| {
+            let index = p
+                .hardware
+                .iter()
+                .position(|h| h.id == id && matches!(h.kind, HardwareKind::Placeholder { .. }))
+                .ok_or(AssemblyEditError::MissingObject(id))?;
+            p.hardware.remove(index);
+            Ok(())
+        })
+    }
+
     /// Duplicate under the original parent at its effective world pose.
     pub fn duplicate_placeholder(
         &mut self,

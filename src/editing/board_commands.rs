@@ -2,7 +2,7 @@
 use uuid::Uuid;
 
 use crate::commands::{EditError, ProjectEditor};
-use crate::domain::{Board, BoardGrain, Material};
+use crate::domain::{Board, BoardGrain, Material, SrgbColor};
 use crate::first_fit::{FirstFit, allocate_new_board};
 use crate::units::{Length, Pose, UnitError};
 
@@ -18,6 +18,8 @@ pub enum BoardField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
     MissingMaterial(Uuid),
+    /// The requested parent is not an assembly of this project.
+    MissingParent(Uuid),
     InvalidField(BoardField, UnitError),
 }
 
@@ -52,6 +54,28 @@ pub struct NewBoard {
     pub pose: Pose,
 }
 
+/// Creation choices beyond [`NewBoard`]. The default matches
+/// [`ProjectEditor::create_board_with_fit`]: follow the material grain, no
+/// parent, and first-fit onto declared stock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NewBoardOptions {
+    pub grain_override: Option<BoardGrain>,
+    /// Assembly the pose is relative to; `None` places the board in the world.
+    pub parent_id: Option<Uuid>,
+    /// Try to allocate the new board onto declared stock in the same step.
+    pub fit: bool,
+}
+
+impl Default for NewBoardOptions {
+    fn default() -> Self {
+        Self {
+            grain_override: None,
+            parent_id: None,
+            fit: true,
+        }
+    }
+}
+
 impl ProjectEditor {
     pub fn create_material(
         &mut self,
@@ -73,6 +97,31 @@ impl ProjectEditor {
         Ok(id)
     }
 
+    /// Create a material and its display color as one undo step.
+    pub fn create_material_with_color(
+        &mut self,
+        input: NewMaterial,
+        color: Option<SrgbColor>,
+    ) -> Result<Uuid, EditError<CreationError>> {
+        input.thickness.positive().map_err(|e| {
+            EditError::Command(CreationError::InvalidField(BoardField::Thickness, e))
+        })?;
+        let id = Uuid::new_v4();
+        self.transact(|project| {
+            project.materials.push(Material {
+                id,
+                name: input.name,
+                default_thickness: input.thickness,
+                default_grain: input.grain,
+            });
+            if let Some(color) = color {
+                project.material_colors.insert(id, color);
+            }
+            Ok(())
+        })?;
+        Ok(id)
+    }
+
     pub fn create_board(&mut self, input: NewBoard) -> Result<Uuid, EditError<CreationError>> {
         self.create_board_with_fit(input).map(|(id, _)| id)
     }
@@ -81,6 +130,18 @@ impl ProjectEditor {
         &mut self,
         input: NewBoard,
     ) -> Result<(Uuid, FirstFit), EditError<CreationError>> {
+        self.create_board_detailed(input, NewBoardOptions::default())
+            .map(|(id, fit)| (id, fit.unwrap_or(FirstFit::NoFit)))
+    }
+
+    /// Create a board with an optional grain override and parent assembly, as
+    /// one undo step. The pose is relative to the parent. The fit result is
+    /// `None` when fitting was not requested.
+    pub fn create_board_detailed(
+        &mut self,
+        input: NewBoard,
+        options: NewBoardOptions,
+    ) -> Result<(Uuid, Option<FirstFit>), EditError<CreationError>> {
         input
             .length
             .positive()
@@ -100,6 +161,11 @@ impl ProjectEditor {
         let thickness = material.default_thickness.positive().map_err(|e| {
             EditError::Command(CreationError::InvalidField(BoardField::Thickness, e))
         })?;
+        if let Some(parent) = options.parent_id
+            && !self.project().assemblies.iter().any(|a| a.id == parent)
+        {
+            return Err(EditError::Command(CreationError::MissingParent(parent)));
+        }
         // Validate the supplied rigid pose and all eight extremities, not just its origin.
         let pose = Pose::new(input.pose.translation_mm, input.pose.rotation)
             .map_err(|e| EditError::Command(CreationError::InvalidField(BoardField::Pose, e)))?;
@@ -134,7 +200,7 @@ impl ProjectEditor {
             }
         }
         let id = Uuid::new_v4();
-        let mut fit = FirstFit::NoFit;
+        let mut fit = None;
         self.transact(|project| {
             project.boards.push(Board {
                 id,
@@ -143,11 +209,13 @@ impl ProjectEditor {
                 length: input.length,
                 width: input.width,
                 thickness,
-                grain_override: None,
-                parent_id: None,
+                grain_override: options.grain_override,
+                parent_id: options.parent_id,
                 pose,
             });
-            fit = allocate_new_board(project, id);
+            if options.fit {
+                fit = Some(allocate_new_board(project, id));
+            }
             Ok(())
         })?;
         Ok((id, fit))

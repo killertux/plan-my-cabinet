@@ -172,18 +172,7 @@ impl HardwareDialog {
 
 impl DesktopApp {
     pub(crate) fn remove_reference_hardware(&mut self, id: Uuid) -> bool {
-        let removed =
-            self.editor
-                .transact(|project| -> Result<(), ()> {
-                    let Some(index) = project.hardware.iter().position(|h| {
-                        h.id == id && matches!(h.kind, HardwareKind::Placeholder { .. })
-                    }) else {
-                        return Err(());
-                    };
-                    project.hardware.remove(index);
-                    Ok(())
-                })
-                .is_ok();
+        let removed = self.editor.remove_placeholder(id).is_ok();
         if removed {
             self.selection.choose(None, false);
         }

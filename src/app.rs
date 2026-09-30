@@ -14,6 +14,7 @@ pub(crate) mod handoff_ui;
 pub(crate) mod hardware_ui;
 pub(crate) mod hinge_ui;
 pub(crate) mod kerf_confirmation_ui;
+pub(crate) mod mcp;
 pub(crate) mod modal_chrome;
 pub(crate) mod modals;
 pub(crate) mod navigation;

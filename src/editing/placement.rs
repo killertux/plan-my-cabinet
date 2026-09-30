@@ -253,6 +253,40 @@ pub fn pose_in_frame(
     }
 }
 
+/// Intrinsic X, then Y, then Z rotations in degrees (matrix Rz*Ry*Rx), as the
+/// numeric editor enters them. Each angle must be finite and within ±360°.
+pub fn rotation_from_degrees_xyz(degrees: [f64; 3]) -> Result<Quaternion, PlacementError> {
+    if degrees.iter().any(|a| !a.is_finite() || a.abs() > 360.0) {
+        return Err(PlacementError::InvalidRotation);
+    }
+    let [x, y, z] = degrees.map(f64::to_radians);
+    let (sx, cx) = (x / 2.0).sin_cos();
+    let (sy, cy) = (y / 2.0).sin_cos();
+    let (sz, cz) = (z / 2.0).sin_cos();
+    Quaternion::normalized(
+        cz * cy * cx + sz * sy * sx,
+        cz * cy * sx - sz * sy * cx,
+        cz * sy * cx + sz * cy * sx,
+        sz * cy * cx - cz * sy * sx,
+    )
+    .map_err(PlacementError::InvalidPose)
+}
+
+/// The numeric editor's display angles for a rotation: the inverse of
+/// [`rotation_from_degrees_xyz`] (pitch clamped at ±90°).
+pub fn euler_degrees_xyz(q: Quaternion) -> [f64; 3] {
+    let sin_pitch = 2.0 * (q.w * q.y - q.z * q.x);
+    [
+        (2.0 * (q.w * q.x + q.y * q.z))
+            .atan2(1.0 - 2.0 * (q.x * q.x + q.y * q.y))
+            .to_degrees(),
+        sin_pitch.clamp(-1.0, 1.0).asin().to_degrees(),
+        (2.0 * (q.w * q.z + q.x * q.y))
+            .atan2(1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+            .to_degrees(),
+    ]
+}
+
 fn numeric_world(project: &Project, id: Uuid, input: NumericPose) -> Result<Pose, PlacementError> {
     if input
         .rotation_degrees_xyz
@@ -274,17 +308,7 @@ fn numeric_world(project: &Project, id: Uuid, input: NumericPose) -> Result<Pose
         }
         *value = (*value * 1000.0).round() / 1000.0;
     }
-    let [x, y, z] = input.rotation_degrees_xyz.map(f64::to_radians);
-    let (sx, cx) = (x / 2.0).sin_cos();
-    let (sy, cy) = (y / 2.0).sin_cos();
-    let (sz, cz) = (z / 2.0).sin_cos();
-    let q = Quaternion::normalized(
-        cz * cy * cx + sz * sy * sx,
-        cz * cy * sx - sz * sy * cx,
-        cz * sy * cx + sz * cy * sx,
-        sz * cy * cx - cz * sy * sx,
-    )
-    .map_err(PlacementError::InvalidPose)?;
+    let q = rotation_from_degrees_xyz(input.rotation_degrees_xyz)?;
     let entered = Pose::new(position, q).map_err(PlacementError::InvalidPose)?;
     match input.frame {
         CoordinateFrame::World => Ok(entered),
@@ -619,24 +643,7 @@ impl<'a> PlacementSession<'a> {
             }
         }
         let rotation = if rotation_edited {
-            if input
-                .rotation_degrees_xyz
-                .iter()
-                .any(|a| !a.is_finite() || a.abs() > 360.0)
-            {
-                return Err(PlacementError::InvalidRotation);
-            }
-            let [x, y, z] = input.rotation_degrees_xyz.map(f64::to_radians);
-            let (sx, cx) = (x / 2.0).sin_cos();
-            let (sy, cy) = (y / 2.0).sin_cos();
-            let (sz, cz) = (z / 2.0).sin_cos();
-            Quaternion::normalized(
-                cz * cy * cx + sz * sy * sx,
-                cz * cy * sx - sz * sy * cx,
-                cz * sy * cx + sz * cy * sx,
-                sz * cy * cx - cz * sy * sx,
-            )
-            .map_err(PlacementError::InvalidPose)?
+            rotation_from_degrees_xyz(input.rotation_degrees_xyz)?
         } else {
             source.rotation
         };
