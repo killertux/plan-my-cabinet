@@ -17,6 +17,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # PDF tests read the exported text back with pdftotext (poppler).
+      - name: Install pdftotext (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Install pdftotext (macOS)
+        if: runner.os == 'macOS'
+        run: brew install poppler
       - name: Format
         run: cargo fmt --check
       - name: Check all targets

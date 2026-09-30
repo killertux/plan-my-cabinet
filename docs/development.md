@@ -23,6 +23,9 @@ If no suitable graphics adapter is available, the executable reports a
 startup error on stderr. The UI uses the platform's display scale factor;
 verify high-DPI window resizing on actual target hardware.
 
+Some PDF tests read the exported text back with `pdftotext` from poppler
+(`brew install poppler` on macOS, `poppler-utils` on Debian/Ubuntu).
+
 GitHub Actions runs format, all-target checks, strict Clippy, headless library
 tests, and all tests on macOS and Ubuntu. Interactive GUI checks are manual.
 
