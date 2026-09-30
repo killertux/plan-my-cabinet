@@ -40,8 +40,10 @@ A **Base** contém laterais de altura total, fundo e travessas superiores; o
 frentes externas independentes. Informe a quantidade, profundidade das caixas,
 folgas laterais e traseiras, folga vertical, recuos e intervalos das frentes.
 As peças geradas são editáveis individualmente, sem vínculos paramétricos
-permanentes. O modelo não seleciona corrediças, não fornece instruções de
-usinagem nem certifica carga ou encaixe mecânico.
+permanentes. Cada gaveta recebe um par de corrediças do catálogo (padrão
+FGVTN TT45; escolha outro modelo ou nenhum na configuração) e a caixa fica
+duas folgas de corrediça mais estreita que o vão. O modelo não fornece
+instruções de usinagem nem certifica carga ou encaixe mecânico.
 
 A configuração não altera o projeto aberto. **Cancelar configuração** volta à
 tela inicial sem criar projeto ou entrada recente. Antes de gerar, resolva

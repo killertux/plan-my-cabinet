@@ -12,6 +12,7 @@ use crate::domain::{HardwareKind, Project};
 use crate::render::camera::{
     Bounds, Camera, Projection, Selection, board_corners, box_corners, dot, world_pose,
 };
+use crate::render::hardware_mesh::{Solid, outline_for, solids};
 use crate::render::mesh::{
     BACKGROUND, Mesh, add_floor_shadow, add_grid, board_face_color, relative,
 };
@@ -108,12 +109,37 @@ pub enum RenderError {
     Unprojectable,
 }
 
-/// A world-space box with its object identity and colors.
+/// A world-space box, or a shaped solid, with its object identity and colors.
 struct Item {
     id: Uuid,
-    corners: [[f64; 3]; 8],
+    geometry: Geometry,
     face: [f32; 3],
     edge: [f32; 3],
+}
+
+enum Geometry {
+    Box([[f64; 3]; 8]),
+    Solid(Box<Solid>),
+}
+
+impl Item {
+    fn points(&self) -> Vec<[f64; 3]> {
+        match &self.geometry {
+            Geometry::Box(corners) => corners.to_vec(),
+            Geometry::Solid(solid) => solid.points(),
+        }
+    }
+
+    fn mesh(&self, target: [f64; 3]) -> Mesh {
+        let mut mesh = Mesh::default();
+        match &self.geometry {
+            Geometry::Box(corners) => {
+                mesh.box_mesh(corners.map(|p| relative(p, target)), self.face, self.edge);
+            }
+            Geometry::Solid(solid) => mesh.add_solid(solid, target, self.face, self.edge),
+        }
+        mesh
+    }
 }
 
 fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<Item> {
@@ -147,7 +173,7 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
         };
         out.push(Item {
             id: board.id,
-            corners,
+            geometry: Geometry::Box(corners),
             face,
             edge,
         });
@@ -170,13 +196,32 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
             let highlighted = selection.ids.contains(&hardware.id);
             out.push(Item {
                 id: hardware.id,
-                corners,
+                geometry: Geometry::Box(corners),
                 face: if highlighted {
                     [0.95, 0.72, 0.45]
                 } else {
                     [0.66, 0.70, 0.69]
                 },
                 edge: [0.35, 0.38, 0.38],
+            });
+        }
+        for solid in solids(project, selection, style.poses) {
+            let highlighted = selection.ids.contains(&solid.id);
+            let face = if highlighted {
+                std::array::from_fn(|i| solid.base[i] * 0.45 + [1.0, 0.70, 0.30][i] * 0.55)
+            } else {
+                solid.base
+            };
+            let edge = if highlighted {
+                [0.79, 0.45, 0.12]
+            } else {
+                outline_for(solid.base)
+            };
+            out.push(Item {
+                id: solid.id,
+                geometry: Geometry::Solid(Box::new(solid)),
+                face,
+                edge,
             });
         }
     }
@@ -191,7 +236,7 @@ pub fn visible_bounds(
 ) -> Option<Bounds> {
     let mut bounds = Bounds::empty();
     for item in items(project, selection, style) {
-        for p in item.corners {
+        for p in item.points() {
             bounds.include(p);
         }
     }
@@ -219,7 +264,7 @@ pub fn framing_points(
                         && crate::render::camera::selected_ancestor(project, only, h.parent_id)
                 })
         })
-        .flat_map(|item| item.corners)
+        .flat_map(|item| item.points())
         .collect()
 }
 
@@ -304,7 +349,7 @@ pub fn render_scene(
     if style.show_shadow {
         let mut bounds = Bounds::empty();
         for item in &items {
-            for p in item.corners {
+            for p in item.points() {
                 bounds.include(p);
             }
         }
@@ -314,12 +359,7 @@ pub fn render_scene(
         target.triangle(triangle, u32::MAX, false)?;
     }
     for (index, item) in items.iter().enumerate() {
-        let mut mesh = Mesh::default();
-        mesh.box_mesh(
-            item.corners.map(|p| relative(p, camera.target)),
-            item.face,
-            item.edge,
-        );
+        let mesh = item.mesh(camera.target);
         for triangle in mesh.faces.as_chunks::<18>().0 {
             target.triangle(triangle, index as u32, true)?;
         }
@@ -328,12 +368,7 @@ pub fn render_scene(
         target.line(line, 0.0);
     }
     for item in &items {
-        let mut mesh = Mesh::default();
-        mesh.box_mesh(
-            item.corners.map(|p| relative(p, camera.target)),
-            item.face,
-            item.edge,
-        );
+        let mesh = item.mesh(camera.target);
         for line in mesh.lines.as_chunks::<12>().0 {
             target.line(line, ss as f32 * 0.6);
         }

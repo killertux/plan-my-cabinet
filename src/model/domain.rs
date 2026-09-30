@@ -6,10 +6,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::export::ExportRecord;
+pub use crate::hardware_spec::{
+    CatalogItem, FootShape, FootSpec, Glide, Section, SlideExtension, SlideHole, SlideSpec,
+};
 use crate::money::{Currency, Money};
 use crate::units::{Length, Pose, Unit, UnitError};
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
 /// Provisional project cutting assumption; confirm against the actual saw before shop use.
 pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
@@ -169,6 +172,25 @@ pub struct CatalogReference {
     /// created before catalog packs.
     #[serde(default)]
     pub origin: Option<CatalogOrigin>,
+    /// Slide or foot facts; `None` for hinges (see `verified_hinge`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<CatalogItem>,
+}
+
+impl CatalogReference {
+    pub fn slide(&self) -> Option<&SlideSpec> {
+        match &self.item {
+            Some(CatalogItem::Slide(spec)) => Some(spec),
+            _ => None,
+        }
+    }
+
+    pub fn foot(&self) -> Option<&FootSpec> {
+        match &self.item {
+            Some(CatalogItem::Foot(spec)) => Some(spec),
+            _ => None,
+        }
+    }
 }
 
 /// Where a pinned snapshot came from, used to offer updates and to name the
@@ -321,6 +343,35 @@ pub enum BoardFace {
     MaxZ,
 }
 
+/// A pair of drawer slides: one cabinet member on each carcass side, one
+/// drawer member on each drawer box side. Index 0 is the left (smaller world
+/// X) side. The drawer's pull direction is derived from the geometry, so no
+/// closed pose is stored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlideInstallation {
+    pub id: Uuid,
+    pub catalog_id: Uuid,
+    /// The board or assembly that moves with the drawer.
+    pub drawer_root_id: Uuid,
+    pub drawer_sides: [Uuid; 2],
+    pub cabinet_sides: [Uuid; 2],
+    pub sides: [SlideMountingSide; 2],
+    /// Slide centre line above the drawer box side's bottom edge.
+    pub height: Length,
+    /// Cabinet member front, behind the carcass front edge.
+    pub setback: Length,
+}
+
+/// Which edges and faces a slide uses on one side, fitted when installed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlideMountingSide {
+    pub cabinet_front_edge: BoardEdge,
+    pub cabinet_face: BoardFace,
+    pub drawer_front_edge: BoardEdge,
+    pub drawer_bottom_edge: BoardEdge,
+    pub drawer_face: BoardFace,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HingeMountingSide {
     pub door_edge: BoardEdge,
@@ -375,6 +426,8 @@ pub struct Project {
     pub hinge_installations: Vec<HingeInstallation>,
     #[serde(default)]
     pub door_joints: Vec<DoorJoint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slide_installations: Vec<SlideInstallation>,
     #[serde(default)]
     pub export_records: Vec<ExportRecord>,
 }
@@ -397,6 +450,7 @@ pub enum DomainError {
     InvalidCatalog(Uuid),
     SameHingeBoards(Uuid),
     InvalidDoorJoint(Uuid),
+    InvalidSlide(Uuid),
     InvalidStockAlias,
 }
 
@@ -494,6 +548,7 @@ impl Project {
             hardware: Vec::new(),
             hinge_installations: Vec::new(),
             door_joints: Vec::new(),
+            slide_installations: Vec::new(),
             export_records: Vec::new(),
         }
     }
@@ -502,6 +557,33 @@ impl Project {
     /// Placement feasibility and hardware installation checks belong to later planners.
     pub fn validate(&self) -> Result<(), DomainError> {
         self.validate_version(SCHEMA_VERSION)
+    }
+
+    /// Local box of a hardware item: a placeholder's dimensions or a pinned
+    /// foot's bounding box. `None` for catalog items without geometry.
+    pub fn hardware_dimensions(&self, item: &Hardware) -> Option<[Length; 3]> {
+        match &item.kind {
+            HardwareKind::Placeholder { dimensions } => Some(*dimensions),
+            HardwareKind::Catalog { catalog_id } => self
+                .catalog
+                .iter()
+                .find(|entry| entry.id == *catalog_id)
+                .and_then(CatalogReference::foot)
+                .filter(|spec| spec.is_consistent())
+                .map(FootSpec::local_size),
+        }
+    }
+
+    /// The pinned foot facts of a hardware item, when it is a foot.
+    pub fn foot_spec(&self, item: &Hardware) -> Option<&FootSpec> {
+        match &item.kind {
+            HardwareKind::Catalog { catalog_id } => self
+                .catalog
+                .iter()
+                .find(|entry| entry.id == *catalog_id)
+                .and_then(CatalogReference::foot),
+            HardwareKind::Placeholder { .. } => None,
+        }
     }
 
     pub fn material_color(&self, material_id: Uuid) -> SrgbColor {
@@ -553,6 +635,7 @@ impl Project {
             .chain(self.hardware.iter().map(|v| v.id))
             .chain(self.hinge_installations.iter().map(|v| v.id))
             .chain(self.door_joints.iter().map(|v| v.id))
+            .chain(self.slide_installations.iter().map(|v| v.id))
         {
             if !ids.insert(id) {
                 return Err(DomainError::DuplicateId(id));
@@ -682,13 +765,36 @@ impl Project {
             if entry.verified_hinge.is_some() && !crate::hardware_catalog::is_verified(entry) {
                 return Err(DomainError::InvalidCatalog(entry.id));
             }
+            let coherent_item = match &entry.item {
+                None => true,
+                Some(CatalogItem::Slide(spec)) => spec.is_consistent(),
+                Some(CatalogItem::Foot(spec)) => spec.is_consistent(),
+            };
+            if !coherent_item
+                || (entry.item.is_some()
+                    && (entry.verified_hinge.is_some()
+                        || entry.plate_id.is_some()
+                        || !entry.installation_dimensions.is_empty()))
+            {
+                return Err(DomainError::InvalidCatalog(entry.id));
+            }
         }
         for item in &self.hardware {
             check_parent(item.id, item.parent_id, &parents)?;
             check_pose(item.id, item.pose)?;
             match &item.kind {
                 HardwareKind::Placeholder { dimensions } => positive(item.id, dimensions)?,
-                HardwareKind::Catalog { catalog_id } => reference(item.id, *catalog_id, &catalog)?,
+                HardwareKind::Catalog { catalog_id } => {
+                    reference(item.id, *catalog_id, &catalog)?;
+                    // Slides are installations between boards, never loose objects.
+                    if self
+                        .catalog
+                        .iter()
+                        .any(|entry| entry.id == *catalog_id && entry.slide().is_some())
+                    {
+                        return Err(DomainError::InvalidCatalog(*catalog_id));
+                    }
+                }
             }
         }
         for installation in &self.hinge_installations {
@@ -713,6 +819,7 @@ impl Project {
             }
         }
         crate::door_joint::validate_joints(self)?;
+        crate::slide_installation::validate_installations(self)?;
         let mut assigned = HashSet::new();
         for allocation in &self.allocations {
             reference(allocation.id, allocation.board_id, &boards)?;

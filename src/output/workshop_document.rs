@@ -243,6 +243,11 @@ fn issue_text(
             loc.text("pdf-joint-review"),
             loc.text("pdf-installation-withheld")
         ),
+        ExportIssue::Slide { name, reason, .. } => format!(
+            "{name}: {} — {}",
+            loc.text(reason.key()),
+            loc.text("pdf-installation-withheld")
+        ),
         ExportIssue::InvalidWood(_) => loc.text("pdf-invalid-wood"),
     }
 }
@@ -756,12 +761,16 @@ fn hardware_pages(
                 .map_or_else(
                     || format!("{} {}", loc.text("pdf-catalog"), loc.text("pdf-missing")),
                     |c| {
-                        format!(
-                            "{} / {} / {}",
-                            c.product_id,
-                            c.plate_id.as_deref().unwrap_or("—"),
-                            c.revision
-                        )
+                        if c.foot().is_some() {
+                            crate::hardware_lines::foot_line(c, loc, |v| length(v, unit, language))
+                        } else {
+                            format!(
+                                "{} / {} / {}",
+                                c.product_id,
+                                c.plate_id.as_deref().unwrap_or("—"),
+                                c.revision
+                            )
+                        }
                     },
                 ),
         };
@@ -839,6 +848,32 @@ fn hardware_pages(
         }
         builder.notice(&loc.text("pdf-fasteners-unavailable"))?;
     }
+    if !project.slide_installations.is_empty() {
+        builder.section(&loc.text("pdf-drawer-slides"))?;
+        builder.notice(&loc.text("pdf-slide-review-warning"))?;
+        for slide in &project.slide_installations {
+            match prepared.slide_guidance.iter().find(|g| g.id == slide.id) {
+                Some(guidance) => {
+                    for line in crate::hardware_lines::slide_lines(project, guidance, loc, |v| {
+                        length(v, unit, language)
+                    }) {
+                        builder.paragraph(&line)?;
+                    }
+                }
+                None => {
+                    builder.paragraph(&crate::render::picture::slide_name(project, slide))?;
+                    withheld_reason(builder, prepared, labels, slide.id, loc, unit)?;
+                }
+            }
+        }
+    }
+    let purchases = crate::hardware_lines::purchase_lines(project, loc);
+    if !purchases.is_empty() {
+        builder.section(&loc.text("pdf-purchase-list"))?;
+        for line in purchases {
+            builder.paragraph(&line)?;
+        }
+    }
     Ok(())
 }
 
@@ -854,9 +889,9 @@ fn withheld_reason(
         .notices
         .iter()
         .filter(|issue| match issue {
-            ExportIssue::Hardware { id: item, .. } | ExportIssue::Installation { id: item, .. } => {
-                *item == id
-            }
+            ExportIssue::Hardware { id: item, .. }
+            | ExportIssue::Installation { id: item, .. }
+            | ExportIssue::Slide { id: item, .. } => *item == id,
             ExportIssue::JointNeedsReview {
                 installation_id, ..
             } => *installation_id == id,

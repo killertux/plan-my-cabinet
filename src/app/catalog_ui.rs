@@ -483,6 +483,9 @@ impl DesktopApp {
                         let Some(pack) = loaded.usable() else {
                             return;
                         };
+                        if !pack.slides.is_empty() || !pack.feet.is_empty() {
+                            hardware_models(ui, localizer, pack, language);
+                        }
                         if pack.hinges.is_empty() {
                             return;
                         }
@@ -742,11 +745,88 @@ impl DesktopApp {
     }
 }
 
+fn mm_label(value: Length) -> String {
+    let um = value.micrometres();
+    if um % 1000 == 0 {
+        (um / 1000).to_string()
+    } else {
+        format!("{}", um as f64 / 1000.0)
+    }
+}
+
+/// Read-only list of a pack's drawer slides and feet. They are added from
+/// the Hardware "+" menu (Drawer slides…, Foot…).
+fn hardware_models(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    pack: &plan_my_cabinet::catalog_pack::Pack,
+    language: &str,
+) {
+    egui::ScrollArea::vertical()
+        .id_salt("catalog-hardware-models")
+        .max_height(340.0)
+        .show(ui, |ui| {
+            if !pack.slides.is_empty() {
+                tw::section_header(ui, &localizer.text("slide-list"));
+                for family in &pack.slides {
+                    ui.label(tw::medium(ui, family.name(language), 12.5).color(tw::TEXT));
+                    let lengths = family
+                        .variants
+                        .iter()
+                        .map(|v| mm_label(v.length))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "H {} · {} {} (+{} / -{}) · {} {} mm",
+                            mm_label(family.height),
+                            localizer.text("slide-clearance"),
+                            mm_label(family.clearance),
+                            mm_label(family.clearance_plus),
+                            mm_label(family.clearance_minus),
+                            localizer.text("slide-length"),
+                            lengths
+                        ))
+                        .size(11.5)
+                        .color(tw::MUTED),
+                    );
+                }
+            }
+            if !pack.feet.is_empty() {
+                ui.add_space(4.0);
+                tw::section_header(ui, &localizer.text("pdf-feet"));
+                for family in &pack.feet {
+                    ui.label(tw::medium(ui, family.name(language), 12.5).color(tw::TEXT));
+                    for variant in &family.variants {
+                        let size = family.spec(variant).local_size();
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} · {} × {} × {} mm",
+                                variant.code,
+                                mm_label(size[0]),
+                                mm_label(size[1]),
+                                mm_label(size[2])
+                            ))
+                            .size(11.5)
+                            .color(tw::MUTED),
+                        );
+                    }
+                }
+            }
+            ui.label(
+                egui::RichText::new(localizer.text("catalogs-hardware-models-hint"))
+                    .size(11.0)
+                    .color(tw::FAINT),
+            );
+        });
+}
+
 /// Trust chip for a pinned catalog record.
 pub(crate) fn trust_chip(ui: &mut egui::Ui, localizer: &Localizer, trust: Option<Trust>) {
     let (key, fill, ink) = match trust {
         Some(Trust::Reviewed) => ("hardware-trust-reviewed", tw::OK_BG, tw::OK),
         Some(Trust::UserSupplied) => ("hardware-trust-user", tw::ACCENT_BG, tw::ACCENT_DARK),
+        Some(Trust::Generic) => ("hardware-trust-generic", tw::ACCENT_BG, tw::ACCENT_DARK),
         None => ("hardware-trust-none", tw::WARN_BG, tw::WARN_INK),
     };
     tw::chip(ui, &localizer.text(key), fill, ink);

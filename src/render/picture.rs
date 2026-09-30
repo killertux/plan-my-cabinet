@@ -231,11 +231,21 @@ fn legend(project: &Project, scene: &Raster) -> Vec<LegendEntry> {
                 .find(|b| b.id == *id)
                 .map(|b| (b.name.clone(), "board"))
                 .or_else(|| {
+                    project.hardware.iter().find(|h| h.id == *id).map(|h| {
+                        let kind = if project.foot_spec(h).is_some() {
+                            "foot"
+                        } else {
+                            "hardware"
+                        };
+                        (h.name.clone(), kind)
+                    })
+                })
+                .or_else(|| {
                     project
-                        .hardware
+                        .slide_installations
                         .iter()
-                        .find(|h| h.id == *id)
-                        .map(|h| (h.name.clone(), "hardware"))
+                        .find(|s| s.id == *id)
+                        .map(|s| (slide_name(project, s), "slide"))
                 })
                 .unwrap_or_default();
             let numbered = pixels >= MIN_LABEL_PIXELS;
@@ -251,6 +261,23 @@ fn legend(project: &Project, scene: &Raster) -> Vec<LegendEntry> {
             }
         })
         .collect()
+}
+
+/// "Drawer 1 slides (0073.045500SX)".
+pub fn slide_name(project: &Project, slide: &crate::domain::SlideInstallation) -> String {
+    let drawer = project
+        .assemblies
+        .iter()
+        .find(|a| a.id == slide.drawer_root_id)
+        .map(|a| a.name.clone())
+        .or_else(|| project.board(slide.drawer_root_id).map(|b| b.name.clone()))
+        .unwrap_or_default();
+    let code = project
+        .catalog
+        .iter()
+        .find(|c| c.id == slide.catalog_id)
+        .map_or("", |c| c.product_id.as_str());
+    format!("{drawer} slides ({code})")
 }
 
 fn escape(text: &str) -> String {

@@ -21,7 +21,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 time = { version = "=0.3.55", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
+toml = { version = "1", default-features = false, features = ["display", "parse", "serde", "std"] }
 unic-langid = "0.9"
 uuid = { version = "1", features = ["v4", "serde"] }
 

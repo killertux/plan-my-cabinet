@@ -59,7 +59,40 @@ fn bundled_packs_load_without_errors_or_warnings() {
     for loaded in &registry.packs {
         assert_eq!(loaded.issues, [], "{}", loaded.file_name());
         let pack = loaded.usable().expect("usable bundled pack");
-        assert_eq!(pack.review.status, ReviewStatus::Reviewed);
+        let expected = if pack.feet.is_empty() {
+            ReviewStatus::Reviewed
+        } else {
+            ReviewStatus::Generic
+        };
+        assert_eq!(pack.review.status, expected);
+        for family in &pack.slides {
+            for variant in &family.variants {
+                let entry = snapshot_slide(pack, family, variant, "pt-BR");
+                assert!(
+                    crate::hardware_catalog::is_usable(&entry),
+                    "{}",
+                    variant.code
+                );
+                assert_eq!(
+                    crate::hardware_catalog::trust(&entry),
+                    Some(crate::hardware_catalog::Trust::Reviewed)
+                );
+            }
+        }
+        for family in &pack.feet {
+            for variant in &family.variants {
+                let entry = snapshot_foot(pack, family, variant, "en");
+                assert!(
+                    crate::hardware_catalog::is_usable(&entry),
+                    "{}",
+                    variant.code
+                );
+                assert_eq!(
+                    crate::hardware_catalog::trust(&entry),
+                    Some(crate::hardware_catalog::Trust::Generic)
+                );
+            }
+        }
         for family in &pack.hinges {
             for variant in &family.variants {
                 let entry = snapshot(pack, family, variant, "pt-BR");
@@ -281,13 +314,17 @@ fn user_folder_packs_load_sorted_and_shadow_bundled_ids() {
     let registry = CatalogRegistry::load(Some(&dir));
     std::fs::remove_dir_all(&dir).unwrap();
     let names: Vec<_> = registry.packs.iter().map(LoadedPack::file_name).collect();
-    assert_eq!(names, ["fgvtn.toml", "a.toml", "b.toml", "c.TOML"]);
-    assert!(registry.packs[1].usable().is_none());
-    assert!(codes(&registry.packs[3]).contains(&("id", "shadows-bundled")));
+    let bundled = BUNDLED.len();
+    assert_eq!(
+        names[bundled..],
+        ["a.toml", "b.toml", "c.TOML"].map(String::from)
+    );
+    assert!(registry.packs[bundled].usable().is_none());
+    assert!(codes(&registry.packs[bundled + 2]).contains(&("id", "shadows-bundled")));
     // The user's pack is the one in effect for its id.
     assert_eq!(registry.pack("fgvtn").unwrap().manufacturer, "Acme");
     let ids: Vec<_> = registry.usable().iter().map(|p| p.id.clone()).collect();
-    assert_eq!(ids, ["acme", "fgvtn"]);
+    assert_eq!(ids, ["fgvtn-slides", "generic-feet", "acme", "fgvtn"]);
     // A missing folder simply has no user packs.
     let empty = CatalogRegistry::load(Some(Path::new("/nonexistent/packs")));
     assert_eq!(empty.packs.len(), CatalogRegistry::bundled().packs.len());
@@ -324,4 +361,150 @@ fn every_bundled_sheet_and_code_is_in_its_review_record() {
             assert!(review.contains(suffix), "{}", variant.code);
         }
     }
+}
+
+const SLIDES: &str = r#"
+schema = 1
+id = "acme-slides"
+manufacturer = "Acme"
+version = "1"
+review = { status = "reviewed" }
+
+[[sources]]
+id = "sheet"
+title = "Acme slide sheet"
+url = "https://example.com/slides.pdf"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+revision = "2026"
+
+[[drawer_slides]]
+id = "s45"
+name = { en = "Slide 45" }
+source = "sheet"
+height = 45
+clearance = { nominal = 12.7, plus = 0.5 }
+front_setback = 2
+
+  [[drawer_slides.variants]]
+  code = "S45-400"
+  length = 400
+  travel = 390
+  cabinet_holes = [35, 51, { along = 99, offset = 8, diameter = 4.5 }]
+  drawer_holes = [32, 48]
+"#;
+
+const FEET: &str = r##"
+schema = 1
+id = "acme-feet"
+manufacturer = "Acme"
+version = "1"
+review = { status = "generic" }
+
+[[feet]]
+id = "post"
+name = { en = "Post" }
+shape = { kind = "post", height = 100, tube = { width = 30, depth = 30 }, plate = { diameter = 60 }, plate_thickness = 2, glide = { diameter = 35, height = 10 } }
+color = "#c0c4c8"
+mounting_holes = [[-20, 0], [20, 0]]
+
+  [[feet.variants]]
+  code = "P100"
+
+  [[feet.variants]]
+  code = "P60"
+  height = 60
+  color = "#202020"
+"##;
+
+#[test]
+fn slide_and_foot_tables_load_to_exact_facts() {
+    let slides = user(SLIDES);
+    assert_eq!(slides.issues, []);
+    let pack = slides.usable().unwrap();
+    let family = &pack.slides[0];
+    assert_eq!(family.clearance.micrometres(), 12_700);
+    assert_eq!(family.clearance_plus.micrometres(), 500);
+    let variant = &family.variants[0];
+    assert_eq!(variant.cabinet_holes[2].offset, mm(8));
+    let entry = snapshot_slide(pack, family, variant, "en");
+    assert_eq!(entry.product_id, "S45-400");
+    assert_eq!(entry.name, "Slide 45 400 mm");
+    assert!(entry.slide().unwrap().is_consistent());
+
+    let feet = user(FEET);
+    assert_eq!(feet.issues, []);
+    let pack = feet.usable().unwrap();
+    let family = &pack.feet[0];
+    let short = family.spec(&family.variants[1]);
+    assert_eq!(short.local_size(), [mm(60), mm(60), mm(60)]);
+    assert_eq!(short.color, crate::domain::SrgbColor([0x20, 0x20, 0x20]));
+}
+
+#[test]
+fn slide_and_foot_problems_have_paths() {
+    let bad = SLIDES
+        .replace(
+            "clearance = { nominal = 12.7, plus = 0.5 }",
+            "clearance = { nominal = 12.7, minus = 13 }",
+        )
+        .replace("travel = 390", "travel = 600")
+        .replace("drawer_holes = [32, 48]", "drawer_holes = [48, 32, 450]")
+        .replace("source = \"sheet\"\nheight", "height");
+    let codes_found = codes(&user(&bad))
+        .into_iter()
+        .map(|(p, c)| format!("{p}:{c}"))
+        .collect::<Vec<_>>();
+    for expected in [
+        "drawer_slides[0].source:missing",
+        "drawer_slides[0].clearance:clearance-range",
+        "drawer_slides[0].variants[0].travel:travel-too-long",
+        "drawer_slides[0].variants[0].drawer_holes[2]:hole-outside-member",
+        "drawer_slides[0].variants[0].drawer_holes:holes-not-increasing",
+    ] {
+        assert!(
+            codes_found.contains(&expected.to_owned()),
+            "{expected} in {codes_found:?}"
+        );
+    }
+
+    let bad = FEET
+        .replace("kind = \"post\"", "kind = \"cube\"")
+        .replace("#c0c4c8", "grey");
+    let loaded = user(&bad);
+    let found = codes(&loaded);
+    assert!(found.contains(&("feet[0].shape.kind", "unknown-shape")));
+    assert!(found.contains(&("feet[0].color", "invalid-color")));
+
+    let tall_glide = FEET.replace("height = 10 }", "height = 99 }");
+    assert!(codes(&user(&tall_glide)).contains(&("feet[0].variants[0]", "shape-geometry")));
+    let missing = FEET.replace("plate_thickness = 2, ", "");
+    assert!(codes(&user(&missing)).contains(&("feet[0].shape.plate_thickness", "missing")));
+    let unknown = FEET.replace("mounting_holes", "screw_holes");
+    assert!(user(&unknown).pack.is_none());
+}
+
+#[test]
+fn slide_review_and_guides_cite_the_bundled_slide_pack() {
+    let review = include_str!("../../../docs/catalogs/fgvtn-slides-review.md");
+    let guides = [
+        include_str!("../../../docs/hardware-en.md"),
+        include_str!("../../../docs/hardware-pt-BR.md"),
+    ];
+    let registry = CatalogRegistry::bundled();
+    let pack = registry.pack("fgvtn-slides").unwrap();
+    for source in &pack.sources {
+        assert!(review.contains(&source.sha256), "{}", source.id);
+        assert!(
+            review.contains(&format!("`{}`", source.id)),
+            "{}",
+            source.id
+        );
+    }
+    for guide in guides {
+        assert!(guide.contains("0073.045500SX"));
+        assert!(guide.contains("TT90"));
+        assert!(guide.contains("12.7") || guide.contains("12,7"));
+    }
+    let feet = registry.pack("generic-feet").unwrap();
+    assert_eq!(feet.review.status, ReviewStatus::Generic);
 }

@@ -16,6 +16,8 @@ pub enum AssemblyEditError {
     InvalidPose(UnitError),
     PoseNotPreserved(Uuid),
     InvalidDimensions,
+    /// The catalog entry is missing or is not a coherent foot.
+    NotAFoot(Uuid),
 }
 
 fn identity() -> Pose {
@@ -183,7 +185,7 @@ fn check_world_bounds(project: &Project) -> Result<(), AssemblyEditError> {
     }
     for hardware in &project.hardware {
         let world = world_pose(project, hardware.id)?;
-        if let HardwareKind::Placeholder { dimensions } = hardware.kind {
+        if let Some(dimensions) = project.hardware_dimensions(hardware) {
             let d = dimensions.map(|v| v.micrometres() as f64 / 1000.0);
             for x in [0.0, d[0]] {
                 for y in [0.0, d[1]] {
@@ -274,6 +276,84 @@ impl ProjectEditor {
         Ok(id)
     }
 
+    /// Place a catalog foot in one undoable edit. `pin` is added to the
+    /// project catalog first when it is not there yet (its id is kept), so a
+    /// model and its first foot are one undo step. `world` is the pose of the
+    /// foot's box minimum corner.
+    pub fn create_foot(
+        &mut self,
+        name: String,
+        catalog_id: Uuid,
+        pin: Option<crate::domain::CatalogReference>,
+        parent_id: Option<Uuid>,
+        world: Pose,
+    ) -> Result<Uuid, EditError<AssemblyEditError>> {
+        let id = Uuid::new_v4();
+        self.transact(|p| {
+            if let Some(pin) = pin
+                && !p.catalog.iter().any(|c| c.id == pin.id)
+            {
+                p.catalog.push(pin);
+            }
+            if !p
+                .catalog
+                .iter()
+                .any(|c| c.id == catalog_id && crate::hardware_catalog::foot_spec(c).is_some())
+            {
+                return Err(AssemblyEditError::NotAFoot(catalog_id));
+            }
+            let pose = relative(assembly_parent(p, parent_id)?, world)?;
+            p.hardware.push(Hardware {
+                id,
+                name,
+                parent_id,
+                pose,
+                kind: HardwareKind::Catalog { catalog_id },
+            });
+            check_world_bounds(p)
+        })?;
+        Ok(id)
+    }
+
+    /// Change a foot's name, model, parent or pose in one transaction.
+    pub fn edit_foot(
+        &mut self,
+        id: Uuid,
+        name: String,
+        catalog_id: Uuid,
+        pin: Option<crate::domain::CatalogReference>,
+        parent_id: Option<Uuid>,
+        world: Pose,
+    ) -> Result<bool, EditError<AssemblyEditError>> {
+        self.transact(|p| {
+            if let Some(pin) = pin
+                && !p.catalog.iter().any(|c| c.id == pin.id)
+            {
+                p.catalog.push(pin);
+            }
+            if !p
+                .catalog
+                .iter()
+                .any(|c| c.id == catalog_id && crate::hardware_catalog::foot_spec(c).is_some())
+            {
+                return Err(AssemblyEditError::NotAFoot(catalog_id));
+            }
+            let pose = relative(assembly_parent(p, parent_id)?, world)?;
+            let is_foot = |h: &Hardware, p: &Project| p.foot_spec(h).is_some();
+            let index = p
+                .hardware
+                .iter()
+                .position(|h| h.id == id && is_foot(h, p))
+                .ok_or(AssemblyEditError::MissingObject(id))?;
+            let item = &mut p.hardware[index];
+            item.name = name;
+            item.kind = HardwareKind::Catalog { catalog_id };
+            item.parent_id = parent_id;
+            item.pose = pose;
+            check_world_bounds(p)
+        })
+    }
+
     /// Edit the reference, including a possible parent change, in one transaction.
     pub fn edit_placeholder(
         &mut self,
@@ -301,13 +381,13 @@ impl ProjectEditor {
         })
     }
 
-    /// Remove a dimensioned reference item in one undoable edit.
+    /// Remove a hardware item (placeholder or foot) in one undoable edit.
     pub fn remove_placeholder(&mut self, id: Uuid) -> Result<bool, EditError<AssemblyEditError>> {
         self.transact(|p| {
             let index = p
                 .hardware
                 .iter()
-                .position(|h| h.id == id && matches!(h.kind, HardwareKind::Placeholder { .. }))
+                .position(|h| h.id == id)
                 .ok_or(AssemblyEditError::MissingObject(id))?;
             p.hardware.remove(index);
             Ok(())
@@ -324,7 +404,7 @@ impl ProjectEditor {
             let source = p
                 .hardware
                 .iter()
-                .find(|h| h.id == id && matches!(h.kind, HardwareKind::Placeholder { .. }))
+                .find(|h| h.id == id)
                 .ok_or(AssemblyEditError::MissingObject(id))?
                 .clone();
             let world = world_pose(p, id)?;

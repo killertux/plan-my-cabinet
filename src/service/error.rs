@@ -213,6 +213,9 @@ impl From<DomainError> for ServiceError {
             DomainError::InvalidDoorJoint(id) => {
                 format!("door {id} is inconsistent with its hinges")
             }
+            DomainError::InvalidSlide(id) => {
+                format!("drawer slides {id} are inconsistent with their drawer or catalog entry")
+            }
             DomainError::InvalidStockAlias => "stock labels are inconsistent".into(),
         };
         Self::new(
@@ -386,6 +389,9 @@ impl From<AssemblyEditError> for ServiceError {
                 ErrorCode::InvalidLength,
                 "hardware dimensions must be greater than zero",
             ),
+            AssemblyEditError::NotAFoot(id) => Self::invalid(format!(
+                "catalog entry {id} is not a foot model (see list_hardware_catalog kind foot)"
+            )),
         }
     }
 }
@@ -706,6 +712,11 @@ fn setup_text(error: &SetupError) -> String {
             .collect::<Vec<_>>()
             .join("; "),
         SetupError::InvalidProject(e) => ServiceError::from(e.clone()).message,
+        SetupError::NoSlideFits => {
+            "no length of the chosen drawer slide fits the drawer boxes and carcass depth \
+             (use a deeper cabinet, a shorter box_depth, other slides, or slides: none)"
+                .into()
+        }
     }
 }
 

@@ -217,7 +217,11 @@ pub struct CatalogReference {
 
 ## Status (2026-09-27)
 
-Phases 1–5 are done; drawer slides (phase 6) are next when needed.
+Phases 1–6 are done. Phase 6 (2026-09-30) added `[[drawer_slides]]` and
+`[[feet]]` tables, `catalogs/fgvtn-slides.toml` (5 FGVTN/TN families, reviewed in
+`docs/catalogs/fgvtn-slides-review.md`), `catalogs/generic-feet.toml`
+(status `generic`), slide installations with fit checks and hole references,
+the app-written `user-models.toml`, and project format v4.
 
 - **Packs and loader:** `src/catalog/catalog_pack.rs` (TOML, exact mm
   decimals, every problem with its path, `allow` with reasons, a registry of

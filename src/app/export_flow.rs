@@ -471,6 +471,14 @@ impl DesktopApp {
                 let text = l.text("pdf-joint-review");
                 (text.clone(), text)
             }
+            ExportIssue::Slide { name, reason, .. } => (
+                format!("{name} · {}", l.text(reason.key())),
+                format!(
+                    "{name}: {} — {}",
+                    l.text(reason.key()),
+                    l.text("pdf-installation-withheld")
+                ),
+            ),
             ExportIssue::InvalidWood(_) => {
                 let text = l.text("pdf-invalid-wood");
                 (text.clone(), text)
@@ -496,6 +504,7 @@ impl DesktopApp {
             } => Some(HandoffFix::Navigate(Destination::Installation(
                 *installation_id,
             ))),
+            ExportIssue::Slide { id, .. } => Some(HandoffFix::Hardware(*id)),
             ExportIssue::InvalidWood(_) => None,
         }
     }

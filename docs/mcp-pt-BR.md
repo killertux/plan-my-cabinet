@@ -3,9 +3,9 @@
 O Plan My Cabinet pode funcionar como um servidor
 [Model Context Protocol](https://modelcontextprotocol.io). Um agente como o
 Claude então projeta móveis com as mesmas edições verificadas do aplicativo:
-cria as peças, declara o estoque, planeja os cortes, adiciona dobradiças e
-portas, vê imagens do resultado e salva um arquivo `.pmcab` que você abre no
-aplicativo.
+cria as peças, declara o estoque, planeja os cortes, adiciona dobradiças,
+portas, corrediças e pés, vê imagens do resultado e salva um arquivo `.pmcab`
+que você abre no aplicativo.
 
 O servidor não tem janela. Ele roda no seu computador e só lê e grava os
 arquivos que o agente for instruído a abrir ou salvar.
@@ -47,13 +47,19 @@ Opções:
 
 ## O que o agente pode fazer
 
-Cerca de setenta ferramentas, em grupos:
+Cerca de noventa ferramentas, em grupos:
 
 - **Projeto**: novo, abrir, salvar, fechar, configurações (unidades, largura de corte, taxa de corte), moeda, desfazer e refazer.
 - **Projeto do móvel**: materiais, peças (criar, copiar, redimensionar, mover, girar, encostar uma na outra), montagens, ferragens de referência e os modelos Base, Aéreo e Gaveteiro.
 - **Ver o resultado**: uma descrição escrita do modelo (posições, peças que se tocam e peças que se **sobrepõem**), imagens de qualquer ângulo com peças ocultas, isoladas ou destacadas, desenhos do plano de corte de cada chapa e uma porta aberta.
 - **Estoque e plano de corte**: chapas e retalhos, chapas que faltam, posicionamento automático e manual, diagnóstico e otimização do plano.
 - **Ferragens**: catálogos de dobradiças, dobradiças nas portas e portas que abrem.
+- **Corrediças e pés**: catálogos de corrediças e pés, corrediças nas gavetas
+  (folgas, profundidade e altura conferidas, posições dos furos), pés
+  desenhados com a forma do produto, uma gaveta aberta e **novos modelos de
+  ferragem**: o agente pode criar um modelo de corrediça ou de pé, fixá-lo no
+  projeto e gravá-lo na sua pasta de catálogos (`user-models.toml`) para os
+  próximos projetos.
 
 A exportação do PDF para a oficina ainda não está disponível: abra o arquivo
 salvo no aplicativo e use **Entrega**.
@@ -67,6 +73,9 @@ Por exemplo:
 > R$ 320 cada, otimize o plano de corte, adicione as dobradiças, mostre a
 > frente e o interior sem as portas e salve em ~/Documentos/balcao.pmcab.
 
+> Faça um gaveteiro de 3 gavetas com 600 de largura sobre pés quadrados
+> cromados de 10 cm, com corrediças TT45. Mostre com a gaveta do meio aberta.
+
 O agente trabalha em etapas e confere cada uma. Ele pergunta antes de
 sobrescrever um arquivo ou descartar alterações não salvas.
 
@@ -77,7 +86,8 @@ sobrescrever um arquivo ou descartar alterações não salvas.
   consentimento explícito dele.
 - Cada alteração é um passo de desfazer enquanto o servidor roda; o arquivo
   no disco só muda ao salvar.
-- As posições das dobradiças são referências do catálogo, como no aplicativo.
-  Confira com a folha do fabricante antes de furar.
+- As posições das dobradiças e corrediças são referências do catálogo, como
+  no aplicativo. Confira com a folha do fabricante antes de furar. Os pés
+  genéricos têm medidas típicas, não a ficha de um fabricante.
 - O servidor não imprime nada na saída padrão além das mensagens do
   protocolo. Problemas vão para a saída de erro.

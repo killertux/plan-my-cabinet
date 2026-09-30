@@ -38,7 +38,7 @@ fn successful_write_records_mode_sections_baseline_and_history_is_immutable() {
     assert_eq!(receipt.metadata.mode, Some(ExportMode::Draft));
     assert_eq!(receipt.metadata.sections, Some(ReceiptSections::default()));
     assert_eq!(receipt.metadata.metadata_version, Some(1));
-    assert_eq!(receipt.metadata.fingerprint_version, Some(4));
+    assert_eq!(receipt.metadata.fingerprint_version, Some(5));
     assert_eq!(receipt.completed_at(), Some(receipt.completed_unix_ms));
     assert!(
         receipt

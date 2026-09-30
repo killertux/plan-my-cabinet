@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::allocation_diagnostics::{BoardDiagnostic, Status};
-use crate::domain::{BoardGrain, DomainError, HardwareKind, Project, SrgbColor, StockSource};
+use crate::domain::{BoardGrain, DomainError, Project, SrgbColor, StockSource};
 use crate::measurements::{self, Frame, Measurement, MeasurementError, Scope};
 use crate::stock_read_models::StockReadModel;
 use crate::units::{Length, Pose};
@@ -416,10 +416,7 @@ impl DesignReadModel {
                             local_to: h.parent_id,
                             local_pose: h.pose,
                         },
-                        dimensions: match h.kind {
-                            HardwareKind::Placeholder { dimensions } => Some(dimensions),
-                            HardwareKind::Catalog { .. } => None,
-                        },
+                        dimensions: project.hardware_dimensions(h),
                         bounds_world: ScopedBounds::measure(project, &[id], Frame::World),
                     })
                 }

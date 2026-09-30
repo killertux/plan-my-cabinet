@@ -1,0 +1,149 @@
+# Generic furniture feet and table legs.
+#
+# Representative dimensions of product types commonly sold in Brazil, measured
+# from typical listings; not a manufacturer's sheet. Use them to see and plan
+# the piece; check the product you buy. Pack status "generic" is shown as
+# "generic reference dimensions" on screen and in exports.
+#
+# Units are millimetres. Each foot's box starts at its minimum corner with Z
+# up; the mounting face is on top (Z = height), centred. mounting_holes are
+# X, Y from the centre of that face. Colors are sRGB "#rrggbb".
+
+schema = 1
+id = "generic-feet"
+manufacturer = "Generic"
+country = "BR"
+version = "2026-09-30"
+review = { status = "generic", date = "2026-09-30", notes = "Typical sizes from product listings; not a manufacturer sheet." }
+
+[[feet]]
+id = "tapered-round-40"
+name = { en = "Plastic tapered foot 40 mm", pt-BR = "Pé plástico cônico 4 cm" }
+attribution = "Typical plastic furniture foot (e.g. kits of 10 with screws)"
+shape = { kind = "tapered", height = 40, top = { diameter = 50 }, bottom = { diameter = 30 } }
+color = "#1e1e1e"
+finish = "plastic"
+mounting_holes = [[0, 0]]
+notes = "One screw through the centre."
+
+  [[feet.variants]]
+  code = "generic-tapered-round-40-black"
+  name = { en = "Plastic tapered foot 40 mm, black", pt-BR = "Pé plástico cônico 4 cm, preto" }
+
+  [[feet.variants]]
+  code = "generic-tapered-round-40-white"
+  name = { en = "Plastic tapered foot 40 mm, white", pt-BR = "Pé plástico cônico 4 cm, branco" }
+  color = "#eeeeea"
+
+[[feet]]
+id = "post-square"
+name = { en = "Square chrome adjustable foot", pt-BR = "Pé quadrado cromado regulável" }
+attribution = "Typical square chrome furniture foot with a pressed flange and levelling glide"
+shape = { kind = "post", height = 100, tube = { width = 32, depth = 32 }, plate = { width = 60, depth = 60 }, plate_thickness = 2, glide = { diameter = 38, height = 12 } }
+color = "#c9cdd2"
+finish = "chrome"
+adjustment = 10
+mounting_holes = [[-22, -22], [22, -22], [22, 22], [-22, 22]]
+load_kg = 25
+notes = "Four screws through the square flange; the glide levels by about 10 mm."
+
+  [[feet.variants]]
+  code = "generic-post-square-60"
+  name = { en = "Square chrome adjustable foot 60 mm", pt-BR = "Pé quadrado cromado regulável 6 cm" }
+  height = 60
+
+  [[feet.variants]]
+  code = "generic-post-square-100"
+  name = { en = "Square chrome adjustable foot 100 mm", pt-BR = "Pé quadrado cromado regulável 10 cm" }
+
+  [[feet.variants]]
+  code = "generic-post-square-120"
+  name = { en = "Square chrome adjustable foot 120 mm", pt-BR = "Pé quadrado cromado regulável 12 cm" }
+  height = 120
+
+  [[feet.variants]]
+  code = "generic-post-square-150"
+  name = { en = "Square chrome adjustable foot 150 mm", pt-BR = "Pé quadrado cromado regulável 15 cm" }
+  height = 150
+
+  [[feet.variants]]
+  code = "generic-post-square-200"
+  name = { en = "Square chrome adjustable foot 200 mm", pt-BR = "Pé quadrado cromado regulável 20 cm" }
+  height = 200
+
+  [[feet.variants]]
+  code = "generic-post-square-100-black"
+  name = { en = "Square black adjustable foot 100 mm", pt-BR = "Pé quadrado preto regulável 10 cm" }
+  color = "#26272a"
+  finish = "black paint"
+
+[[feet]]
+id = "post-round"
+name = { en = "Round chrome adjustable foot", pt-BR = "Pé redondo cromado regulável" }
+attribution = "Typical round chrome furniture foot with a flange and levelling glide"
+shape = { kind = "post", height = 100, tube = { diameter = 32 }, plate = { diameter = 60 }, plate_thickness = 2, glide = { diameter = 38, height = 12 } }
+color = "#c9cdd2"
+finish = "chrome"
+adjustment = 10
+mounting_holes = [[-21, 0], [21, 0], [0, -21], [0, 21]]
+load_kg = 25
+
+  [[feet.variants]]
+  code = "generic-post-round-80"
+  name = { en = "Round chrome adjustable foot 80 mm", pt-BR = "Pé redondo cromado regulável 8 cm" }
+  height = 80
+
+  [[feet.variants]]
+  code = "generic-post-round-100"
+  name = { en = "Round chrome adjustable foot 100 mm", pt-BR = "Pé redondo cromado regulável 10 cm" }
+
+[[feet]]
+id = "frame-rect-750x500"
+name = { en = "Industrial frame leg 750 × 500", pt-BR = "Pé de mesa industrial 75 × 50 cm" }
+attribution = "Typical closed rectangular frame of 30 × 30 steel tube, sold in pairs"
+shape = { kind = "frame", height = 750, top_width = 500, tube_width = 30, tube_depth = 30 }
+color = "#1f1f21"
+finish = "black paint"
+mounting_holes = [[-200, 0], [0, 0], [200, 0]]
+notes = "Screws go up through the top bar."
+
+  [[feet.variants]]
+  code = "generic-frame-rect-750x500"
+
+[[feet]]
+id = "frame-rect-750x600-reinforced"
+name = { en = "Reinforced industrial frame leg 750 × 600", pt-BR = "Pé de mesa industrial reforçado 75 × 60 cm" }
+attribution = "Typical closed rectangular frame of 50 × 30 steel tube, sold in pairs"
+shape = { kind = "frame", height = 750, top_width = 600, tube_width = 50, tube_depth = 30 }
+color = "#1f1f21"
+finish = "black paint"
+mounting_holes = [[-250, 0], [0, 0], [250, 0]]
+
+  [[feet.variants]]
+  code = "generic-frame-rect-750x600"
+
+[[feet]]
+id = "frame-trapezoid-710x500"
+name = { en = "Industrial trapezoid leg 710 × 500", pt-BR = "Pé de mesa industrial trapézio 71 × 50 cm" }
+attribution = "Typical trapezoid frame of 30 × 30 steel tube, narrower at the floor"
+shape = { kind = "frame", height = 710, top_width = 500, bottom_width = 400, tube_width = 30, tube_depth = 30 }
+color = "#1f1f21"
+finish = "black paint"
+mounting_holes = [[-200, 0], [0, 0], [200, 0]]
+
+  [[feet.variants]]
+  code = "generic-frame-trapezoid-710x500"
+
+[[feet]]
+id = "straight-leg-710"
+name = { en = "Straight table leg 710 mm", pt-BR = "Pé de mesa reto 71 cm" }
+attribution = "Typical square steel tube table leg with a top plate and levelling glide"
+shape = { kind = "post", height = 710, tube = { width = 40, depth = 40 }, plate = { width = 100, depth = 100 }, plate_thickness = 3, glide = { diameter = 40, height = 15 } }
+color = "#1c1c1e"
+finish = "matte black"
+adjustment = 30
+mounting_holes = [[-40, -40], [40, -40], [40, 40], [-40, 40]]
+notes = "Four screws through the top plate; the glide levels by up to 30 mm."
+
+  [[feet.variants]]
+  code = "generic-straight-leg-710"

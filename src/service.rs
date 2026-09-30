@@ -5,6 +5,7 @@
 pub mod design;
 pub mod dto;
 pub mod error;
+pub mod fittings;
 pub mod hardware;
 pub mod project;
 pub mod stock;

@@ -20,6 +20,7 @@ use crate::{
     kerf_confirmation_ui::KerfConfirmation,
     placement_ui::PlacementDialog,
     project_name_ui::ProjectNameDialog,
+    slide_ui::SlideDialog,
     stock_ui::{CutFeeDialog, StockDialog},
 };
 
@@ -112,6 +113,7 @@ modals! {
     Hinge(HingeDialog) => hinge, hinge_mut, take_hinge, set_hinge;
     Catalog(CatalogDialog) => catalog, catalog_mut, take_catalog, set_catalog;
     Door(DoorDialog) => door, door_mut, take_door, set_door;
+    Slide(SlideDialog) => slide, slide_mut, take_slide, set_slide;
     Removal(RemovalDialog) => removal, removal_mut, take_removal, set_removal;
     ProjectName(ProjectNameDialog) => project_name, project_name_mut, take_project_name, set_project_name;
 }

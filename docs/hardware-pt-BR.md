@@ -134,3 +134,104 @@ somente com um motivo.
 Para verificar um pacote sem abrir o aplicativo, rode
 `plan-my-cabinet --check-catalog meu-pacote.toml`. Ele mostra cada problema
 com sua posição no arquivo e termina com erro se houver erros.
+
+# Corrediças
+
+Um par de corrediças liga uma gaveta às duas laterais do móvel ao lado dela.
+A gaveta é um grupo de peças (um conjunto): o modelo **Gavetas** cria um grupo
+por gaveta; numa gaveta que você mesmo montou, agrupe as peças primeiro.
+
+**Ferragens ▸ + ▸ Corrediças…** abre a janela de corrediças. Escolha a gaveta
+(ou selecione antes uma das peças dela) e o modelo de corrediça. O aplicativo
+encontra as laterais da caixa e as laterais do móvel ao lado, mede as folgas e
+escolhe o maior comprimento que cabe. Ele mostra o código do produto e se a
+corrediça cabe. Você pode escolher o comprimento, a altura na lateral da
+gaveta (centralizada por padrão) e o recuo da frente do móvel (2 mm por
+padrão).
+
+As verificações são:
+
+- **Folga lateral.** A folga entre cada lateral da caixa e a lateral do móvel
+  precisa estar dentro da folga da corrediça. Na maioria é 12,7 mm, +0,5/−0,
+  então a caixa é 25,4 mm mais estreita que o vão. A TT90 pede 19 ±0,3 mm.
+- **Profundidade.** Recuo mais comprimento cabem na lateral do móvel, e o
+  perfil da gaveta cabe na lateral da caixa. Corrediça de 500 mm vai em caixa
+  de 500 mm.
+- **Altura.** A corrediça cabe na lateral da caixa e na do móvel.
+- **Alinhamento.** As duas corrediças ficam na mesma altura e profundidade.
+
+A lista **Corrediças** no painel de Ferragens mostra cada gaveta com o código
+do produto. O inspetor mostra as folgas e, para cada lado, as distâncias dos
+furos a partir da borda da frente e a altura da linha de centro da corrediça.
+As posições dos furos vêm da ficha do fabricante; confira antes de furar.
+
+**Prévia** puxa a gaveta nas corrediças (um controle em milímetros, até o
+curso da corrediça). É só visualização, como a prévia da porta.
+
+O modelo **Gavetas** instala corrediças em todas as gavetas. Escolha o modelo
+de corrediça na configuração (padrão FGVTN TT45 Slowmotion) ou **Nenhuma**.
+Com corrediça, a folga lateral vem da corrediça e o campo de folga lateral é
+ignorado.
+
+O pacote `catalogs/fgvtn-slides.toml` traz estas corrediças FGVTN / TN de
+abertura total com fechamento suave, das fichas do fabricante
+(veja [a revisão](catalogs/fgvtn-slides-review.md)):
+
+| Modelo | Comprimentos | Carga | Altura | Folga lateral |
+|---|---|---|---|---|
+| TT45 Slowmotion (0073.045500SX …) | 350–550 mm | 45 kg | 45 mm | 12,7 +0,5/−0 |
+| TT44 Slowmotion (zincada, branca, preta) | 350–550 mm | 35 kg | 45 mm | 12,7 +0,5/−0 |
+| TT35 Slowmotion | 250–550 mm | 25 kg | 35 mm | 12,7 +0,5/−0 |
+| TN H45 Slow | 250–550 mm | 35 kg | 45 mm | 12,7 +0,5/−0 |
+| TT90 Slow (carga pesada) | 450–600 mm | 90 kg | 52 mm | 19 ±0,3 |
+
+O PDF da oficina lista as corrediças a comprar ("0073.045500SX … — 3 pares")
+e, para cada gaveta, as distâncias dos furos nas duas peças de cada lado.
+
+# Pés
+
+Pés são ferragens de catálogo posicionadas como qualquer ferragem:
+**Ferragens ▸ + ▸ Pé…**, depois escolha o modelo, o grupo ao qual pertence e
+a posição. A posição é o canto da caixa do pé no chão; a face de fixação fica
+em cima. Pés não são cortados do estoque e não levantam o móvel: suba o móvel
+na altura do pé (para pés de 100 mm, suba 100 mm).
+
+Os pés são desenhados com a forma do produto, para você ver como a peça vai
+ficar: um cone de plástico, um pé cromado com chapa e sapata niveladora, um
+quadro de tubo industrial. O pacote `catalogs/generic-feet.toml` traz medidas
+típicas de produtos comuns. São **medidas genéricas de referência**, não a
+ficha de um fabricante, e aparecem assim na tela e no PDF:
+
+| Modelo | Medida |
+|---|---|
+| Pé plástico cônico 4 cm (preto, branco) | Ø50 → Ø30 × 40 mm, um parafuso |
+| Pé quadrado cromado regulável 6/10/12/15/20 cm | chapa 60 × 60, tubo 32 × 32, sapata Ø38, regulagem 10 mm |
+| Pé redondo cromado regulável 8/10 cm | chapa Ø60, tubo Ø32, sapata Ø38 |
+| Pé de mesa industrial 75 × 50 cm | quadro fechado de tubo 30 × 30 |
+| Pé de mesa industrial reforçado 75 × 60 cm | quadro fechado de tubo 50 × 30 |
+| Pé de mesa industrial trapézio 71 × 50 cm | 500 em cima, 400 no chão |
+| Pé de mesa reto 71 cm | tubo 40 × 40, chapa 100 × 100, regulagem 30 mm |
+
+O PDF da oficina lista os pés a comprar com medida e acabamento.
+
+## Como escrever modelos de corrediças e pés
+
+Corrediças e pés vão em pacotes de catálogo como as dobradiças, nas tabelas
+`[[drawer_slides]]` e `[[feet]]`. Um pacote pode misturar dobradiças,
+corrediças e pés. O exemplo completo está no guia em inglês
+([hardware-en.md](hardware-en.md#writing-slide-and-foot-models)).
+
+Formas de pé:
+
+- `tapered`: um cone ou pirâmide maciço. `top` e `bottom` são seções
+  (`{ diameter = … }` ou `{ width = …, depth = … }`) e `height`.
+- `post`: tubo com chapa em cima e sapata opcional: `tube`, `plate`,
+  `plate_thickness`, `glide = { diameter, height }`, `height`.
+- `frame`: quadro fechado de tubo: `top_width`, `bottom_width` (menor para
+  trapézio, igual a `tube_width` para V), `tube_width`, `tube_depth`,
+  `crossbar_height` e `glide` opcionais, `height`.
+
+Pacotes com `review = { status = "generic" }` trazem medidas típicas sem
+ficha de fabricante (não precisam de `[[sources]]`). Modelos criados por um
+agente de IA com `save_to_catalog` são gravados em `user-models.toml` na sua
+pasta de catálogos; use **Recarregar** para vê-los.

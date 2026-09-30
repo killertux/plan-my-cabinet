@@ -3,8 +3,8 @@
 Plan My Cabinet can run as a [Model Context Protocol](https://modelcontextprotocol.io)
 server. An agent such as Claude then designs furniture with the same checked
 edits as the app: it builds the boards, declares stock, plans the cuts, adds
-hinges and doors, looks at pictures of the result, and saves a `.pmcab` file
-that you open in the app.
+hinges, doors, drawer slides and feet, looks at pictures of the result, and
+saves a `.pmcab` file that you open in the app.
 
 The server has no window. It runs on your computer and reads and writes only
 the files the agent is asked to open or save.
@@ -46,13 +46,18 @@ Options:
 
 ## What the agent can do
 
-About seventy tools, in groups:
+About ninety tools, in groups:
 
 - **Project**: new, open, save, close, settings (units, kerf, cut fee), currency, undo and redo.
 - **Design**: materials, boards (create, copy, resize, move, rotate, place one against another), assemblies, reference hardware, and the Base, Wall and Drawers templates.
 - **Seeing the result**: a written description of the model (positions, which boards touch, which ones **intersect**), pictures from any angle with parts hidden, isolated or highlighted, drawings of each sheet's cut plan, and a door shown open.
 - **Stock and cut plan**: sheets and offcuts, the sheets still needed, automatic placement, manual placement, diagnostics, and the cut-plan optimizer.
 - **Hardware**: hinge catalogs, hinges on doors, and doors that swing.
+- **Drawer slides and feet**: slide and foot catalogs, slides on drawers
+  (checked gaps, depth and height, hole positions), feet drawn with the
+  product's shape, a drawer shown pulled out, and **new hardware models**: the
+  agent can create a slide or foot model, pin it to the project and save it to
+  your catalog folder (`user-models.toml`) for later projects.
 
 Exporting the shop PDF is not available yet: open the saved file in the app and
 use **Handoff**.
@@ -66,6 +71,9 @@ For example:
 > add hinges, show me the front and the inside without the doors, and save it
 > to ~/Documents/kitchen-base.pmcab.
 
+> Make a 3-drawer chest 600 wide on 10 cm square chrome feet, with TT45
+> slides. Show it with the middle drawer open.
+
 The agent works in steps and checks each one. It asks before it overwrites a
 file or discards unsaved work.
 
@@ -75,7 +83,8 @@ file or discards unsaved work.
   Values that do not fit a whole micrometre need its explicit consent.
 - Each change is one undo step while the server runs; the file on disk only
   changes on save.
-- Hinge positions are reference information from the catalog, like in the app.
-  Check them against the manufacturer's sheet before drilling.
+- Hinge and slide positions are reference information from the catalog, like
+  in the app. Check them against the manufacturer's sheet before drilling.
+  Generic feet are typical sizes, not a manufacturer's sheet.
 - The server prints nothing on its standard output except protocol messages.
   Problems go to standard error.

@@ -288,7 +288,7 @@ impl Workspace {
         })
     }
 
-    fn picture(
+    pub(crate) fn picture(
         &self,
         input: &RenderViewInput,
         poses: Option<&HashMap<Uuid, Pose>>,

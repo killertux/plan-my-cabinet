@@ -53,6 +53,10 @@ pub(crate) enum ActionId {
     NewDoor,
     EditDoor,
     DeleteDoor,
+    NewSlides,
+    EditSlides,
+    DeleteSlides,
+    NewFoot,
     DeleteObject,
     StartMotion,
     CloseMotion,
@@ -202,6 +206,10 @@ registry! {
     NewDoor => ("door-add", Hardware, "add door relationship", "adicionar porta"),
     EditDoor => ("door-edit", Hardware, "edit door", "editar porta"),
     DeleteDoor => ("door-delete", Hardware, "remove door relationship", "remover porta"),
+    NewSlides => ("slide-new", Hardware, "add drawer slides", "adicionar corrediças gaveta"),
+    EditSlides => ("slide-edit", Hardware, "edit drawer slides length", "editar corrediças comprimento"),
+    DeleteSlides => ("slide-delete", Hardware, "remove drawer slides", "remover corrediças"),
+    NewFoot => ("foot-new", Hardware, "add foot leg", "adicionar pé"),
     DeleteObject => ("door-delete-object", Design, "delete selected object", "excluir objeto"),
     StartMotion => ("door-motion-start", Hardware, "preview door motion", "prévia movimento porta"),
     CloseMotion => ("door-motion-exit", Hardware, "close door preview", "fechar prévia porta"),
@@ -428,6 +436,8 @@ pub(crate) enum Target {
     Catalog(Uuid),
     Hinge(Uuid),
     Door(Uuid),
+    /// A drawer's slide pair.
+    Slide(Uuid),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -699,7 +709,7 @@ impl DesktopApp {
             A::SetMeasurementFrame if matches!(request.argument, Argument::Frame(Frame::Object(target)) if !project.boards.iter().any(|b| b.id == target) && !project.assemblies.iter().any(|a| a.id == target)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::SetDoorAngle if !matches!(request.target, T::Door(id) if self.hardware.door_motion.is_some_and(|(active, _)| active == id)) => {
+            A::SetDoorAngle if !matches!(request.target, T::Door(id) | T::Slide(id) if self.hardware.door_motion.is_some_and(|(active, _)| active == id)) => {
                 Err(Unavailable::InvalidMotion)
             }
             A::Undo if !self.editor.can_undo() => Err(Unavailable::NoUndo),
@@ -772,7 +782,7 @@ impl DesktopApp {
             A::UpdateCatalog if !matches!(request.target, T::Catalog(id) if project.catalog.iter().any(|c| c.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::EditHardware | A::DuplicateHardware | A::DeleteHardware if !matches!(request.target, T::Object(id) if project.hardware.iter().any(|h| h.id == id && matches!(h.kind, plan_my_cabinet::domain::HardwareKind::Placeholder { .. }))) => {
+            A::EditHardware | A::DuplicateHardware | A::DeleteHardware if !matches!(request.target, T::Object(id) if project.hardware.iter().any(|h| h.id == id && (matches!(h.kind, plan_my_cabinet::domain::HardwareKind::Placeholder { .. }) || project.foot_spec(h).is_some()))) => {
                 Err(Unavailable::InvalidHardware)
             }
             A::EditHinge | A::DeleteHinge if !matches!(request.target, T::Hinge(id) if project.hinge_installations.iter().any(|h| h.id == id)) => {
@@ -781,7 +791,10 @@ impl DesktopApp {
             A::EditDoor | A::DeleteDoor if !matches!(request.target, T::Door(id) if project.door_joints.iter().any(|j| j.id == id)) => {
                 Err(Unavailable::MissingTarget)
             }
-            A::StartMotion if !matches!(request.target, T::Door(id) if project.door_joints.iter().find(|j| j.id == id).is_some_and(|j| plan_my_cabinet::door_joint::opening_limit(project, j).is_ok())) => {
+            A::EditSlides | A::DeleteSlides if !matches!(request.target, T::Slide(id) if project.slide_installations.iter().any(|s| s.id == id)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::StartMotion if !matches!(request.target, T::Door(id) | T::Slide(id) if door_joint_ui::motion_limit(project, id).is_some()) => {
                 Err(Unavailable::InvalidMotion)
             }
             A::CloseMotion if self.hardware.door_motion.is_none() => {
@@ -1244,6 +1257,22 @@ impl DesktopApp {
             (A::EditDoor, T::Door(id)) => self
                 .modals
                 .set_door(Some(door_joint_ui::DoorDialog::new(self, Some(id)))),
+            (A::NewSlides, _) => self
+                .modals
+                .set_slide(Some(slide_ui::SlideDialog::new(self, None))),
+            (A::EditSlides, T::Slide(id)) => self
+                .modals
+                .set_slide(Some(slide_ui::SlideDialog::new(self, Some(id)))),
+            (A::DeleteSlides, T::Slide(id)) => {
+                let result = plan_my_cabinet::slide_installation::remove(&mut self.editor, id);
+                if matches!(self.hardware.door_motion, Some((active, _)) if active == id) {
+                    self.hardware.door_motion = None;
+                }
+                self.report_edit(result);
+            }
+            (A::NewFoot, _) => self
+                .modals
+                .set_hardware(Some(hardware_ui::HardwareDialog::new_foot(self))),
             (A::DeleteDoor, T::Door(id)) => {
                 self.modals
                     .set_removal(Some(door_joint_ui::RemovalDialog::new(
@@ -1260,7 +1289,7 @@ impl DesktopApp {
                         )));
                 }
             }
-            (A::StartMotion, T::Door(id)) => {
+            (A::StartMotion, T::Door(id) | T::Slide(id)) => {
                 self.editor.cancel_preview();
                 self.design.move_tool.cancel();
                 self.hardware.door_motion = Some((id, 0.0));
@@ -1308,18 +1337,10 @@ impl DesktopApp {
                     return Err(Unavailable::MissingTarget);
                 }
             }
-            (A::SetDoorAngle, T::Door(id)) => {
+            (A::SetDoorAngle, T::Door(id) | T::Slide(id)) => {
                 if let Argument::Angle(angle) = request.argument {
-                    let joint = self
-                        .editor
-                        .project()
-                        .door_joints
-                        .iter()
-                        .find(|j| j.id == id)
-                        .ok_or(Unavailable::MissingTarget)?;
-                    let limit =
-                        plan_my_cabinet::door_joint::opening_limit(self.editor.project(), joint)
-                            .map_err(|_| Unavailable::InvalidMotion)?;
+                    let limit = door_joint_ui::motion_limit(self.editor.project(), id)
+                        .ok_or(Unavailable::InvalidMotion)?;
                     if !angle.is_finite() || !(0.0..=limit).contains(&angle) {
                         return Err(Unavailable::InvalidMotion);
                     }

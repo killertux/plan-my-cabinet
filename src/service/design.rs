@@ -664,10 +664,27 @@ pub struct GenerateTemplateInput {
     /// current_project only: where the cabinet goes (world mm).
     #[serde(default)]
     pub offset_mm: Option<[f64; 3]>,
+    /// Drawers only: the drawer slides (default TT45 Slowmotion, the longest
+    /// length that fits). With slides the box side clearance comes from the
+    /// slide; `{"none": true}` uses dimensions.side_clearance instead.
+    #[serde(default)]
+    pub slides: Option<TemplateSlidesInput>,
     #[serde(default)]
     pub discard_changes: bool,
     #[serde(default)]
     pub allow_rounding: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+pub struct TemplateSlidesInput {
+    /// No slides.
+    #[serde(default)]
+    pub none: bool,
+    #[serde(default)]
+    pub pack: Option<String>,
+    /// Slide family id (see list_hardware_catalog kind slide).
+    #[serde(default)]
+    pub slide: Option<String>,
 }
 
 // ---------------------------------------------------------------- helpers
@@ -728,7 +745,11 @@ fn descendants_of(project: &Project, root: Uuid) -> HashSet<Uuid> {
 }
 
 impl Workspace {
-    fn opt_ref(&self, kind: Kind, reference: &Option<String>) -> ServiceResult<Option<Uuid>> {
+    pub(crate) fn opt_ref(
+        &self,
+        kind: Kind,
+        reference: &Option<String>,
+    ) -> ServiceResult<Option<Uuid>> {
         reference
             .as_ref()
             .map(|r| self.resolve(kind, r))
@@ -1282,10 +1303,28 @@ impl Workspace {
             .filter(|h| boards.contains(&h.door_board_id) || boards.contains(&h.mounting_board_id))
             .map(|h| h.id)
             .collect();
+        let slides = project
+            .slide_installations
+            .iter()
+            .filter(|s| {
+                scope.contains(&s.drawer_root_id)
+                    || s.drawer_sides
+                        .iter()
+                        .chain(&s.cabinet_sides)
+                        .any(|b| boards.contains(b))
+            })
+            .count();
+        let hardware = project
+            .hardware
+            .iter()
+            .filter(|h| h.id == id || h.parent_id.is_some_and(|p| scope.contains(&p)))
+            .count();
         let report = json!({
             "boards": boards.iter().map(|b| object_name(project, *b)).collect::<Vec<_>>(),
             "sheet_placements": project.allocations.iter().filter(|a| boards.contains(&a.board_id)).count(),
             "hinges": hinges.len(),
+            "drawer_slides": slides,
+            "hardware_items": hardware,
         });
         if input.dry_run {
             return self.preview_only(
@@ -1685,9 +1724,10 @@ impl Workspace {
             "templates": [
                 describe(TemplateKind::Base, "Kitchen base cabinet: 2 sides, bottom, front and rear top rails, overlay back. No doors (add them as boards)."),
                 describe(TemplateKind::Wall, "Wall cabinet: 2 sides, top, bottom, one shelf, overlay back. No doors."),
-                describe(TemplateKind::Drawers, "Drawer stack: carcass, drawer boxes (sides, front, back, bottom) and external fronts."),
+                describe(TemplateKind::Drawers, "Drawer stack: carcass, drawer boxes (sides, front, back, bottom), external fronts and a pair of drawer slides per drawer (default TT45 Slowmotion; the box is two slide clearances narrower than the opening)."),
             ],
             "defaults_mm": { "width": 600, "depth": 560, "height": 720, "rail_width": 80, "shelf_height": 320, "box_depth": 500, "side_clearance": 13, "rear_clearance": 20, "vertical_clearance": 8, "front_reveal": 3, "front_gap": 3, "drawer_count": 3 },
+            "default_slides": { "pack": crate::hardware_catalog::DEFAULT_SLIDE_FAMILY.0, "slide": crate::hardware_catalog::DEFAULT_SLIDE_FAMILY.1 },
             "default_materials": { "carcass": "White MDF 15 mm", "back": "HDF 3 mm", "box": "White MDF 15 mm", "box_bottom": "HDF 3 mm", "external_front": "White MDF 18 mm" },
             "standard_materials": BR_STANDARD.iter().map(|p| json!({ "name": p.name_en, "thickness_mm": p.thickness_mm, "sheet_mm": p.sheet_mm })).collect::<Vec<_>>(),
             "coordinates": "The cabinet front is at Y=0 facing -Y, X runs to the right from the left side, Z up from the floor.",
@@ -1864,8 +1904,36 @@ impl Workspace {
                 .dimensions
                 .insert(field, ProposedLength::new(Conversion::Exact(length)));
         }
+        let mut warnings = Vec::new();
         if kind == TemplateKind::Drawers {
             setup.drawer_count = Some(input.drawer_count.unwrap_or(3));
+            let choice = input.slides.clone().unwrap_or_default();
+            setup.slides = if choice.none {
+                crate::template_setup::SlideChoice::None
+            } else {
+                let (default_pack, default_family) = crate::hardware_catalog::DEFAULT_SLIDE_FAMILY;
+                let family = choice.slide.as_deref().unwrap_or(default_family);
+                let pack = choice
+                    .pack
+                    .clone()
+                    .or_else(|| {
+                        self.catalogs
+                            .usable()
+                            .iter()
+                            .find(|p| p.slides.iter().any(|f| f.id == family))
+                            .map(|p| p.id.clone())
+                    })
+                    .unwrap_or_else(|| default_pack.to_owned());
+                let lengths = self.catalogs.slide_lengths(&pack, family, language.tag());
+                if lengths.is_empty() {
+                    return Err(ServiceError::not_found("slide family", format!("{pack}/{family}"))
+                        .hint("See list_hardware_catalog {\"kind\":\"slide\"}, or pass slides: {\"none\": true}."));
+                }
+                if input.dimensions.side_clearance.is_some() {
+                    warnings.push("side_clearance is ignored: the drawer slides set the clearance (pass slides: {\"none\": true} to use it).".to_owned());
+                }
+                crate::template_setup::SlideChoice::Family(lengths)
+            };
         }
 
         let (assembly_id, fits) = if into_current {
@@ -1920,16 +1988,35 @@ impl Workspace {
             })
             .collect();
         let unplaced = boards.iter().filter(|b| b["sheet"].is_null()).count();
+        let root_members: HashSet<Uuid> = crate::door_joint::moving_members(project, assembly_id)
+            .into_iter()
+            .collect();
+        let slides: Vec<Value> = project
+            .slide_installations
+            .iter()
+            .filter(|s| root_members.contains(&s.drawer_root_id))
+            .map(|s| {
+                crate::service::fittings::slide_status_json(
+                    project,
+                    s,
+                    &crate::slide_installation::diagnose(project, s),
+                )
+            })
+            .collect();
         let mut result = json!({
             "assembly_id": assembly_id,
             "boards": boards,
+            "slides": slides,
             "sheets": project.stock.iter().map(|s| json!({ "alias": project.stock_alias(s.id), "name": s.name, "material": object_name(project, s.material_id) })).collect::<Vec<_>>(),
             "project": summary(document),
         });
         if unplaced > 0 {
-            result["warnings"] = json!([format!(
+            warnings.push(format!(
                 "{unplaced} board(s) have no sheet: their material has no standard sheet size. Use create_stock, then auto_place."
-            )]);
+            ));
+        }
+        if !warnings.is_empty() {
+            result["warnings"] = json!(warnings);
         }
         Ok(result)
     }

@@ -60,6 +60,10 @@ pub enum Kind {
     Hinge,
     Door,
     Catalog,
+    /// A drawer's slide pair, named by the drawer.
+    Slide,
+    /// A hardware item that is a catalog foot.
+    Foot,
 }
 
 impl Kind {
@@ -74,6 +78,8 @@ impl Kind {
             Self::Hinge => "hinge",
             Self::Door => "door",
             Self::Catalog => "catalog entry",
+            Self::Slide => "drawer slide pair",
+            Self::Foot => "foot",
         }
     }
 }
@@ -229,6 +235,26 @@ pub(crate) fn candidates(project: &Project, kind: Kind) -> Vec<(Uuid, String)> {
             .iter()
             .map(|c| (c.id, c.name.clone()))
             .collect(),
+        Kind::Slide => project
+            .slide_installations
+            .iter()
+            .map(|s| {
+                let name = project
+                    .assemblies
+                    .iter()
+                    .find(|a| a.id == s.drawer_root_id)
+                    .map(|a| a.name.clone())
+                    .or_else(|| project.board(s.drawer_root_id).map(|b| b.name.clone()))
+                    .unwrap_or_default();
+                (s.id, name)
+            })
+            .collect(),
+        Kind::Foot => project
+            .hardware
+            .iter()
+            .filter(|h| project.foot_spec(h).is_some())
+            .map(|h| (h.id, h.name.clone()))
+            .collect(),
     }
 }
 
@@ -244,6 +270,12 @@ pub(crate) fn resolve(project: &Project, kind: Kind, reference: &str) -> Service
             && let Some(joint) = project.door_joints.iter().find(|j| j.moving_root_id == id)
         {
             return Ok(joint.id);
+        }
+        // Slides can be named by any board of their drawer, or the drawer.
+        if kind == Kind::Slide
+            && let Some(slide) = crate::slide_installation::for_drawer(project, id)
+        {
+            return Ok(slide.id);
         }
         return Err(ServiceError::not_found(kind.label(), reference));
     }

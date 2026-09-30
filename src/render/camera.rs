@@ -4,7 +4,7 @@ use eframe::egui;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use crate::domain::{Board, HardwareKind, Project};
+use crate::domain::{Board, Project};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Projection {
@@ -476,7 +476,7 @@ pub fn bounds_visible(
         }
     }
     for hardware in &project.hardware {
-        let HardwareKind::Placeholder { dimensions } = hardware.kind else {
+        let Some(dimensions) = project.hardware_dimensions(hardware) else {
             continue;
         };
         if !visibility.visible(project, hardware.id)

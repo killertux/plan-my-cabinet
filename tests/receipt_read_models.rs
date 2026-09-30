@@ -36,7 +36,7 @@ fn receipt(project: &Project, name: &str, sections: ReceiptSections) -> ExportRe
             metadata_version: Some(1),
             mode: Some(ExportMode::Draft),
             sections: Some(sections),
-            fingerprint_version: Some(4),
+            fingerprint_version: Some(5),
             layout_version: Some(1),
             stock_aliases: Some(project.stock_aliases.clone()),
             comparison_baseline: Some(ComparisonBaseline::from_project(project).unwrap()),

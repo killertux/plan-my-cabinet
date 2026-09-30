@@ -83,6 +83,17 @@ pub struct RecipeCandidate {
     /// Ordered independent physical parts; also the ungrouped BOM / allocation order.
     pub boards: Vec<Board>,
     pub size: CabinetSize,
+    /// Drawers and the boards their slides join (Drawers recipe only).
+    pub drawers: Vec<RecipeDrawer>,
+}
+
+/// One drawer: its assembly, box sides and the carcass sides beside them,
+/// left (smaller X) first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecipeDrawer {
+    pub assembly_id: Uuid,
+    pub box_sides: [Uuid; 2],
+    pub carcass_sides: [Uuid; 2],
 }
 
 fn um(value: Length) -> i128 {
@@ -176,6 +187,7 @@ impl RecipeCandidate {
             }],
             boards: Vec::new(),
             size,
+            drawers: Vec::new(),
         }
     }
 
@@ -468,6 +480,7 @@ pub fn drawers(input: DrawersRecipe) -> Result<RecipeCandidate, Vec<RecipeError>
             parent_id: Some(root),
             pose: pose(0, 0, 0, identity()),
         });
+        let box_left_index = c.boards.len();
         c.board(
             format!("Drawer {} left box side", i + 1),
             input.box_material,
@@ -501,6 +514,11 @@ pub fn drawers(input: DrawersRecipe) -> Result<RecipeCandidate, Vec<RecipeError>
             upright_face(),
             drawer_id,
         );
+        c.drawers.push(RecipeDrawer {
+            assembly_id: drawer_id,
+            box_sides: [c.boards[box_left_index].id, c.boards[box_left_index + 1].id],
+            carcass_sides: [c.boards[0].id, c.boards[1].id],
+        });
         c.board(
             format!("Drawer {} applied bottom", i + 1),
             input.box_bottom,

@@ -6,11 +6,14 @@ use uuid::Uuid;
 
 use crate::auto_place::{AddedSheets, add_needed_sheets};
 use crate::commands::{EditError, ProjectEditor};
-use crate::domain::{BoardGrain, DomainError, Material, Project, SrgbColor};
+use crate::domain::{
+    BoardGrain, CatalogReference, DomainError, Material, Project, SlideInstallation, SrgbColor,
+};
 use crate::first_fit::{FirstFit, allocate_new_board};
 use crate::i18n::Language;
 use crate::material_presets::BR_STANDARD;
 use crate::money::Currency;
+use crate::slide_installation;
 use crate::template_recipes::{
     BaseRecipe, CabinetSize, DrawersRecipe, RecipeCandidate, RecipeError, RecipeMaterial,
     WallRecipe, base, drawers, wall,
@@ -129,6 +132,54 @@ pub enum SetupError {
     UnknownMaterial(MaterialRole),
     Geometry(Vec<RecipeError>),
     InvalidProject(DomainError),
+    /// No length of the chosen slide fits the drawer boxes and carcass.
+    NoSlideFits,
+}
+
+/// Drawer slides for the Drawers template.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SlideChoice {
+    /// No slides: the side clearance field applies.
+    None,
+    /// Every length of one slide family (pinned snapshots); the template uses
+    /// its clearance and the longest length that fits.
+    Family(Vec<CatalogReference>),
+}
+
+impl SlideChoice {
+    /// The default family from the bundled catalog.
+    pub fn default_family(language: Language) -> Self {
+        let (pack, family) = crate::hardware_catalog::DEFAULT_SLIDE_FAMILY;
+        let lengths = crate::catalog_pack::CatalogRegistry::bundled().slide_lengths(
+            pack,
+            family,
+            language.tag(),
+        );
+        if lengths.is_empty() {
+            Self::None
+        } else {
+            Self::Family(lengths)
+        }
+    }
+
+    /// The family's side clearance, when slides are chosen.
+    pub fn clearance(&self) -> Option<Length> {
+        match self {
+            Self::Family(lengths) => lengths
+                .iter()
+                .find_map(CatalogReference::slide)
+                .map(|s| s.clearance),
+            Self::None => None,
+        }
+    }
+}
+
+/// The slides a Drawers review chose: one catalog length, installed on every
+/// drawer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemplateSlides {
+    pub catalog: CatalogReference,
+    pub installations: Vec<SlideInstallation>,
 }
 
 /// Candidate BOM, assumptions and allocation outlook are read-only. The UUIDs
@@ -146,6 +197,8 @@ pub struct TemplateReview {
     pub fits: Vec<(FirstFit, Option<crate::domain::Allocation>)>,
     /// The sheets `add_sheets` would add, per material and thickness.
     pub sheets: Vec<AddedSheets>,
+    /// Drawers template with slides chosen.
+    pub slides: Option<TemplateSlides>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,6 +225,8 @@ pub struct TemplateSetup {
     /// Add the sheets the generated boards need, as To purchase, and place
     /// the boards on them. Only materials with a known sheet size get sheets.
     pub add_sheets: bool,
+    /// Drawers only: the slides every drawer runs on.
+    pub slides: SlideChoice,
 }
 
 impl TemplateSetup {
@@ -191,6 +246,7 @@ impl TemplateSetup {
             dimensions: BTreeMap::new(),
             drawer_count: None,
             add_sheets: false,
+            slides: SlideChoice::default_family(Language::En),
         }
     }
 
@@ -354,7 +410,10 @@ impl TemplateSetup {
                     .drawer_count
                     .ok_or_else(|| vec![SetupError::MissingCount])?,
                 box_depth: get(TemplateField::BoxDepth),
-                side_clearance: get(TemplateField::SideClearance),
+                side_clearance: self
+                    .slides
+                    .clearance()
+                    .unwrap_or_else(|| get(TemplateField::SideClearance)),
                 rear_clearance: get(TemplateField::RearClearance),
                 vertical_clearance: get(TemplateField::VerticalClearance),
                 front_reveal: get(TemplateField::FrontReveal),
@@ -394,6 +453,18 @@ impl TemplateSetup {
             Vec::new()
         };
         placed_fits(&disposable, &candidate.boards, &mut fits);
+        let slides = match (&self.slides, self.kind) {
+            (SlideChoice::Family(lengths), TemplateKind::Drawers) => {
+                Some(template_slides(&disposable, &candidate, lengths)?)
+            }
+            _ => None,
+        };
+        if let Some(slides) = &slides {
+            disposable.catalog.push(slides.catalog.clone());
+            disposable
+                .slide_installations
+                .extend(slides.installations.iter().cloned());
+        }
         disposable
             .validate()
             .map_err(|e| vec![SetupError::InvalidProject(e)])?;
@@ -404,6 +475,7 @@ impl TemplateSetup {
             colors,
             fits,
             sheets,
+            slides,
         })
     }
 
@@ -432,9 +504,14 @@ impl TemplateSetup {
             .collect();
         let assembly_id = review.candidate.assemblies[0].id;
         let add_sheets = self.add_sheets;
+        let slides = review.slides;
         let mut fits = Vec::new();
         editor
             .transact(|p| -> Result<(), ()> {
+                if let Some(slides) = slides {
+                    p.catalog.push(slides.catalog);
+                    p.slide_installations.extend(slides.installations);
+                }
                 p.materials.extend(review.materials);
                 p.material_colors.extend(review.colors);
                 p.assemblies.extend(review.candidate.assemblies);
@@ -510,9 +587,30 @@ impl TemplateSetup {
         let assembly_id = root.id;
         let material_ids = remap;
         let add_sheets = self.add_sheets;
+        // Reuse an identical pinned slide rather than pinning it twice.
+        let slides = review.slides.map(|mut slides| {
+            let pinned = editor.project().catalog.iter().find(|c| {
+                c.product_id == slides.catalog.product_id
+                    && c.item == slides.catalog.item
+                    && c.origin == slides.catalog.origin
+            });
+            let pin = if let Some(existing) = pinned {
+                for installation in &mut slides.installations {
+                    installation.catalog_id = existing.id;
+                }
+                None
+            } else {
+                Some(slides.catalog)
+            };
+            (pin, slides.installations)
+        });
         let mut fits = Vec::new();
         editor
             .transact(|p| -> Result<(), ()> {
+                if let Some((pin, installations)) = slides {
+                    p.catalog.extend(pin);
+                    p.slide_installations.extend(installations);
+                }
                 p.materials.extend(added);
                 p.material_colors.extend(colors);
                 p.assemblies.extend(review.candidate.assemblies);
@@ -547,6 +645,49 @@ pub struct InsertedTemplate {
     pub material_ids: HashMap<Uuid, Uuid>,
     /// Generated board order and first-fit outcomes (stock ids when allocated).
     pub fits: Vec<(Uuid, FirstFit)>,
+}
+
+/// Pick the longest length of `lengths` that fits every drawer and install it
+/// on each, centred on the box sides.
+fn template_slides(
+    project: &Project,
+    candidate: &RecipeCandidate,
+    lengths: &[CatalogReference],
+) -> Result<TemplateSlides, Vec<SetupError>> {
+    let mut chosen: Option<CatalogReference> = None;
+    let mut installations = Vec::new();
+    for drawer in &candidate.drawers {
+        let detected = slide_installation::measure(
+            project,
+            drawer.assembly_id,
+            drawer.box_sides,
+            drawer.carcass_sides,
+        )
+        .map_err(|_| vec![SetupError::NoSlideFits])?;
+        let suggestion = slide_installation::suggest(project, detected, lengths)
+            .map_err(|_| vec![SetupError::NoSlideFits])?;
+        // Every drawer has the same depth: the first choice holds for all.
+        let catalog = chosen.get_or_insert_with(|| {
+            let mut pin = suggestion.catalog.clone();
+            pin.id = Uuid::new_v4();
+            pin
+        });
+        installations.push(SlideInstallation {
+            id: Uuid::new_v4(),
+            catalog_id: catalog.id,
+            drawer_root_id: suggestion.detected.drawer_root,
+            drawer_sides: suggestion.detected.drawer_sides,
+            cabinet_sides: suggestion.detected.cabinet_sides,
+            sides: suggestion.detected.sides(),
+            height: suggestion.height,
+            setback: suggestion.setback,
+        });
+    }
+    let catalog = chosen.ok_or_else(|| vec![SetupError::NoSlideFits])?;
+    Ok(TemplateSlides {
+        catalog,
+        installations,
+    })
 }
 
 /// Placements made after the per-board first fit (by `add_sheets`) replace

@@ -763,6 +763,8 @@ impl DesktopApp {
             Workspace::Hardware => {
                 if let Some(InspectorTarget::Installation(id)) = target {
                     self.show_selected_installation_inspector(ui, id);
+                } else if let Some(InspectorTarget::Slide(id)) = target {
+                    self.show_slide_inspector(ui, id);
                 } else {
                     egui::Frame::new()
                         .inner_margin(egui::Margin::symmetric(14, 16))
@@ -885,6 +887,7 @@ impl DesktopApp {
                     Workspace::Hardware => {
                         self.show_pinned_catalog(ui);
                         self.show_hinge_list(ui);
+                        self.show_slide_list(ui);
                         self.show_hardware_list(ui);
                     }
                     // Laid out by `show_export_preparation` above.
@@ -1084,34 +1087,13 @@ impl DesktopApp {
 
     pub(crate) fn show_scene_pane(&mut self, ui: &mut egui::Ui, drawer_modal: bool) {
         let modal = drawer_modal || self.blocking_surface_open() || self.cut_plan.repair.active();
-        if self.hardware.door_motion.is_some_and(|(id, angle)| {
-            self.editor
-                .project()
-                .door_joints
-                .iter()
-                .find(|j| j.id == id)
-                .is_none_or(|j| {
-                    plan_my_cabinet::door_joint::derived_poses(self.editor.project(), j, angle)
-                        .is_err()
-                })
-        }) {
+        let motion_poses = self
+            .hardware
+            .door_motion
+            .and_then(|(id, value)| door_joint_ui::motion_poses(self.editor.project(), id, value));
+        if self.hardware.door_motion.is_some() && motion_poses.is_none() {
             self.hardware.door_motion = None;
         }
-        let motion_poses = self.hardware.door_motion.and_then(|(id, angle)| {
-            self.editor
-                .project()
-                .door_joints
-                .iter()
-                .find(|j| j.id == id)
-                .and_then(|j| {
-                    plan_my_cabinet::door_joint::derived_poses(self.editor.project(), j, angle).ok()
-                })
-                .map(|poses| {
-                    poses
-                        .into_iter()
-                        .collect::<std::collections::HashMap<_, _>>()
-                })
-        });
         // Face handles only when a resize can be committed right away: Design,
         // nothing else previewing, and no unfinished dimension draft that the
         // drag would silently overtake.
@@ -1460,6 +1442,7 @@ impl DesktopApp {
         self.show_currency_dialog(ui.ctx());
         self.show_assembly_dialog(ui.ctx());
         self.show_hardware_dialog(ui.ctx());
+        self.show_slide_dialog(ui.ctx());
         self.show_hinge_dialog(ui.ctx());
         self.show_catalog_dialog(ui.ctx());
         self.show_door_dialog(ui.ctx());

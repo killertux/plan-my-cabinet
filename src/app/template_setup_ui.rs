@@ -553,6 +553,7 @@ fn dimensions(
         }
     }
     if setup.kind == TemplateKind::Drawers {
+        slide_choice(ui, l, setup);
         ui.label(l.text("template-setup-drawer-count"));
         if ui
             .add(egui::TextEdit::singleline(count).desired_width(100.0))
@@ -568,6 +569,64 @@ fn dimensions(
         }
     }
     ui.small(l.text("template-setup-clearance-hint"));
+}
+
+/// Drawer slides for the Drawers template: a bundled family, or none (the
+/// side clearance field applies).
+fn slide_choice(ui: &mut egui::Ui, l: &Localizer, setup: &mut TemplateSetup) {
+    use plan_my_cabinet::template_setup::SlideChoice;
+    let registry = plan_my_cabinet::catalog_pack::CatalogRegistry::bundled();
+    let language = l.language().tag();
+    let families: Vec<(String, String, String)> = registry
+        .usable()
+        .iter()
+        .flat_map(|p| {
+            p.slides
+                .iter()
+                .map(|f| (p.id.clone(), f.id.clone(), f.name(language).to_owned()))
+        })
+        .collect();
+    let current = match &setup.slides {
+        SlideChoice::Family(lengths) => lengths
+            .first()
+            .and_then(|c| c.origin.as_ref())
+            .map(|o| (o.pack_id.clone(), o.item_id.clone())),
+        SlideChoice::None => None,
+    };
+    let mut chosen = current.clone();
+    ui.label(l.text("template-setup-slides"));
+    egui::ComboBox::from_id_salt("template-setup-slides")
+        .width(260.0)
+        .selected_text(
+            chosen
+                .as_ref()
+                .and_then(|(p, f)| families.iter().find(|(fp, ff, _)| fp == p && ff == f))
+                .map_or_else(
+                    || l.text("template-setup-slides-none"),
+                    |(_, _, name)| name.clone(),
+                ),
+        )
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut chosen, None, l.text("template-setup-slides-none"));
+            for (pack, family, name) in &families {
+                ui.selectable_value(&mut chosen, Some((pack.clone(), family.clone())), name);
+            }
+        });
+    if chosen != current {
+        setup.slides = match &chosen {
+            Some((pack, family)) => {
+                SlideChoice::Family(registry.slide_lengths(pack, family, language))
+            }
+            None => SlideChoice::None,
+        };
+    }
+    if let Some(clearance) = setup.slides.clearance() {
+        ui.small(format!(
+            "{}: {}",
+            l.text("template-setup-slides-clearance"),
+            format_length(clearance, Unit::Mm, locale(l), 3)
+        ));
+    }
 }
 
 fn length_field(
@@ -664,6 +723,15 @@ fn review_panel(
         ui.label(format!(
             "{}: {count}",
             l.text("template-setup-drawer-count")
+        ));
+    }
+    if let Some(slides) = &review.slides {
+        ui.label(format!(
+            "{}: {} · {} × {}",
+            l.text("template-setup-slides"),
+            slides.catalog.product_id,
+            slides.catalog.name,
+            slides.installations.len()
         ));
     }
     sheets_section(ui, l, setup, review);
@@ -907,6 +975,7 @@ fn errors_panel(ui: &mut egui::Ui, l: &Localizer, setup: &TemplateSetup, errors:
                 continue;
             }
             SetupError::InvalidProject(_) => l.text("template-setup-error-project"),
+            SetupError::NoSlideFits => l.text("template-setup-error-no-slide-fits"),
         };
         let key = match error {
             SetupError::Rounding(_) | SetupError::MaterialRounding(_) => {

@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::domain::{HardwareKind, Project};
+use crate::domain::Project;
 use crate::render::camera::{Selection, board_corners, box_corners};
 use crate::units::Pose;
 
@@ -200,7 +200,7 @@ fn orientation(s: &Solid, kind: &str) -> (String, [String; 3]) {
         }),
     };
     if kind != "board" {
-        return ("hardware".into(), names);
+        return (kind.into(), names);
     }
     let Some(a) = s.aligned else {
         return ("rotated (not aligned with the world axes)".into(), names);
@@ -332,8 +332,13 @@ pub fn describe(
         }
     }
     for hardware in &project.hardware {
-        let HardwareKind::Placeholder { dimensions } = hardware.kind else {
+        let Some(dimensions) = project.hardware_dimensions(hardware) else {
             continue;
+        };
+        let kind = if project.foot_spec(hardware).is_some() {
+            "foot"
+        } else {
+            "hardware"
         };
         if !selection.visible(project, hardware.id) {
             continue;
@@ -343,8 +348,42 @@ pub fn describe(
         };
         let size = dimensions.map(|v| v.micrometres() as f64 / 1000.0);
         if let Some(s) = solid(hardware.id, hardware.name.clone(), pose, size) {
-            kinds.push(("hardware", parent_name(hardware.parent_id), None));
+            kinds.push((kind, parent_name(hardware.parent_id), None));
             solids.push(s);
+        }
+    }
+    for slide in &project.slide_installations {
+        if !slide
+            .drawer_sides
+            .iter()
+            .all(|id| selection.visible(project, *id))
+        {
+            continue;
+        }
+        let Some(envelopes) = crate::slide_installation::envelopes(project, slide) else {
+            continue;
+        };
+        let code = project
+            .catalog
+            .iter()
+            .find(|c| c.id == slide.catalog_id)
+            .map_or("", |c| c.product_id.as_str());
+        let drawer = project
+            .assemblies
+            .iter()
+            .find(|a| a.id == slide.drawer_root_id)
+            .map(|a| a.name.clone())
+            .or_else(|| project.board(slide.drawer_root_id).map(|b| b.name.clone()))
+            .unwrap_or_default();
+        for (side, (pose, size)) in envelopes.into_iter().enumerate() {
+            let name = format!(
+                "{drawer} slide {} ({code})",
+                if side == 0 { "left" } else { "right" }
+            );
+            if let Some(s) = solid(slide.id, name, pose, size) {
+                kinds.push(("slide", Some(drawer.clone()), None));
+                solids.push(s);
+            }
         }
     }
     let overall = (!solids.is_empty()).then(|| {
