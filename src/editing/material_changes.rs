@@ -19,6 +19,17 @@ pub enum MaterialChangeError {
     NotDependent(Uuid),
 }
 
+/// Why a material cannot be deleted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaterialDeleteError {
+    MissingMaterial(Uuid),
+    /// Boards and stock pieces still use it; reassign or delete them first.
+    InUse {
+        boards: Vec<Uuid>,
+        stock: Vec<Uuid>,
+    },
+}
+
 /// The dimensions and grain before/after an explicit decision, including a
 /// diagnostic for an allocation retained in its original position.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -187,6 +198,36 @@ fn resized_pose(board: &Board, thickness: Length, anchor: Anchor) -> Result<Pose
 }
 
 impl ProjectEditor {
+    /// Delete a material no board or stock piece uses, with its display color,
+    /// as one undo step.
+    pub fn delete_material(&mut self, id: Uuid) -> Result<bool, EditError<MaterialDeleteError>> {
+        self.transact(|project| {
+            let index = project
+                .materials
+                .iter()
+                .position(|m| m.id == id)
+                .ok_or(MaterialDeleteError::MissingMaterial(id))?;
+            let boards: Vec<_> = project
+                .boards
+                .iter()
+                .filter(|b| b.material_id == id)
+                .map(|b| b.id)
+                .collect();
+            let stock: Vec<_> = project
+                .stock
+                .iter()
+                .filter(|s| s.material_id == id)
+                .map(|s| s.id)
+                .collect();
+            if !boards.is_empty() || !stock.is_empty() {
+                return Err(MaterialDeleteError::InUse { boards, stock });
+            }
+            project.materials.remove(index);
+            project.material_colors.remove(&id);
+            Ok(())
+        })
+    }
+
     /// Change a board's local grain rule in one undoable edit. `None` follows
     /// the material default; the original allocation (including its lock and
     /// quarter-turn) remains a draft if the new rule makes it incompatible.

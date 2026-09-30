@@ -195,6 +195,20 @@ Use **⌘** on macOS and **Ctrl** on Windows or Linux.
 The app saves recovery snapshots while you work. If it closes unexpectedly,
 the Welcome screen offers to restore your work.
 
+## Use it from an AI agent
+
+`plan-my-cabinet --mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server on standard input and output, with no window. An agent such as Claude
+can then build a cabinet, look at pictures of it, plan the cuts, add hinges
+and doors, and save a project file you open in the app. For example, with
+Claude Code:
+
+```sh
+claude mcp add plan-my-cabinet -- "$HOME/Applications/Plan My Cabinet.app/Contents/MacOS/plan-my-cabinet" --mcp
+```
+
+See [Using it from an AI agent](docs/mcp-en.md) for the setup on each system.
+
 ## More documentation
 
 The `docs/` folder has a detailed guide for each area, in English and
@@ -208,6 +222,7 @@ Portuguese:
 - [Hinges and catalog packs](docs/hardware-en.md)
 - [Shop handoff](docs/shop-handoff-en.md)
 - [Project files and recovery](docs/project-en.md)
+- [Using it from an AI agent (MCP)](docs/mcp-en.md)
 
 ## Building from source
 

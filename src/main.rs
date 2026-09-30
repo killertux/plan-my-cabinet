@@ -616,11 +616,14 @@ fn check_catalogs(paths: &[std::ffi::OsString]) -> std::process::ExitCode {
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
-        println!("{}", capture::HELP);
+        println!("{}\n{}", capture::HELP, app::mcp::HELP);
         return std::process::ExitCode::SUCCESS;
     }
     if args.first().is_some_and(|arg| arg == "--check-catalog") {
         return check_catalogs(&args[1..]);
+    }
+    if args.first().is_some_and(|arg| arg == "--mcp") {
+        return app::mcp::run(&args[1..]);
     }
     let capture_config = match capture::Config::parse(args) {
         Ok(config) => config,

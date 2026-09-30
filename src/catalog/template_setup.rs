@@ -462,6 +462,93 @@ impl TemplateSetup {
     }
 }
 
+impl TemplateSetup {
+    /// Add the template to an open project as one undo step, with its root
+    /// assembly moved by `offset_mm` in world space. Draft materials whose id
+    /// is already a material of the project reuse it (their name, thickness and
+    /// grain must match what the draft says); the others are added with fresh
+    /// ids. `project_name`, `currency` and `input_unit` are ignored.
+    pub fn insert_into(
+        &self,
+        editor: &mut ProjectEditor,
+        offset_mm: [f64; 3],
+    ) -> Result<InsertedTemplate, GenerateError> {
+        let mut review = self.review().map_err(GenerateError::Setup)?;
+        let existing: BTreeSet<Uuid> = editor.project().materials.iter().map(|m| m.id).collect();
+        let mut remap = HashMap::new();
+        let mut added = Vec::new();
+        for mut material in review.materials {
+            if existing.contains(&material.id) {
+                remap.insert(material.id, material.id);
+            } else {
+                let old = material.id;
+                material.id = Uuid::new_v4();
+                remap.insert(old, material.id);
+                added.push(material);
+            }
+        }
+        for board in &mut review.candidate.boards {
+            board.material_id = remap[&board.material_id];
+        }
+        let colors: BTreeMap<_, _> = review
+            .colors
+            .into_iter()
+            .filter(|(id, _)| !existing.contains(id))
+            .map(|(id, color)| (remap[&id], color))
+            .collect();
+        let root = &mut review.candidate.assemblies[0];
+        let t = root.pose.translation_mm;
+        root.pose = crate::units::Pose::new(
+            [
+                t[0] + offset_mm[0],
+                t[1] + offset_mm[1],
+                t[2] + offset_mm[2],
+            ],
+            root.pose.rotation,
+        )
+        .map_err(|_| GenerateError::Edit(EditError::Command(())))?;
+        let assembly_id = root.id;
+        let material_ids = remap;
+        let add_sheets = self.add_sheets;
+        let mut fits = Vec::new();
+        editor
+            .transact(|p| -> Result<(), ()> {
+                p.materials.extend(added);
+                p.material_colors.extend(colors);
+                p.assemblies.extend(review.candidate.assemblies);
+                for board in review.candidate.boards {
+                    let id = board.id;
+                    p.boards.push(board);
+                    fits.push((id, allocate_new_board(p, id)));
+                }
+                if add_sheets {
+                    add_needed_sheets(p);
+                    for (id, fit) in &mut fits {
+                        if let Some(allocation) = p.allocations.iter().find(|a| a.board_id == *id) {
+                            *fit = FirstFit::Allocated(allocation.stock_id);
+                        }
+                    }
+                }
+                Ok(())
+            })
+            .map_err(GenerateError::Edit)?;
+        Ok(InsertedTemplate {
+            assembly_id,
+            material_ids,
+            fits,
+        })
+    }
+}
+
+/// The result of [`TemplateSetup::insert_into`].
+pub struct InsertedTemplate {
+    pub assembly_id: Uuid,
+    /// Draft material id to project material id.
+    pub material_ids: HashMap<Uuid, Uuid>,
+    /// Generated board order and first-fit outcomes (stock ids when allocated).
+    pub fits: Vec<(Uuid, FirstFit)>,
+}
+
 /// Placements made after the per-board first fit (by `add_sheets`) replace
 /// its "no fit" results.
 fn placed_fits(

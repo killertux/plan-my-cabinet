@@ -15,6 +15,8 @@ pub mod optimize;
 pub mod output;
 pub mod read_models;
 pub mod reference_fixture;
+pub mod render;
+pub mod service;
 pub mod storage;
 pub mod ui;
 
@@ -34,7 +36,7 @@ pub use optimize::{
 };
 pub use output::{document_layout, export, pdf_export, workshop_document};
 pub use read_models::{cost_estimate, design_read_models, receipt_read_models, stock_read_models};
-pub use storage::{local_preferences, persistence, recent_projects, recovery};
+pub use storage::{local_preferences, persistence, recent_projects, recovery, user_dirs};
 pub use ui::{icons, settings_ui, theme, theme_widgets, welcome_ui};
 
 #[cfg(test)]
