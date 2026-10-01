@@ -117,6 +117,8 @@ pub struct ViewportInteraction {
     pub selection: Option<SelectionProposal>,
     pub resize: Option<ResizeAction>,
     pub band: Option<BandClick>,
+    /// An app-level request from the viewport's controls (lighting).
+    pub request: Option<crate::actions::Request>,
 }
 
 /// A Band tool click on a board edge. `reset` (Alt-click) puts the edge back
@@ -752,6 +754,7 @@ pub fn show_move(
         language,
         inverse_scroll_zoom,
         material_tint,
+        plan_my_cabinet::render::lighting::LightingPreference::default(),
         faces,
         poses,
         measurement_scope,
@@ -774,6 +777,7 @@ pub fn show_move_with_hardware(
     language: plan_my_cabinet::i18n::Language,
     inverse_scroll_zoom: bool,
     material_tint: bool,
+    lighting: plan_my_cabinet::render::lighting::LightingPreference,
     faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
     measurement_scope: plan_my_cabinet::measurements::Scope,
@@ -783,6 +787,7 @@ pub fn show_move_with_hardware(
 ) -> ViewportInteraction {
     use plan_my_cabinet::i18n::Language;
     let pt = language == Language::PtBr;
+    let mut app_request = None;
     let overlay_blocked = if hardware_workspace {
         controls::hardware_overlay(
             ui,
@@ -804,9 +809,11 @@ pub fn show_move_with_hardware(
             modal,
             pt,
             poses.is_some(),
+            lighting,
+            &mut app_request,
         )
     };
-    let (rect, interaction) = canvas::interact_with_selection(
+    let (rect, mut interaction) = canvas::interact_with_selection(
         ui,
         camera,
         project,
@@ -826,6 +833,7 @@ pub fn show_move_with_hardware(
         faces,
         poses,
         material_tint,
+        lighting.light(camera),
         rect,
     );
     if !modal && !overlay_blocked && !hardware_workspace {
@@ -853,6 +861,7 @@ pub fn show_move_with_hardware(
         installation_id,
         pt,
     );
+    interaction.request = app_request;
     interaction
 }
 

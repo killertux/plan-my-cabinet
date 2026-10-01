@@ -1950,6 +1950,7 @@ impl DesktopApp {
                         );
                     }
                     self.show_banding_section(ui, &[board.id]);
+                    self.show_coating_section(ui, &[board.id]);
                     theme_widgets::inspector_heading(
                         ui,
                         &self.localizer.text("design-dimensions-title"),
@@ -2265,6 +2266,7 @@ impl DesktopApp {
                         .collect();
                     if !boards.is_empty() {
                         self.show_banding_section(ui, &boards);
+                        self.show_coating_section(ui, &boards);
                     }
                     self.inspector_actions(
                         ui,

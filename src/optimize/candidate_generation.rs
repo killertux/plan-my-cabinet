@@ -607,6 +607,7 @@ mod tests {
         let mut project = Project::new("candidates", Currency::Brl);
         project.id = id(1);
         project.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: id(2),
@@ -616,6 +617,7 @@ mod tests {
         });
         for (index, size) in [(0, 100), (1, 100)] {
             project.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: id(10 + index),
                 name: "part".into(),

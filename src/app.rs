@@ -7,6 +7,7 @@ pub(crate) mod banding_ui;
 pub(crate) mod board_dialogs;
 pub(crate) mod capture;
 pub(crate) mod catalog_ui;
+pub(crate) mod coating_ui;
 pub(crate) mod command_palette;
 pub(crate) mod currency_ui;
 pub(crate) mod door_joint_ui;

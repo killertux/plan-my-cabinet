@@ -252,6 +252,7 @@ pub fn seed_defaults(project: &mut Project, language: Language) -> usize {
         project.materials.push(Material {
             id,
             name: preset.name(language).to_owned(),
+            coating: crate::domain::Coating::infer(preset.name(Language::En)),
             default_thickness: preset.thickness(),
             default_grain: preset.grain,
             kind,

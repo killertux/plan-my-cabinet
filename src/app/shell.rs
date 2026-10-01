@@ -1140,6 +1140,7 @@ impl DesktopApp {
                     self.localizer.language(),
                     self.preferences.inverse_scroll_zoom,
                     self.preferences.material_tint,
+                    self.preferences.lighting,
                     self.modals
                         .placement()
                         .and_then(PlacementDialog::highlighted),
@@ -1160,6 +1161,9 @@ impl DesktopApp {
         }
         if self.design.move_tool.take_grid_edit_request() {
             self.invoke_or_report(Request::new(A::EditGrid));
+        }
+        if let Some(request) = action.request {
+            self.invoke_or_report(request);
         }
         if let Some(click) = action.band {
             if self.selection.active != Some(click.board) {

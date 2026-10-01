@@ -295,6 +295,7 @@ pub fn bench(entry: &crate::domain::CatalogReference, setup: BenchSetup) -> Inst
     let mut project = Project::new("Bench", crate::money::Currency::Brl);
     let material = Uuid::new_v4();
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material,
@@ -303,6 +304,7 @@ pub fn bench(entry: &crate::domain::CatalogReference, setup: BenchSetup) -> Inst
         default_grain: BoardGrain::Unrestricted,
     });
     let board = |name: &str, length_mm: i64, thickness: Length| Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: Uuid::new_v4(),
         name: name.into(),
@@ -830,6 +832,7 @@ mod tests {
         let mut p = Project::new("Hinges", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -840,6 +843,7 @@ mod tests {
         let pose = Pose::new([500.0, 12.0, -30.0], Quaternion::IDENTITY).unwrap();
         for name in ["door", "mount"] {
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: name.into(),

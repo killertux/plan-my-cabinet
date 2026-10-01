@@ -608,6 +608,7 @@ mod tests {
         let mut p = Project::new("door", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -643,6 +644,7 @@ mod tests {
         let handle = Uuid::new_v4();
         for (id, parent, name) in [(door, Some(inner), "door"), (mount, Some(cabinet), "mount")] {
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id,
                 name: name.into(),

@@ -87,6 +87,7 @@ impl ProjectEditor {
         let id = Uuid::new_v4();
         self.transact(|project| {
             project.materials.push(Material {
+                coating: crate::domain::Coating::infer(&input.name),
                 default_band: None,
                 kind: crate::domain::MaterialKind::infer(&input.name),
                 id,
@@ -111,6 +112,7 @@ impl ProjectEditor {
         let id = Uuid::new_v4();
         self.transact(|project| {
             project.materials.push(Material {
+                coating: crate::domain::Coating::infer(&input.name),
                 default_band: None,
                 kind: crate::domain::MaterialKind::infer(&input.name),
                 id,
@@ -207,6 +209,7 @@ impl ProjectEditor {
         let mut fit = None;
         self.transact(|project| {
             project.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id,
                 name: input.name,

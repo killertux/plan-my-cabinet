@@ -39,6 +39,7 @@ pub(crate) enum ActionId {
     ToggleBanding,
     SetBanding,
     ApplyBandingPreset,
+    SetCoatedFace,
     NewEdgeBand,
     EditEdgeBand,
     RemoveEdgeBand,
@@ -114,6 +115,8 @@ pub(crate) enum ActionId {
     ViewFrame,
     ViewPreset,
     ViewProjection,
+    SetLighting,
+    LightFromView,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,6 +206,7 @@ registry! {
     ToggleBanding => ("banding-toggle", Design, "band edge tape edge banding", "fita de borda colocar tirar"),
     SetBanding => ("banding-set", Design, "edge banding automatic set", "fita de borda automática definir"),
     ApplyBandingPreset => ("banding-preset", Design, "edge banding preset all front none automatic", "fita de borda todas frente nenhuma automática"),
+    SetCoatedFace => ("coating-face", Design, "coated face flip melamine one side coating", "face revestida virar melamina uma face revestimento"),
     NewEdgeBand => ("edge-band-new", Design, "new edge band tape", "nova fita de borda"),
     EditEdgeBand => ("edge-band-edit", Design, "edit edge band tape", "editar fita de borda"),
     RemoveEdgeBand => ("edge-band-remove", Design, "remove delete edge band tape", "remover excluir fita de borda"),
@@ -278,6 +282,8 @@ registry! {
     ViewFrame => ("viewport-frame", Design, "frame selection camera", "enquadrar seleção câmera"),
     ViewPreset => ("viewport-preset", Design, "isometric front right top camera", "isométrica frontal direita superior câmera"),
     ViewProjection => ("viewport-projection", Design, "perspective orthographic camera", "perspectiva ortográfica câmera"),
+    SetLighting => ("lighting-mode", Design, "lighting light follow camera fixed off shading", "iluminação luz seguir câmera fixa desligada sombreamento"),
+    LightFromView => ("lighting-from-view", Design, "fix light from current view position", "fixar luz na vista atual posição"),
 }
 
 /// Shared guard for both the viewport surface and future shortcut/palette routes.
@@ -499,6 +505,8 @@ pub(crate) enum Argument {
     },
     BandingPreset(plan_my_cabinet::banding::BandingPreset),
     Format(plan_my_cabinet::formats::ExportFormat),
+    CoatedFace(plan_my_cabinet::coating::CoatedFaceEdit),
+    Lighting(plan_my_cabinet::render::lighting::LightingMode),
 }
 
 impl Request {
@@ -567,6 +575,7 @@ pub(crate) enum Unavailable {
     BandInUse,
     NeedsBand,
     NoBanding,
+    NotOneSided,
 }
 
 impl Unavailable {
@@ -599,6 +608,12 @@ impl Unavailable {
             }
             (Language::PtBr, Self::NoBanding) => {
                 "O material desta peça não leva fita de borda (só MDF e MDP levam)"
+            }
+            (Language::En, Self::NotOneSided) => {
+                "Only boards of a material coated on one side have a face to choose"
+            }
+            (Language::PtBr, Self::NotOneSided) => {
+                "Só peças de material revestido em uma face têm face para escolher"
             }
             (Language::En, Self::CatalogInUse) => {
                 "Hinges, slides or feet still use this model; remove them first"
@@ -792,6 +807,21 @@ impl DesktopApp {
             }
             A::ApplyBandingPreset if !matches!(request.argument, Argument::BandingPreset(_)) => {
                 Err(Unavailable::MissingTarget)
+            }
+            A::SetCoatedFace if !matches!(request.argument, Argument::CoatedFace(_)) => {
+                Err(Unavailable::MissingTarget)
+            }
+            A::SetCoatedFace
+                if !self.banding_targets(request.target).iter().any(|id| {
+                    plan_my_cabinet::coating_rules::board_state(project, *id)
+                        .is_some_and(|s| s.choosable)
+                }) =>
+            {
+                if self.banding_targets(request.target).is_empty() {
+                    Err(Unavailable::NoSelection)
+                } else {
+                    Err(Unavailable::NotOneSided)
+                }
             }
             A::EditEdgeBand | A::RemoveEdgeBand if !matches!(request.target, T::Band(id) if project.edge_band(id).is_some()) => {
                 Err(Unavailable::MissingTarget)
@@ -1053,6 +1083,8 @@ impl DesktopApp {
                 | A::SetExportLanguage
                 | A::SetExportUnits
                 | A::SetExportFormat
+                | A::SetLighting
+                | A::LightFromView
                 | A::ToggleVisibility
         ) && self.resolve_draft_before_action(request)?
         {
@@ -1296,6 +1328,24 @@ impl DesktopApp {
                     let result = self.editor.apply_banding_preset(&boards, preset, band);
                     self.report_banding(result);
                 }
+            }
+            (A::SetCoatedFace, target) => {
+                if let Argument::CoatedFace(edit) = request.argument {
+                    let boards = self.banding_targets(target);
+                    let result = self.editor.set_coated_face(&boards, edit);
+                    self.report_coating(result);
+                }
+            }
+            (A::SetLighting, _) => {
+                let mode = match request.argument {
+                    Argument::Lighting(mode) => mode,
+                    _ => self.preferences.lighting.mode.next(),
+                };
+                self.change_preferences(|preferences| preferences.lighting.mode = mode);
+            }
+            (A::LightFromView, _) => {
+                let light = plan_my_cabinet::render::lighting::Light::headlight(&self.camera);
+                self.change_preferences(|preferences| preferences.lighting.fix_at(light));
             }
             (A::NewEdgeBand, _) => self
                 .modals

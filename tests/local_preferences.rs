@@ -9,6 +9,7 @@ use plan_my_cabinet::local_preferences::{
 };
 use plan_my_cabinet::money::Currency;
 use plan_my_cabinet::persistence::serialize;
+use plan_my_cabinet::render::lighting::{LightingMode, LightingPreference};
 use uuid::Uuid;
 
 struct TempDir(PathBuf);
@@ -49,6 +50,11 @@ fn preferences_survive_store_restart_without_touching_project_or_history() {
         inverse_scroll_zoom: true,
         material_tint: false,
         interface_scale: InterfaceScale::Percent115,
+        lighting: LightingPreference {
+            mode: LightingMode::Fixed,
+            azimuth_deg: 120,
+            elevation_deg: 30,
+        },
     };
     store.save(&prefs).unwrap();
 
@@ -59,6 +65,7 @@ fn preferences_survive_store_restart_without_touching_project_or_history() {
     let stored: serde_json::Value =
         serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
     assert_eq!(stored["preferences"]["language"], "pt-BR");
+    assert_eq!(stored["preferences"]["lighting"]["mode"], "fixed");
     assert_eq!(editor.project().revision, revision);
     assert!(!editor.is_dirty());
     assert!(!editor.can_undo());
@@ -70,6 +77,7 @@ fn preferences_survive_store_restart_without_touching_project_or_history() {
         "inverse_scroll_zoom",
         "material_tint",
         "interface_scale",
+        "lighting",
     ] {
         assert!(
             portable.get(field).is_none(),

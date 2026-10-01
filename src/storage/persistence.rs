@@ -326,7 +326,7 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         // arm (all were full overlay) or inset depth, which default exactly.
         // Version 3 predates slides and feet: no catalog items and no slide
         // installations, which also default exactly. Version 4 predates
-        // banding; material kinds are inferred below.
+        // banding and version 5 coatings; both are inferred below.
         project.schema_version = SCHEMA_VERSION;
         validate(&project)?;
     }
@@ -335,6 +335,12 @@ pub fn prepare_bytes(bytes: &[u8]) -> Result<PreparedProject, PersistenceError> 
         // banding, so inferring a kind from the name cannot invalidate it.
         for material in &mut project.materials {
             material.kind = crate::domain::MaterialKind::infer(&material.name);
+        }
+    }
+    if version < 6 {
+        // Version 5 predates coatings: guess them from the material names.
+        for material in &mut project.materials {
+            material.coating = crate::domain::Coating::infer(&material.name);
         }
     }
     project
@@ -450,6 +456,7 @@ mod tests {
         let stock = Uuid::new_v4();
         let catalog = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -466,6 +473,7 @@ mod tests {
         for _ in 0..2 {
             let board = Uuid::new_v4();
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: board,
                 name: "Side".into(),
@@ -834,8 +842,8 @@ mod tests {
             assert!(editor.preview().is_some());
         }
         assert!(matches!(
-            prepare_bytes(b"{\"schema_version\":6}"),
-            Err(PersistenceError::UnsupportedVersion(6))
+            prepare_bytes(b"{\"schema_version\":7}"),
+            Err(PersistenceError::UnsupportedVersion(7))
         ));
         assert!(matches!(
             prepare_bytes(b"{\"schema_version\":4294967296}"),

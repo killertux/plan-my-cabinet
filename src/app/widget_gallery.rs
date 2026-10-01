@@ -121,7 +121,7 @@ mod tests {
         w::apply_visuals(&ctx);
         let mut result = ctx.run_ui(egui::RawInput::default(), show);
         assert!(!result.shapes.is_empty());
-        assert_eq!(Icon::ALL.len(), 41);
+        assert_eq!(Icon::ALL.len(), 42);
         let nodes = &result
             .platform_output
             .accesskit_update

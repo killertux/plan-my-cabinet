@@ -483,6 +483,7 @@ mod tests {
         let material = Uuid::new_v4();
         let parent = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -504,6 +505,7 @@ mod tests {
             let board = Uuid::new_v4();
             let stock = Uuid::new_v4();
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: board,
                 name: "Side".into(),
@@ -852,6 +854,7 @@ mod tests {
             .transact(|p| -> Result<(), ()> {
                 p.stock[0].name = "Different label".into();
                 p.materials.push(Material {
+                    coating: Default::default(),
                     default_band: None,
                     kind: Default::default(),
                     id: Uuid::new_v4(),
@@ -936,6 +939,7 @@ mod tests {
         editor
             .transact(|p| -> Result<(), ()> {
                 p.materials.push(Material {
+                    coating: Default::default(),
                     default_band: None,
                     kind: Default::default(),
                     id: other,
@@ -973,6 +977,7 @@ mod tests {
         editor
             .transact(|p| -> Result<(), ()> {
                 p.materials.push(Material {
+                    coating: Default::default(),
                     default_band: None,
                     kind: Default::default(),
                     id: other,

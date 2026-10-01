@@ -69,6 +69,7 @@ pub fn project() -> Project {
         (HDF_ID, "HDF", 3, BoardGrain::Unrestricted),
     ] {
         p.materials.push(Material {
+            coating: crate::domain::Coating::infer(name),
             default_band: None,
             kind: crate::domain::MaterialKind::infer(name),
             id,
@@ -173,6 +174,7 @@ pub fn project() -> Project {
         ),
     ] {
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id,
             name: name.into(),

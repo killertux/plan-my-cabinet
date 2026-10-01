@@ -17,6 +17,7 @@ fn fixture() -> Project {
     let mut project = Project::new("Workshop São João", Currency::Brl);
     let material = Uuid::new_v4();
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material,
@@ -25,6 +26,7 @@ fn fixture() -> Project {
         default_grain: BoardGrain::Length,
     });
     project.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: Uuid::new_v4(),
         name: "Unallocated hidden shelf".into(),

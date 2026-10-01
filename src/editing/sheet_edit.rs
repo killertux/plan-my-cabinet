@@ -314,6 +314,7 @@ mod tests {
         let mut p = Project::new("repair", Currency::Brl);
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -345,6 +346,7 @@ mod tests {
         ];
         for (i, id) in boards.iter().enumerate() {
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: *id,
                 name: "part".into(),

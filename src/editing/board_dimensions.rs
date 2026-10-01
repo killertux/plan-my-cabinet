@@ -419,6 +419,7 @@ mod tests {
         let mut project = Project::new("Cabinet", Currency::Brl);
         let material_id = Uuid::new_v4();
         project.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material_id,
@@ -443,6 +444,7 @@ mod tests {
         });
         let board_id = Uuid::new_v4();
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: board_id,
             name: "Shelf".into(),

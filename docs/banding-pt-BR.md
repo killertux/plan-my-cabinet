@@ -75,3 +75,6 @@ sozinho).
   L1 e L2 as da largura) e uma tabela **Fita de borda** com os metros de cada
   fita, mais 10 % para comprar.
 - O arquivo do CorteCloud manda cada fita no seu lado da peça.
+
+Na área 3D, uma borda com fita fica na cor da fita, e uma borda sem fita
+mostra o miolo cru da chapa (veja [Revestimento e aparência das chapas](coating-pt-BR.md)).

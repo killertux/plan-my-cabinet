@@ -142,6 +142,7 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
     let mut project = Project::new("evidence", Currency::Brl);
     let id = Uuid::new_v4();
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id,
@@ -167,6 +168,7 @@ fn comparison_uses_recorded_values_and_ignores_presentation_color() {
 fn oversized_evidence_blocks_export_before_destination_is_touched() {
     let mut project = Project::new("oversized", Currency::Brl);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: Uuid::new_v4(),

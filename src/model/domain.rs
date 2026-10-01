@@ -12,7 +12,7 @@ pub use crate::hardware_spec::{
 use crate::money::{Currency, Money};
 use crate::units::{Length, Pose, Unit, UnitError};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 pub const DEFAULT_GRID_SPACING: Length = Length::from_micrometres(10_000);
 /// Provisional project cutting assumption; confirm against the actual saw before shop use.
 pub const DEFAULT_CUTTING_KERF: Length = Length::from_micrometres(5_000);
@@ -73,6 +73,74 @@ pub struct Material {
     /// The band automatic banding puts on this material's free edges.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_band: Option<Uuid>,
+    /// Which faces of the sheet are coated (melamine, laminate). Only MDF,
+    /// MDP and HDF have a coating; other kinds ignore it. Files older than
+    /// schema 6 infer it from the name on load.
+    #[serde(default)]
+    pub coating: Coating,
+}
+
+impl Material {
+    /// The coating that applies: `None` for kinds that are never coated.
+    pub fn effective_coating(&self) -> Option<Coating> {
+        self.kind.accepts_coating().then_some(self.coating)
+    }
+}
+
+/// How many broad faces of a sheet are coated.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Coating {
+    /// Raw on both faces ("MDF cru").
+    None,
+    /// One coated face, the other raw ("1 face").
+    OneSide,
+    #[default]
+    BothSides,
+}
+
+impl Coating {
+    pub const ALL: [Self; 3] = [Self::None, Self::OneSide, Self::BothSides];
+
+    /// Best guess from a material name, for files that predate coatings:
+    /// "cru"/"raw" is uncoated, "1 face"/"one side" is coated on one face,
+    /// anything else on both.
+    pub fn infer(name: &str) -> Self {
+        let name = name.to_lowercase();
+        let tokens: Vec<&str> = name
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .collect();
+        let has = |word: &str| tokens.contains(&word);
+        let pair = |a: &str, b: &[&str]| tokens.windows(2).any(|w| w[0] == a && b.contains(&w[1]));
+        if has("cru") || has("crua") || has("raw") || has("unfaced") {
+            Self::None
+        } else if has("1f")
+            || pair("1", &["face", "lado", "side"])
+            || pair("uma", &["face"])
+            || pair("one", &["side", "sided", "face"])
+        {
+            Self::OneSide
+        } else {
+            Self::BothSides
+        }
+    }
+}
+
+/// Which broad face of a one-side coated board carries the coating.
+/// `Auto` follows the automatic rule (the face that shows); the others are
+/// the user's choice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CoatedFace {
+    #[default]
+    Auto,
+    MinZ,
+    MaxZ,
+}
+
+impl CoatedFace {
+    pub fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -100,6 +168,11 @@ impl MaterialKind {
     /// and MDP; other sheets are left as they are.
     pub const fn accepts_banding(self) -> bool {
         matches!(self, Self::Mdf | Self::Mdp)
+    }
+
+    /// Sheets sold coated on none, one or both faces.
+    pub const fn accepts_coating(self) -> bool {
+        matches!(self, Self::Mdf | Self::Mdp | Self::Hdf)
     }
 
     /// Best guess from a material name, for files that predate material kinds.
@@ -196,6 +269,9 @@ pub struct Board {
     pub pose: Pose,
     #[serde(default, skip_serializing_if = "BoardBanding::is_automatic")]
     pub banding: BoardBanding,
+    /// On a one-side coated material: which face is coated.
+    #[serde(default, skip_serializing_if = "CoatedFace::is_auto")]
+    pub coated_face: CoatedFace,
 }
 
 impl Board {
@@ -1032,6 +1108,7 @@ mod tests {
     fn fixture() -> Project {
         let mut project = Project::new("Cabinet", Currency::Brl);
         let material = Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: Uuid::new_v4(),
@@ -1040,6 +1117,7 @@ mod tests {
             default_grain: BoardGrain::Length,
         };
         let board = Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: Uuid::new_v4(),
             name: "Side".into(),

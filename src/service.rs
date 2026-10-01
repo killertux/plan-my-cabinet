@@ -3,6 +3,7 @@
 //! serializable result or a [`ServiceError`](error::ServiceError). The MCP
 //! server in the desktop binary is a thin adapter over this module.
 pub mod banding;
+pub mod coating;
 pub mod design;
 pub mod dto;
 pub mod error;

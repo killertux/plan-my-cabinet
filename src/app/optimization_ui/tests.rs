@@ -10,6 +10,7 @@ fn fixture() -> ProjectEditor {
     let material = Uuid::new_v4();
     let mm = |n: i64| Length::from_micrometres(n * 1000);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material,
@@ -18,6 +19,7 @@ fn fixture() -> ProjectEditor {
         default_grain: BoardGrain::Unrestricted,
     });
     project.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: Uuid::new_v4(),
         name: "part".into(),

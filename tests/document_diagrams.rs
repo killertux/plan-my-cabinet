@@ -46,6 +46,7 @@ fn sections(diagrams: bool, hardware: bool) -> ReceiptSections {
 fn stock_fixture(count: usize) -> Project {
     let mut p = Project::new("Oficina São João", Currency::Brl);
     p.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: id(1),
@@ -68,6 +69,7 @@ fn stock_fixture(count: usize) -> Project {
     });
     for n in 0..count {
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: id(100 + n as u128),
             name: format!("Prateleira número {n:02} — ação"),
@@ -286,6 +288,7 @@ fn trims_are_counted_as_real_witness_cuts_and_toggles_remove_diagram_and_steps_t
 fn hinge_fixture() -> Project {
     let mut p = Project::new("Porta", Currency::Brl);
     p.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: id(10),
@@ -295,6 +298,7 @@ fn hinge_fixture() -> Project {
     });
     for (n, name) in [(11, "Door"), (12, "Mount")] {
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: id(n),
             name: name.into(),

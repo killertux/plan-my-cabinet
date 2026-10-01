@@ -11,7 +11,7 @@ macro_rules! icons {
         pub enum Icon { $($variant),+ }
 
         impl Icon {
-            pub const ALL: [Self; 41] = [$(Self::$variant),+];
+            pub const ALL: [Self; 42] = [$(Self::$variant),+];
 
             /// Stable asset identifier, not a localized action label.
             pub const fn name(self) -> &'static str {
@@ -38,12 +38,12 @@ icons! {
     Duplicate => "duplicate", Trash => "trash", Save => "save", Folder => "folder",
     Place => "place", Axes => "axes", Bolt => "bolt", Layers => "layers", Globe => "globe",
     Door => "door", Cube => "cube", Dots => "dots", List => "list", Command => "command",
-    Grain => "grain", Band => "band",
+    Grain => "grain", Band => "band", Light => "light",
 }
 
 /// Icons drawn for the app after the handoff, in its style (24 × 24,
 /// 1.7 stroke, round caps and joins). They have no handoff source.
-pub const APP_ICONS: &[&str] = &["band"];
+pub const APP_ICONS: &[&str] = &["band", "light"];
 
 /// Install the pinned SVG loader once during app creation (safe to call again).
 /// SVG bytes are embedded; no filesystem or HTTP loader is enabled.

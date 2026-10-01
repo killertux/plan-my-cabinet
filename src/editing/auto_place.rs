@@ -109,6 +109,7 @@ mod tests {
         let mut project = Project::new("auto", Currency::Brl);
         let material = Uuid::new_v4();
         project.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -118,6 +119,7 @@ mod tests {
         });
         for index in 0..5 {
             project.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: format!("b{index}"),

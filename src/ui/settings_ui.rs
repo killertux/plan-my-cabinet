@@ -11,6 +11,7 @@ use crate::icons::{Icon, icon};
 use crate::kerf_date::confirmation_date_utc;
 use crate::local_preferences::{InterfaceScale, LocalPreferences};
 use crate::money::{Money, MoneyLocale};
+use crate::render::lighting::{ELEVATION_RANGE, LightingMode, LightingPreference};
 use crate::theme::Typeface;
 use crate::theme_widgets as tw;
 use crate::units::{Length, Unit};
@@ -83,6 +84,8 @@ pub enum SettingsIntent {
     SetNavigationHints(bool),
     SetInverseScrollZoom(bool),
     SetMaterialTint(bool),
+    SetLighting(LightingPreference),
+    LightFromView,
     SetScale(InterfaceScale),
     ShowRecoveryFolder,
     ReviewRecoveryCleanup,
@@ -757,6 +760,91 @@ fn row(
                 content(ui);
             });
         });
+    }
+}
+
+/// The lighting mode, and for a fixed light its direction.
+fn lighting_controls(
+    ui: &mut egui::Ui,
+    language: Language,
+    lighting: LightingPreference,
+    out: &mut Vec<SettingsIntent>,
+) {
+    let mut chosen = lighting;
+    let options = [
+        (
+            LightingMode::FollowCamera,
+            tr(language, "Follow camera", "Seguir câmera"),
+        ),
+        (LightingMode::Fixed, tr(language, "Fixed", "Fixa")),
+        (LightingMode::Off, tr(language, "Off", "Desligada")),
+    ];
+    segmented(
+        ui,
+        "settings-lighting",
+        &mut chosen.mode,
+        &options,
+        320.0,
+        30.0,
+        false,
+    );
+    paragraph(
+        ui,
+        match chosen.mode {
+            LightingMode::FollowCamera => tr(
+                language,
+                "The light sits by your eye: whatever you look at is lit.",
+                "A luz fica junto ao seu olho: o que você olha fica iluminado.",
+            ),
+            LightingMode::Fixed => tr(
+                language,
+                "The light stays put while you orbit around the design.",
+                "A luz fica parada enquanto você gira em volta do projeto.",
+            ),
+            LightingMode::Off => tr(
+                language,
+                "Even, soft shading without a directional light.",
+                "Sombreamento uniforme e suave, sem luz direcional.",
+            ),
+        },
+        12.0,
+        tw::MUTED,
+    );
+    if chosen.mode == LightingMode::Fixed {
+        let mut azimuth = i32::from(chosen.azimuth_deg);
+        let mut elevation = i32::from(chosen.elevation_deg);
+        ui.add(
+            egui::Slider::new(&mut azimuth, 0..=355)
+                .step_by(5.0)
+                .suffix("°")
+                .text(tr(language, "Around", "Ao redor")),
+        );
+        ui.add(
+            egui::Slider::new(
+                &mut elevation,
+                i32::from(*ELEVATION_RANGE.start())..=i32::from(*ELEVATION_RANGE.end()),
+            )
+            .step_by(5.0)
+            .suffix("°")
+            .text(tr(language, "Height", "Altura")),
+        );
+        chosen.azimuth_deg = azimuth as i16;
+        chosen.elevation_deg = elevation as i16;
+    }
+    if link(
+        ui,
+        tr(
+            language,
+            "Fix the light where the camera is now",
+            "Fixar a luz onde a câmera está agora",
+        ),
+        LINK,
+    )
+    .clicked()
+    {
+        out.push(SettingsIntent::LightFromView);
+    } else if chosen != lighting {
+        out.push(SettingsIntent::SetLighting(chosen));
     }
 }
 
@@ -1474,6 +1562,14 @@ fn general(
             }
         }
     });
+    rule(ui);
+    row(
+        ui,
+        tr(language, "Lighting", "Iluminação"),
+        tr(language, "3D view only", "Só na área 3D"),
+        5.0,
+        |ui| lighting_controls(ui, language, prefs.lighting, out),
+    );
     rule(ui);
     row(
         ui,

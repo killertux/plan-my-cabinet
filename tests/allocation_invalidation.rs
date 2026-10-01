@@ -23,6 +23,7 @@ fn fixture() -> ProjectEditor {
     let material = Uuid::new_v4();
     let stock = Uuid::new_v4();
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material,
@@ -46,6 +47,7 @@ fn fixture() -> ProjectEditor {
     for x in [0, 105] {
         let board = Uuid::new_v4();
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: board,
             name: "shelf".into(),

@@ -1622,6 +1622,7 @@ mod tests {
         let stock_id = Uuid::new_v4();
         let catalog_id = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material_id,
@@ -1645,6 +1646,7 @@ mod tests {
         for _ in 0..2 {
             let id = Uuid::new_v4();
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id,
                 name: "Shelf".into(),

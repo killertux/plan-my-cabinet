@@ -26,6 +26,7 @@ fn fixture() -> Project {
     let mut p = Project::new("Armário / Cabinet", Currency::Brl);
     p.id = id(1);
     p.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: id(2),
@@ -34,6 +35,7 @@ fn fixture() -> Project {
         default_grain: BoardGrain::Length,
     });
     p.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: id(3),
         name: "Prateleira".into(),
@@ -215,6 +217,7 @@ fn legacy_golden_migrates_losslessly_offline_and_saves_only_on_request() {
     original["next_stock_s_alias"] = 2.into();
     original["next_stock_o_alias"] = 1.into();
     original["materials"][0]["kind"] = "Plywood".into();
+    original["materials"][0]["coating"] = "BothSides".into();
     let saved: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&transferred).unwrap()).unwrap();
     assert_eq!(saved, original);

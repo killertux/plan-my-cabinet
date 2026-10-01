@@ -88,6 +88,7 @@ pub(crate) struct CreationDialog {
     /// A new material's type; `None` follows the name ("MDF Branco" is MDF).
     pub(crate) material_kind: Option<plan_my_cabinet::domain::MaterialKind>,
     pub(crate) default_band: Option<Uuid>,
+    pub(crate) material_coating: Option<plan_my_cabinet::domain::Coating>,
     pub(crate) preview: Option<(BoardPreviewKey, BoardPreview)>,
     pub(crate) error: bool,
 }
@@ -120,6 +121,7 @@ pub(crate) fn fit_new_board(
         .expect("validated material");
     let id = Uuid::new_v4();
     project.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id,
         name,
@@ -200,6 +202,7 @@ impl CreationDialog {
             color: None,
             material_kind: None,
             default_band: None,
+            material_coating: None,
             preview: None,
             error: false,
         }
@@ -1685,6 +1688,7 @@ impl DesktopApp {
         let locale = dialog_locale(&self.localizer);
         let mut preview: Option<MaterialChangePreview> = None;
         let mut banding_change = None;
+        let mut coating_change = None;
         let title = self.localizer.text("material-edit");
         let cancel_label = self.localizer.text("cancel");
         let confirm_label = self.localizer.text("material-save-action");
@@ -1794,6 +1798,16 @@ impl DesktopApp {
                         &mut band,
                     ) {
                         banding_change = Some((kind, band));
+                    }
+                    let mut coating = material.coating;
+                    if crate::coating_ui::material_coating_field(
+                        ui,
+                        &self.localizer,
+                        "material-edit",
+                        kind,
+                        &mut coating,
+                    ) {
+                        coating_change = Some(coating);
                     }
                 }
                 if valid {
@@ -1986,6 +2000,10 @@ impl DesktopApp {
                 )
             },
         );
+        if let Some(coating) = coating_change {
+            let result = self.editor.set_material_coating(draft.id, coating);
+            self.report_edit(result);
+        }
         if let Some((kind, band)) = banding_change {
             let before = plan_my_cabinet::banding::banded_edges(self.editor.project());
             let result = self.editor.set_material_banding(draft.id, kind, band);
@@ -2476,6 +2494,18 @@ impl DesktopApp {
                     if kind != before {
                         draft.material_kind = Some(kind);
                     }
+                    let mut coating = draft
+                        .material_coating
+                        .unwrap_or_else(|| plan_my_cabinet::domain::Coating::infer(&draft.name));
+                    if crate::coating_ui::material_coating_field(
+                        ui,
+                        &self.localizer,
+                        "material-create",
+                        kind,
+                        &mut coating,
+                    ) {
+                        draft.material_coating = Some(coating);
+                    }
                     thickness
                 };
                 if draft.error {
@@ -2527,6 +2557,9 @@ impl DesktopApp {
                             plan_my_cabinet::domain::MaterialKind::infer(&draft.name)
                         });
                         project.materials.push(plan_my_cabinet::domain::Material {
+                            coating: draft.material_coating.unwrap_or_else(|| {
+                                plan_my_cabinet::domain::Coating::infer(&draft.name)
+                            }),
                             default_band: draft.default_band.filter(|band| {
                                 kind.accepts_banding() && project.edge_band(*band).is_some()
                             }),

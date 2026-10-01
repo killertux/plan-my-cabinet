@@ -160,6 +160,7 @@ pub fn render_picture(
         show_shadow: request.view.yaw_pitch().1.abs() < 1.2,
         poses: request.poses,
         supersample: 2,
+        ..Default::default()
     };
     let (yaw, pitch) = request.view.yaw_pitch();
     let mut camera = Camera {

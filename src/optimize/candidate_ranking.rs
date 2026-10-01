@@ -227,6 +227,7 @@ mod tests {
     fn fixture() -> Project {
         let mut p = Project::new("ranking", Currency::Brl);
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: id(1),
@@ -235,6 +236,7 @@ mod tests {
             default_grain: BoardGrain::Unrestricted,
         });
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: id(2),
             name: "part".into(),

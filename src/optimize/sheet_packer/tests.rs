@@ -12,6 +12,7 @@ fn project(boards: &[(i64, i64)], sheets: &[(i64, i64)]) -> Project {
     let mut project = Project::new("pack", Currency::Brl);
     let material = Uuid::from_u128(1);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material,
@@ -21,6 +22,7 @@ fn project(boards: &[(i64, i64)], sheets: &[(i64, i64)]) -> Project {
     });
     for (index, (l, w)) in boards.iter().enumerate() {
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: Uuid::from_u128(100 + index as u128),
             name: format!("b{index}"),
