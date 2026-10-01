@@ -775,13 +775,21 @@ fn reconstruct_region(
     for axis in axis_order {
         let a = axis.index();
         let (low, high) = ends(rect, a);
-        let mut candidates = vec![low, high - kerf];
+        let mut candidates = Vec::new();
         for &index in indices {
             let (start, end) = ends(parts[index].rect, a);
             candidates.extend([start - kerf, end]);
         }
         candidates.sort_unstable();
         candidates.dedup();
+        // Cuts on a region's own edge only shave one kerf off it. Try them
+        // last: tried first they always succeed, and an empty strip beside
+        // the parts was peeled away one blade width at a time.
+        for edge in [low, high - kerf] {
+            if !candidates.contains(&edge) {
+                candidates.push(edge);
+            }
+        }
         for start in candidates {
             if cancelled() {
                 return SearchResult::Cancelled;
@@ -1220,6 +1228,22 @@ mod tests {
             locked: false,
         });
         project.boards.push(board);
+    }
+
+    #[test]
+    fn an_empty_gap_between_parts_is_one_cut_not_a_kerf_at_a_time() {
+        let (mut project, _) = fixture();
+        project.stock[0].length = mm(1000);
+        project.stock[0].width = mm(1000);
+        placed(&mut project, 0, 800, 100, 50);
+        let Reconstruction::Verified { tree, .. } =
+            reconstruct_witness(&project, project.stock[0].id, mm(5), 20_000)
+        else {
+            panic!("expected a verified witness");
+        };
+        // A strip for the column, then the two parts with the gap between
+        // them: a handful of cuts, not one per 5 mm of the 745 mm gap.
+        assert!(tree.cut_count() <= 5, "{}", tree.cut_count());
     }
 
     #[test]

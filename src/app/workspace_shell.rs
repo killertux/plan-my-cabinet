@@ -208,8 +208,25 @@ pub(crate) fn rail(
                 for (workspace, key, icon) in ENTRIES {
                     let label = localizer.text(key);
                     let selected = active == workspace;
+                    let ink = if selected {
+                        colors::ACCENT_DARK
+                    } else {
+                        colors::MUTED
+                    };
+                    let font = if selected {
+                        colors::weighted_font(ui, 9.5, crate::theme::Typeface::SansMedium)
+                    } else {
+                        egui::FontId::proportional(9.5)
+                    };
+                    // Long labels ("Plano de corte") wrap onto a second line
+                    // instead of spilling past the rail.
+                    let line = ui.fonts_mut(|f| f.row_height(&font));
+                    let mut job = egui::text::LayoutJob::simple(label.clone(), font, ink, 46.0);
+                    job.halign = egui::Align::Center;
+                    let galley = ui.painter().layout_job(job);
+                    let extra = (galley.size().y - line).max(0.0);
                     let (rect, response) = ui.allocate_exact_size(
-                        egui::vec2(48.0, 50.0),
+                        egui::vec2(48.0, 50.0 + extra),
                         if enabled {
                             egui::Sense::click()
                         } else {
@@ -232,27 +249,14 @@ pub(crate) fn rail(
                         Color32::TRANSPARENT
                     };
                     ui.painter().rect_filled(rect, 8.0, fill);
-                    let ink = if selected {
-                        colors::ACCENT_DARK
-                    } else {
-                        colors::MUTED
-                    };
                     let icon_center = rect.center_top() + egui::vec2(0.0, 17.0);
                     icons::icon(icon, ink, 19.0).paint_at(
                         ui,
                         egui::Rect::from_center_size(icon_center, egui::Vec2::splat(19.0)),
                     );
-                    ui.painter().text(
-                        rect.center_bottom() - egui::vec2(0.0, 9.0),
-                        egui::Align2::CENTER_CENTER,
-                        &label,
-                        if selected {
-                            colors::weighted_font(ui, 9.5, crate::theme::Typeface::SansMedium)
-                        } else {
-                            egui::FontId::proportional(9.5)
-                        },
-                        ink,
-                    );
+                    let text_top = rect.top() + 41.0 - line / 2.0;
+                    ui.painter()
+                        .galley(egui::pos2(rect.center().x, text_top), galley, ink);
                     if workspace == Workspace::CutPlan && issues.total() > 0 {
                         ui.painter().circle_filled(
                             icon_center + egui::vec2(11.0, -8.0),
