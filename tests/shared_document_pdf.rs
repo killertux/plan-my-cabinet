@@ -175,6 +175,7 @@ fn dense_document(language: Language) -> Document {
     let material_id = Uuid::from_u128(1);
     let stock_id = Uuid::from_u128(2);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material_id,
@@ -199,6 +200,7 @@ fn dense_document(language: Language) -> Document {
     for n in 0..28_u128 {
         let board_id = Uuid::from_u128(100 + n);
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: board_id,
             name: format!("Prateleira número {n:02} — ação"),

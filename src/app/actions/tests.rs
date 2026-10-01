@@ -200,6 +200,7 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::ToggleBanding, R::Design),
         (A::SetBanding, R::Design),
         (A::ApplyBandingPreset, R::Design),
+        (A::SetCoatedFace, R::Design),
         (A::NewEdgeBand, R::Design),
         (A::EditEdgeBand, R::Design),
         (A::RemoveEdgeBand, R::Design),
@@ -275,6 +276,8 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         (A::ViewFrame, R::Design),
         (A::ViewPreset, R::Design),
         (A::ViewProjection, R::Design),
+        (A::SetLighting, R::Design),
+        (A::LightFromView, R::Design),
     ];
     assert_eq!(
         routes.len(),
@@ -297,6 +300,7 @@ fn existing_capabilities_have_unique_accessible_localized_routes() {
         include_str!("../project_ui.rs"),
         include_str!("../assembly_ui.rs"),
         include_str!("../banding_ui.rs"),
+        include_str!("../coating_ui.rs"),
         include_str!("../stock_ui.rs"),
         include_str!("../hardware_ui.rs"),
         include_str!("../hinge_ui.rs"),

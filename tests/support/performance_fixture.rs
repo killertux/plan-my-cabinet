@@ -15,6 +15,7 @@ pub fn fixture() -> Project {
     project.id = id(1);
     project.cutting_kerf = mm(5);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: id(2),
@@ -24,6 +25,7 @@ pub fn fixture() -> Project {
     });
     for i in 0..100 {
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: id(100 + i),
             name: format!("Part {:03}", i + 1),

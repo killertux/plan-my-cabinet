@@ -94,6 +94,12 @@ impl DesktopApp {
             SettingsIntent::SetNavigationHints(enabled) => self.set_navigation_hints(enabled),
             SettingsIntent::SetInverseScrollZoom(enabled) => self.set_inverse_scroll_zoom(enabled),
             SettingsIntent::SetMaterialTint(enabled) => self.set_material_tint(enabled),
+            SettingsIntent::SetLighting(lighting) => {
+                self.change_preferences(|preferences| preferences.lighting = lighting.normalized())
+            }
+            SettingsIntent::LightFromView => {
+                let _ = self.invoke(Request::new(A::LightFromView));
+            }
             SettingsIntent::SetScale(scale) => self.set_interface_scale(ctx, scale),
             SettingsIntent::HelpShortcuts => {
                 self.settings.state.section = SettingsSection::Shortcuts

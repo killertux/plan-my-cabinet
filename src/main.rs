@@ -60,11 +60,11 @@ use plan_my_cabinet::{icons, theme, theme_widgets};
 // Desktop-only modules. Re-exported here so `crate::<module>` paths stay short.
 mod app;
 use app::{
-    actions, assembly_ui, banding_ui, capture, catalog_ui, command_palette, currency_ui,
-    door_joint_ui, file_export_ui, handoff_ui, hardware_ui, hinge_ui, kerf_confirmation_ui,
-    modal_chrome, modals, optimization_ui, pending_navigation, placement_ui, project_name_ui,
-    project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, slide_ui, state, stock_ui,
-    template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
+    actions, assembly_ui, banding_ui, capture, catalog_ui, coating_ui, command_palette,
+    currency_ui, door_joint_ui, file_export_ui, handoff_ui, hardware_ui, hinge_ui,
+    kerf_confirmation_ui, modal_chrome, modals, optimization_ui, pending_navigation, placement_ui,
+    project_name_ui, project_ui, receipt_ui, recovery_cleanup_ui, sheet_ui, slide_ui, state,
+    stock_ui, template_setup_ui, toasts, viewport, welcome_host, widget_gallery, workspace_shell,
     workspace_state,
 };
 // Types and helpers the split-out modules share with the rest of the app.

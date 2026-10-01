@@ -13,9 +13,12 @@ use crate::render::camera::{
     Bounds, Camera, Projection, Selection, board_corners, box_corners, dot, world_pose,
 };
 use crate::render::hardware_mesh::{Solid, outline_for, solids};
+use crate::render::lighting::{Light, shade};
 use crate::render::mesh::{
-    BACKGROUND, Mesh, add_floor_shadow, add_grid, board_face_color, relative,
+    BACKGROUND, BoxLook, FACE_FLOATS, LINE_FLOATS, Mesh, add_floor_shadow, add_grid,
+    board_face_color, board_looks, relative,
 };
+use crate::render::surface::{self, Surface};
 use crate::units::Pose;
 
 /// An RGBA8 image with one object slot per pixel.
@@ -85,6 +88,8 @@ pub struct SceneStyle<'a> {
     pub poses: Option<&'a HashMap<Uuid, Pose>>,
     /// Supersampling factor per axis (1 = none).
     pub supersample: usize,
+    /// Pictures use [`Light::studio`], whatever the viewport's lighting.
+    pub light: Light,
 }
 
 impl Default for SceneStyle<'_> {
@@ -98,6 +103,7 @@ impl Default for SceneStyle<'_> {
             show_shadow: true,
             poses: None,
             supersample: 2,
+            light: Light::studio(),
         }
     }
 }
@@ -113,46 +119,43 @@ pub enum RenderError {
 struct Item {
     id: Uuid,
     geometry: Geometry,
-    face: [f32; 3],
     edge: [f32; 3],
-    bands: [Option<[f32; 3]>; 4],
 }
 
 enum Geometry {
-    Box([[f64; 3]; 8]),
-    Solid(Box<Solid>),
+    Box([[f64; 3]; 8], Box<BoxLook>),
+    Solid(Box<Solid>, [f32; 3]),
 }
 
 impl Item {
     fn points(&self) -> Vec<[f64; 3]> {
         match &self.geometry {
-            Geometry::Box(corners) => corners.to_vec(),
-            Geometry::Solid(solid) => solid.points(),
+            Geometry::Box(corners, _) => corners.to_vec(),
+            Geometry::Solid(solid, _) => solid.points(),
         }
     }
 
     fn mesh(&self, target: [f64; 3]) -> Mesh {
         let mut mesh = Mesh::default();
         match &self.geometry {
-            Geometry::Box(corners) => {
-                mesh.box_mesh_banded(
-                    corners.map(|p| relative(p, target)),
-                    self.face,
-                    self.edge,
-                    self.bands,
-                    None,
-                );
+            Geometry::Box(corners, look) => {
+                mesh.box_mesh_look(corners.map(|p| relative(p, target)), look, self.edge, None);
             }
-            Geometry::Solid(solid) => mesh.add_solid(solid, target, self.face, self.edge),
+            Geometry::Solid(solid, face) => mesh.add_solid(solid, target, *face, self.edge),
         }
         mesh
     }
 }
 
+/// The selection tint pictures use.
+fn picked(color: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|i| color[i] * 0.45 + [1.0, 0.70, 0.30][i] * 0.55)
+}
+
 fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<Item> {
     let posed = |id: Uuid| style.poses.and_then(|p| p.get(&id).copied());
     let mut out = Vec::new();
-    let bands = crate::render::mesh::band_colors(project);
+    let looks = board_looks(project, style.material_tint);
     for board in &project.boards {
         if !selection.visible(project, board.id) {
             continue;
@@ -167,12 +170,14 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
             None => board_corners(project, board),
         };
         let Some(corners) = corners else { continue };
-        let base = board_face_color(project, board, style.material_tint);
+        let look = looks.get(&board.id).copied().unwrap_or_else(|| {
+            BoxLook::plain(board_face_color(project, board, style.material_tint))
+        });
         let highlighted = crate::render::camera::selected_board(project, &selection.ids, board.id);
-        let face = if highlighted {
-            std::array::from_fn(|i| base[i] * 0.45 + [1.0, 0.70, 0.30][i] * 0.55)
+        let look = if highlighted {
+            look.map_colors(picked)
         } else {
-            base
+            look
         };
         let edge = if highlighted {
             [0.79, 0.45, 0.12]
@@ -181,10 +186,8 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
         };
         out.push(Item {
             id: board.id,
-            geometry: Geometry::Box(corners),
-            face,
+            geometry: Geometry::Box(corners, Box::new(look)),
             edge,
-            bands: bands.get(&board.id).copied().unwrap_or([None; 4]),
         });
     }
     if style.show_hardware {
@@ -203,22 +206,21 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
                 continue;
             };
             let highlighted = selection.ids.contains(&hardware.id);
+            let face = if highlighted {
+                [0.95, 0.72, 0.45]
+            } else {
+                [0.66, 0.70, 0.69]
+            };
             out.push(Item {
                 id: hardware.id,
-                geometry: Geometry::Box(corners),
-                face: if highlighted {
-                    [0.95, 0.72, 0.45]
-                } else {
-                    [0.66, 0.70, 0.69]
-                },
+                geometry: Geometry::Box(corners, Box::new(BoxLook::plain(face))),
                 edge: [0.35, 0.38, 0.38],
-                bands: [None; 4],
             });
         }
         for solid in solids(project, selection, style.poses) {
             let highlighted = selection.ids.contains(&solid.id);
             let face = if highlighted {
-                std::array::from_fn(|i| solid.base[i] * 0.45 + [1.0, 0.70, 0.30][i] * 0.55)
+                picked(solid.base)
             } else {
                 solid.base
             };
@@ -229,10 +231,8 @@ fn items(project: &Project, selection: &Selection, style: &SceneStyle) -> Vec<It
             };
             out.push(Item {
                 id: solid.id,
-                geometry: Geometry::Solid(Box::new(solid)),
-                face,
+                geometry: Geometry::Solid(Box::new(solid), face),
                 edge,
-                bands: [None; 4],
             });
         }
     }
@@ -366,21 +366,21 @@ pub fn render_scene(
         }
         add_floor_shadow(&mut background, bounds, camera);
     }
-    for triangle in background.shadow.as_chunks::<18>().0 {
-        target.triangle(triangle, u32::MAX, false)?;
+    for triangle in background.shadow.as_chunks::<{ 3 * LINE_FLOATS }>().0 {
+        target.triangle::<LINE_FLOATS>(triangle, u32::MAX, None);
     }
     for (index, item) in items.iter().enumerate() {
         let mesh = item.mesh(camera.target);
-        for triangle in mesh.faces.as_chunks::<18>().0 {
-            target.triangle(triangle, index as u32, true)?;
+        for triangle in mesh.faces.as_chunks::<{ 3 * FACE_FLOATS }>().0 {
+            target.triangle::<FACE_FLOATS>(triangle, index as u32, Some(&style.light));
         }
     }
-    for line in background.lines.as_chunks::<12>().0 {
+    for line in background.lines.as_chunks::<{ 2 * LINE_FLOATS }>().0 {
         target.line(line, 0.0);
     }
     for item in &items {
         let mesh = item.mesh(camera.target);
-        for line in mesh.lines.as_chunks::<12>().0 {
+        for line in mesh.lines.as_chunks::<{ 2 * LINE_FLOATS }>().0 {
             target.line(line, ss as f32 * 0.6);
         }
     }
@@ -423,22 +423,31 @@ impl<'a> Target<'a> {
         self.camera.projection == Projection::Perspective
     }
 
-    fn triangle(&mut self, t: &[f32], object: u32, write_depth: bool) -> Result<(), RenderError> {
-        let mut v = [(egui::Pos2::ZERO, 0.0, [0.0_f32; 3]); 3];
-        for (vertex, slot) in t.as_chunks::<6>().0.iter().zip(v.iter_mut()) {
+    /// One triangle of `N`-float vertices: position first, then either a
+    /// color (unlit, `light` is `None`: the floor shadow, which writes no
+    /// depth) or the lit face attributes of [`Mesh::face_vertex`].
+    fn triangle<const N: usize>(&mut self, t: &[f32], object: u32, light: Option<&Light>) {
+        let write_depth = light.is_some();
+        let mut v = [(egui::Pos2::ZERO, 0.0, [0.0_f32; N]); 3];
+        for (vertex, slot) in t.as_chunks::<N>().0.iter().zip(v.iter_mut()) {
             // Geometry behind the eye is skipped rather than failing the picture.
             let Some((position, depth)) = self.vertex(vertex) else {
-                return Ok(());
+                return;
             };
-            *slot = (position, depth, [vertex[3], vertex[4], vertex[5]]);
+            *slot = (position, depth, *vertex);
         }
         let edge = |a: egui::Pos2, b: egui::Pos2, p: egui::Pos2| {
             (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
         };
         let area = edge(v[0].0, v[1].0, v[2].0);
         if area.abs() < 1e-6 {
-            return Ok(());
+            return;
         }
+        let surface = if N == FACE_FLOATS {
+            Surface::from_index(v[0].2[FACE_FLOATS - 1])
+        } else {
+            None
+        };
         let (w, h) = (self.raster.width, self.raster.height);
         let min_x = v
             .iter()
@@ -468,7 +477,7 @@ impl<'a> Target<'a> {
         for y in min_y..max_y {
             for x in min_x..max_x {
                 let p = egui::pos2(x as f32 + 0.5, y as f32 + 0.5);
-                let weights = [
+                let mut weights = [
                     edge(v[1].0, v[2].0, p) / area,
                     edge(v[2].0, v[0].0, p) / area,
                     edge(v[0].0, v[1].0, p) / area,
@@ -477,8 +486,13 @@ impl<'a> Target<'a> {
                     continue;
                 }
                 let depth = if perspective {
-                    // Perspective-correct: 1/z is linear in screen space.
-                    1.0 / (0..3).map(|i| weights[i] as f64 / v[i].1).sum::<f64>()
+                    // Perspective-correct: 1/z is linear in screen space, and
+                    // so is every attribute divided by z.
+                    let inverse: f64 = (0..3).map(|i| weights[i] as f64 / v[i].1).sum();
+                    for i in 0..3 {
+                        weights[i] = (weights[i] as f64 / v[i].1 / inverse) as f32;
+                    }
+                    1.0 / inverse
                 } else {
                     (0..3).map(|i| weights[i] as f64 * v[i].1).sum()
                 };
@@ -492,14 +506,23 @@ impl<'a> Target<'a> {
                 } else if depth >= self.depth[index] {
                     continue;
                 }
-                for channel in 0..3 {
-                    let value: f32 = (0..3).map(|i| weights[i] * v[i].2[channel]).sum();
+                let at = |k: usize| -> f32 { (0..3).map(|i| weights[i] * v[i].2[k]).sum() };
+                let color = match light {
+                    None => [at(3), at(4), at(5)],
+                    Some(light) => {
+                        let n = [at(3), at(4), at(5)];
+                        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
+                        let detail = surface.map_or(1.0, |s| surface::sample(s, [at(9), at(10)]));
+                        let base = [at(6), at(7), at(8)].map(|c| c * detail);
+                        shade(base, light.brightness(n.map(|c| c / len)))
+                    }
+                };
+                for (channel, value) in color.into_iter().enumerate() {
                     self.raster.rgba[index * 4 + channel] =
                         (value.clamp(0.0, 1.0) * 255.0).round() as u8;
                 }
             }
         }
-        Ok(())
     }
 
     /// A depth-tested line with a small bias so edges on visible faces win.

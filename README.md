@@ -225,6 +225,7 @@ Portuguese:
 - [Stock and cut planning](docs/stock-en.md)
 - [Hinges, drawer slides, feet and catalog packs](docs/hardware-en.md)
 - [Edge banding](docs/banding-en.md)
+- [Coating and how sheets look](docs/coating-en.md)
 - [Shop handoff](docs/shop-handoff-en.md)
 - [Ordering parts through CorteCloud](docs/cortecloud-en.md)
 - [Project files and recovery](docs/project-en.md)

@@ -3,6 +3,7 @@ use super::*;
 use crate::actions::{self, ActionId as A, Argument, Request};
 use plan_my_cabinet::dimension_input::{Locale, format_length};
 use plan_my_cabinet::i18n::{Language, Localizer};
+use plan_my_cabinet::render::lighting::{LightingMode, LightingPreference};
 use plan_my_cabinet::units::{Length, Unit};
 
 /// Hardware keeps the full-height scene as the primary surface. Less common
@@ -140,6 +141,8 @@ pub(super) fn show(
     modal: bool,
     pt: bool,
     preview_active: bool,
+    lighting: LightingPreference,
+    app_request: &mut Option<Request>,
 ) -> bool {
     use crate::icons::Icon;
     use crate::theme_widgets as tw;
@@ -229,6 +232,24 @@ pub(super) fn show(
                     if response.clicked() {
                         pending = Some(frame);
                     }
+                    let label = localizer.text("lighting-mode");
+                    let response = tw::ghost_icon_sized(
+                        ui,
+                        Icon::Light,
+                        &label,
+                        tw::SECONDARY,
+                        17.0,
+                        34.0,
+                        !modal,
+                        lighting.mode != LightingMode::FollowCamera,
+                    );
+                    let response = response.on_hover_text(format!(
+                        "{label}: {}",
+                        localizer.text(mode_key(lighting.mode))
+                    ));
+                    egui::Popup::menu(&response).show(|ui| {
+                        lighting_menu(ui, &localizer, lighting, app_request);
+                    });
                 });
             });
         });
@@ -423,6 +444,39 @@ pub(super) fn show(
         );
     }
     blocked
+}
+
+pub(crate) fn mode_key(mode: LightingMode) -> &'static str {
+    match mode {
+        LightingMode::FollowCamera => "lighting-follow-camera",
+        LightingMode::Fixed => "lighting-fixed",
+        LightingMode::Off => "lighting-off",
+    }
+}
+
+/// The light button's menu: the three modes and fixing the light here.
+fn lighting_menu(
+    ui: &mut egui::Ui,
+    localizer: &Localizer,
+    lighting: LightingPreference,
+    request: &mut Option<Request>,
+) {
+    for mode in LightingMode::ALL {
+        if ui
+            .selectable_label(lighting.mode == mode, localizer.text(mode_key(mode)))
+            .clicked()
+        {
+            *request = Some(Request::new(A::SetLighting).argument(Argument::Lighting(mode)));
+        }
+    }
+    ui.separator();
+    if ui
+        .button(localizer.text("lighting-from-view"))
+        .on_hover_text(localizer.text("lighting-from-view-hint"))
+        .clicked()
+    {
+        *request = Some(Request::new(A::LightFromView));
+    }
 }
 
 fn presets(

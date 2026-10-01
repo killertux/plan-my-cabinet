@@ -1154,6 +1154,7 @@ mod tests {
     fn fixture() -> (Project, CutTree) {
         let mut project = Project::new("test", Currency::Brl);
         let material = Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: Uuid::new_v4(),
@@ -1162,6 +1163,7 @@ mod tests {
             default_grain: BoardGrain::Length,
         };
         let board = Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: Uuid::new_v4(),
             name: "part".into(),

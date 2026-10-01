@@ -22,6 +22,7 @@ fn fixture(count: usize) -> Project {
     project.revision = 42;
     project.materials = vec![
         Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: id(2),
@@ -30,6 +31,7 @@ fn fixture(count: usize) -> Project {
             default_grain: BoardGrain::Length,
         },
         Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: id(3),
@@ -53,6 +55,7 @@ fn fixture(count: usize) -> Project {
     });
     for n in 0..count {
         project.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: id(100 + n as u128),
             name: if n < 5 {

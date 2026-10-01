@@ -141,6 +141,7 @@ fn pair(gap: f64, cover: i64) -> (Project, Uuid) {
     });
     let material = Uuid::new_v4();
     project.materials.push(Material {
+        coating: Default::default(),
         id: material,
         name: "MDF".into(),
         default_thickness: mm(18),
@@ -149,6 +150,7 @@ fn pair(gap: f64, cover: i64) -> (Project, Uuid) {
         default_band: Some(band),
     });
     let board = |name: &str, size: [i64; 3], at: [f64; 3]| Board {
+        coated_face: Default::default(),
         id: Uuid::new_v4(),
         name: name.into(),
         material_id: material,

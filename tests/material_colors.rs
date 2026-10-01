@@ -25,6 +25,7 @@ fn ready_editor() -> ProjectEditor {
     let board_id = Uuid::new_v4();
     let stock_id = Uuid::new_v4();
     p.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material_id,
@@ -33,6 +34,7 @@ fn ready_editor() -> ProjectEditor {
         default_grain: BoardGrain::Unrestricted,
     });
     p.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: board_id,
         name: "Side".into(),

@@ -88,3 +88,19 @@ Choose **Measure** above the view to show read-only X × Y × Z bounding dimensi
 The viewport grid lies in world XY at Z = 0, anchored at the world origin. Its project-local spacing starts at 10 mm. Use **Edit grid spacing** in Settings → Grid & units or the Design controls to enter a positive value up to 1,000,000 mm; choose mm or in for unsuffixed input, or type mm, cm, m, in, or ft explicitly (including fractional inches). Values beyond 0.001 mm precision require confirmation of the rounded result. Cancel, invalid input, and merely focusing the field leave the project unchanged. The visible grid thins at distant zoom levels for readability, while snapping always uses the exact saved spacing.
 
 In **Move board**, drag a selected board near an XY grid intersection to preview its world-origin X/Y on that intersection; its Z and rotation remain intact, even under a rotated assembly. A visible face snap takes priority over a grid snap. The drag status names the face target or **XY grid**; hold Alt to bypass both. A grid snap engages only after the drag has moved and the candidate is close on screen, so starting a drag does not jump an existing pose. Release to accept one undoable pose edit, or press Esc to cancel. Snap placement creates no permanent constraint; changing spacing never repositions existing boards. Spacing is saved with the project and restored when reopened.
+
+## Lighting
+
+Faces are shaded by the way they face, so a part looks the same however it
+was modelled. The light button at the bottom of the tool strip (a sun) and
+**Settings → General → Lighting** choose how the view is lit:
+
+- **Follow camera** (default): the light sits just above and beside your
+  eye, so whatever you look at is lit.
+- **Fixed**: the light stays put while you orbit. Set its direction with the
+  *Around* and *Height* sliders, or orbit to where you want the light and
+  choose **Fix the light here**.
+- **Off**: even, soft shading without a directional light.
+
+The choice is kept on this computer, not in the project. Pictures (PDF,
+thumbnails, agent pictures) always use the same fixed studio light.

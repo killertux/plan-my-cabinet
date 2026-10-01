@@ -352,6 +352,7 @@ impl TemplateSetup {
             match m.thickness.accepted() {
                 Some(value) if value.micrometres() > 0 => {
                     materials.push(Material {
+                        coating: crate::domain::Coating::infer(&m.name),
                         default_band: m.band.as_ref().map(|b| b.id),
                         kind: m.kind,
                         id: m.id,

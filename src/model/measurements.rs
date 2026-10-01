@@ -180,6 +180,7 @@ mod tests {
         let foot = Uuid::new_v4();
         let material = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -200,6 +201,7 @@ mod tests {
             pose: pose(0.0, 100.0),
         });
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: board,
             name: "body".into(),
@@ -281,6 +283,7 @@ mod tests {
             pose: Pose::new([3.0, 4.0, 0.0], turn).unwrap(),
         });
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -289,6 +292,7 @@ mod tests {
             default_grain: BoardGrain::Length,
         });
         p.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: board,
             name: "board".into(),

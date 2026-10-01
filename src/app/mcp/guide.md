@@ -64,6 +64,18 @@ when another board sits flat against it (at least half of the edge face, gap
 
 Sizes stay finished sizes, band included; the shop deducts the tape.
 
+## Coating
+
+MDF, MDP and HDF sheets are bought coated on `none`, `one_side` or
+`both_sides` (`coating` in `list_materials`, `create_material`,
+`update_material`). Coating belongs to the material: "MDF Branco 1 face" and
+"MDF Branco" are two materials with their own stock, and the cut plan never
+mixes them. On a one-side material each board's `coating` row says which
+broad face is coated; automatically the face toward the front (doors, backs),
+up (bottoms, shelves) or outside the cabinet (sides). Change it with
+`set_board_coated_face` (`auto`, `min_z`, `max_z`, `flip`). In pictures, raw
+faces and unbanded edges show the sheet's core; banded edges show the band.
+
 ## Ordering parts from a shop (CorteCloud)
 
 `get_part_list` previews the parts a shop would cut: identical boards grouped

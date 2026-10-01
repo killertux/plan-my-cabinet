@@ -125,3 +125,4 @@ Icons added after the handoff are listed in `APP_ICONS` and live only in
 handoff icons with their signed sources.
 
 - `band`: edge band unrolling along a board's edge (the Band edges tool).
+- `light`: a sun with eight rays (the viewport's lighting menu).

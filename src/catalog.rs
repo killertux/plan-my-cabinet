@@ -3,6 +3,7 @@
 pub mod banding_rules;
 pub mod board_frame;
 pub mod catalog_pack;
+pub mod coating_rules;
 pub mod door_joint;
 pub mod hardware_catalog;
 pub mod hinge_installation;

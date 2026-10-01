@@ -478,6 +478,7 @@ mod tests {
         let stock = Uuid::new_v4();
         let catalog = Uuid::new_v4();
         p.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: material,
@@ -501,6 +502,7 @@ mod tests {
         for name in ["Side", "Side"] {
             let board = Uuid::new_v4();
             p.boards.push(Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: board,
                 name: name.into(),

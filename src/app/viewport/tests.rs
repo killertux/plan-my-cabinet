@@ -4,6 +4,7 @@ use plan_my_cabinet::domain::{Assembly, Board, BoardGrain, HardwareKind, Materia
 use plan_my_cabinet::i18n::Language;
 use plan_my_cabinet::measurements::{Frame, Scope};
 use plan_my_cabinet::money::Currency;
+use plan_my_cabinet::render::mesh::{FACE_FLOATS, LINE_FLOATS};
 use plan_my_cabinet::units::{Length, Pose, Quaternion};
 
 #[test]
@@ -169,6 +170,7 @@ fn measurement_readout_uses_nested_rotated_bounds_and_discloses_missing_hardware
     part.width = Length::from_micrometres(50_000);
     let material_id = part.material_id;
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material_id,
@@ -325,6 +327,7 @@ fn tint_is_only_face_presentation_and_hidden_geometry_casts_no_shadow() {
     let part = board(board_id, [0.0; 3], None);
     let material_id = part.material_id;
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: material_id,
@@ -410,7 +413,7 @@ fn scene_override_moves_only_target_mesh_and_exit_recovers_identical_closed_mesh
     )]);
     let (open, _) = scene_with_faces(&project, &camera, &selection, None, Some(&poses), true);
     // Grid and axes precede the two board boxes; only the first box changes.
-    let board_floats = 36 * 6;
+    let board_floats = 36 * FACE_FLOATS;
     assert_ne!(open.faces[..board_floats], closed.faces[..board_floats]);
     assert_eq!(open.faces[board_floats..], closed.faces[board_floats..]);
     assert_eq!(
@@ -665,9 +668,11 @@ fn rectangular_board_faces_have_full_area_and_edges_follow_box_axes() {
     let mut mesh = Mesh::default();
     mesh.box_mesh(corners, [1.0; 3], [0.5; 3]);
     let triangle_area = |vertices: &[f32]| {
-        let a = [vertices[0], vertices[1], vertices[2]];
-        let b = [vertices[6], vertices[7], vertices[8]];
-        let c = [vertices[12], vertices[13], vertices[14]];
+        let vertex = |n: usize| {
+            let at = n * FACE_FLOATS;
+            [vertices[at], vertices[at + 1], vertices[at + 2]]
+        };
+        let (a, b, c) = (vertex(0), vertex(1), vertex(2));
         let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
         let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);
         let cross = [
@@ -679,12 +684,33 @@ fn rectangular_board_faces_have_full_area_and_edges_follow_box_axes() {
     };
     let areas: Vec<_> = mesh
         .faces
-        .as_chunks::<36>()
+        .as_chunks::<{ 6 * FACE_FLOATS }>()
         .0
         .iter()
-        .map(|face| triangle_area(&face[..18]) + triangle_area(&face[18..]))
+        .map(|face| {
+            triangle_area(&face[..3 * FACE_FLOATS]) + triangle_area(&face[3 * FACE_FLOATS..])
+        })
         .collect();
     assert_eq!(areas, [5000.0, 5000.0, 1800.0, 900.0, 1800.0, 900.0]);
+    // Every face's normal points out of the box, along one axis.
+    let normals: Vec<[f32; 3]> = mesh
+        .faces
+        .as_chunks::<{ 6 * FACE_FLOATS }>()
+        .0
+        .iter()
+        .map(|face| [face[3], face[4], face[5]])
+        .collect();
+    assert_eq!(
+        normals,
+        [
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+        ]
+    );
     assert_eq!(mesh.lines.len() / 12, 12);
     for edge in mesh.lines.as_chunks::<12>().0 {
         let changed_axes = (0..3).filter(|i| edge[*i] != edge[6 + i]).count();
@@ -769,6 +795,7 @@ fn independent_snap_modes_alt_and_spacing_leave_committed_poses_alone() {
     assert!(!tool.take_grid_edit_request());
     for board in &project.boards {
         project.materials.push(Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: board.material_id,
@@ -902,6 +929,7 @@ fn grid_snap_is_screen_limited_and_preserves_z_rotation_and_rotated_parent() {
         .boards
         .push(board(id, [15.0, 25.0, 0.0005], Some(parent)));
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: project.boards[0].material_id,
@@ -997,6 +1025,7 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
     let mut project = Project::new("Move", Currency::Brl);
     let source = board(id, [0.0; 3], None);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: source.material_id,
@@ -1037,7 +1066,18 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
             |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let project = editor.preview().unwrap_or(editor.project());
-                    controls::show(ui, camera, project, selection, tool, false, false, false);
+                    controls::show(
+                        ui,
+                        camera,
+                        project,
+                        selection,
+                        tool,
+                        false,
+                        false,
+                        false,
+                        Default::default(),
+                        &mut None,
+                    );
                     (canvas_rect, result) =
                         canvas::interact(ui, camera, project, selection, tool, false, false, false);
                 });
@@ -1120,6 +1160,7 @@ fn move_drag_previews_without_mutation_and_cancel_or_release_is_atomic() {
 
 fn board(id: Uuid, translation: [f64; 3], parent_id: Option<Uuid>) -> Board {
     Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id,
         name: "Part".into(),
@@ -1598,6 +1639,7 @@ fn guarded_camera_actions_match_shader_projection_and_picking_without_project_ed
     project.boards.push(board(id, [150.0, -80.0, 30.0], None));
     let source = &project.boards[0];
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: source.material_id,
@@ -1743,6 +1785,7 @@ fn top_frame_uses_nested_assembly_bounds_and_rejects_hidden_selection() {
     let mut panel = board(Uuid::new_v4(), [40.0, 10.0, 25.0], Some(group));
     panel.width = Length::from_micrometres(840_000);
     project.materials.push(Material {
+        coating: Default::default(),
         default_band: None,
         kind: Default::default(),
         id: panel.material_id,
@@ -1831,6 +1874,7 @@ fn project_mesh_and_selection_bounds_follow_parent_pose_and_dimensions() {
     });
     let board_id = Uuid::new_v4();
     project.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id: board_id,
         name: "Shelf".into(),
@@ -1874,8 +1918,8 @@ fn project_mesh_and_selection_bounds_follow_parent_pose_and_dimensions() {
             hidden: HashSet::new(),
         },
     );
-    assert_eq!(mesh.faces.len() / 6, 36);
-    assert!(mesh.lines.len() / 6 >= 24 + 6);
+    assert_eq!(mesh.faces.len() / FACE_FLOATS, 36);
+    assert!(mesh.lines.len() / LINE_FLOATS >= 24 + 6);
     assert!(mesh.faces.iter().all(|v| v.is_finite()));
     let mut visibility = Selection::default();
     visibility.choose(Some(board_id), false);

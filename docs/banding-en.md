@@ -71,3 +71,6 @@ band thickness when it cuts (CorteCloud does this itself).
   lists do) and an **Edge band** table with the metres of each band,
   plus 10 % to buy.
 - The CorteCloud file sends each band on its side of the part.
+
+In the 3D view a banded edge takes the band's colour, and an edge without
+band shows the sheet's raw core (see [Coating and how sheets look](coating-en.md)).

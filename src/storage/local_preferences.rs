@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::i18n::Language;
 use crate::persistence::{self, SaveError};
+use crate::render::lighting::LightingPreference;
 
 const FILE_NAME: &str = "preferences.json";
 const VERSION: u32 = 1;
@@ -73,6 +74,9 @@ pub struct LocalPreferences {
     pub inverse_scroll_zoom: bool,
     pub material_tint: bool,
     pub interface_scale: InterfaceScale,
+    /// How the 3D view is lit. Missing in files from before lighting.
+    #[serde(default)]
+    pub lighting: LightingPreference,
 }
 
 mod language_tag {
@@ -101,6 +105,7 @@ impl Default for LocalPreferences {
             inverse_scroll_zoom: false,
             material_tint: true,
             interface_scale: InterfaceScale::Percent100,
+            lighting: LightingPreference::default(),
         }
     }
 }
@@ -215,7 +220,9 @@ impl PreferencesStore {
         if stored.schema_version != VERSION {
             return Err(PreferencesError::UnsupportedVersion(stored.schema_version));
         }
-        Ok(Some(stored.preferences))
+        let mut preferences = stored.preferences;
+        preferences.lighting = preferences.lighting.normalized();
+        Ok(Some(preferences))
     }
 
     /// Persist a complete snapshot after a General preference change. Errors

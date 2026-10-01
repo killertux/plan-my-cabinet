@@ -1831,3 +1831,38 @@ cortecloud-include-slides-count = { $count ->
    *[other] { $count } gavetas
 }
 cortecloud-include-none = nenhum neste projeto
+
+## Revestimento
+coating-title = Revestimento
+coating-face = Face revestida
+coating-flip = Virar face revestida
+coating-auto = Voltar ao automático
+coating-summary-raw = Crua nas duas faces (sem revestimento)
+coating-summary-both = Revestida nas duas faces
+coating-summary-auto = Revestida na face { $face } · automático: { $facing }
+coating-summary-manual = Revestida na face { $face } · escolhida à mão
+coating-multi = { $count } de { $total } peças revestidas em uma face
+coating-face-min = de baixo (Z-)
+coating-face-max = de cima (Z+)
+coating-facing-front = voltada para a frente
+coating-facing-up = voltada para cima
+coating-facing-outside = voltada para fora do móvel
+coating-facing-right = voltada para a direita
+coating-skipped = { $count ->
+    [one] 1 peça não é revestida em uma face e ficou como estava.
+   *[other] { $count } peças não são revestidas em uma face e ficaram como estavam.
+}
+coating-not-one-sided = Só peças de material revestido em uma face têm face para escolher.
+coating-none = Nenhum (cru)
+coating-one-side = Uma face
+coating-both-sides = Duas faces
+material-coating = Revestimento
+material-coating-hint = Faces cruas e bordas sem fita mostram o miolo da chapa no 3D.
+
+## Iluminação
+lighting-mode = Iluminação
+lighting-follow-camera = Seguir câmera
+lighting-fixed = Fixa
+lighting-off = Desligada
+lighting-from-view = Fixar a luz aqui
+lighting-from-view-hint = Mantém a luz onde a câmera está agora enquanto você gira

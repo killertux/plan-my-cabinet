@@ -1828,3 +1828,38 @@ cortecloud-include-slides-count = { $count ->
    *[other] { $count } drawers
 }
 cortecloud-include-none = none in this design
+
+## Coating
+coating-title = Coating
+coating-face = Coated face
+coating-flip = Flip coated face
+coating-auto = Back to automatic
+coating-summary-raw = Raw on both faces (no coating)
+coating-summary-both = Coated on both faces
+coating-summary-auto = Coated on the { $face } face · automatic: { $facing }
+coating-summary-manual = Coated on the { $face } face · chosen by hand
+coating-multi = { $count } of { $total } boards coated on one side
+coating-face-min = bottom (Z-)
+coating-face-max = top (Z+)
+coating-facing-front = facing the front
+coating-facing-up = facing up
+coating-facing-outside = facing outside the cabinet
+coating-facing-right = facing right
+coating-skipped = { $count ->
+    [one] 1 board is not coated on one side and was left as it is.
+   *[other] { $count } boards are not coated on one side and were left as they are.
+}
+coating-not-one-sided = Only boards of a material coated on one side have a face to choose.
+coating-none = None (raw)
+coating-one-side = One side
+coating-both-sides = Both sides
+material-coating = Coating
+material-coating-hint = Raw faces and unbanded edges show the sheet's core in 3D.
+
+## Lighting
+lighting-mode = Lighting
+lighting-follow-camera = Follow camera
+lighting-fixed = Fixed
+lighting-off = Off
+lighting-from-view = Fix the light here
+lighting-from-view-hint = Keep the light where the camera is now, while you orbit

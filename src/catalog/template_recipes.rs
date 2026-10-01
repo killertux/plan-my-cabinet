@@ -201,6 +201,7 @@ impl RecipeCandidate {
         parent_id: Uuid,
     ) {
         self.boards.push(Board {
+            coated_face: Default::default(),
             banding: Default::default(),
             id: Uuid::new_v4(),
             name: name.into(),

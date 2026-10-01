@@ -128,6 +128,7 @@ mod tests {
     fn fixture() -> Project {
         let mut p = Project::new("Cut costs", crate::money::Currency::Brl);
         let material = Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: Uuid::new_v4(),
@@ -159,6 +160,7 @@ mod tests {
                 trim,
             };
             let board = Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: "part".into(),

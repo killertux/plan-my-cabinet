@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
 use plan_my_cabinet::service::banding::*;
+use plan_my_cabinet::service::coating::*;
 use plan_my_cabinet::service::design::*;
 use plan_my_cabinet::service::exports::*;
 use plan_my_cabinet::service::fittings::*;
@@ -339,6 +340,16 @@ impl PmcServer {
         Parameters(input): Parameters<SetBoardBandingInput>,
     ) -> Result<CallToolResult, McpError> {
         self.call(move |ws| ws.set_board_banding(input)).await
+    }
+
+    #[tool(
+        description = "On materials coated on one side only (coating one_side), choose which broad face of each board is coated: auto (the face toward the front, up, or outside the cabinet), min_z, max_z, or flip. Other boards are skipped. One undo step."
+    )]
+    async fn set_board_coated_face(
+        &self,
+        Parameters(input): Parameters<SetBoardCoatedFaceInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(move |ws| ws.set_board_coated_face(input)).await
     }
 
     #[tool(

@@ -42,7 +42,18 @@ fn frame(
                 .show(ctx, |ui| {
                     ui.set_min_size(extent);
                     ui.set_max_size(extent);
-                    controls::show(ui, camera, project, selection, tool, false, false, false);
+                    controls::show(
+                        ui,
+                        camera,
+                        project,
+                        selection,
+                        tool,
+                        false,
+                        false,
+                        false,
+                        Default::default(),
+                        &mut None,
+                    );
                     let (rect, result) = canvas::interact_with_selection(
                         ui, camera, project, selection, tool, false, false, false,
                     );
@@ -70,6 +81,7 @@ fn moving_and_resizing_canvas_keeps_projection_pick_drag_and_overlay_capture_ali
     let id = Uuid::from_u128(42);
     let mut project = Project::new("Viewport", Currency::Brl);
     project.boards.push(Board {
+        coated_face: Default::default(),
         banding: Default::default(),
         id,
         name: "Panel".into(),

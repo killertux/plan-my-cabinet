@@ -2063,6 +2063,7 @@ mod tests {
     fn fixture(part_count: usize, language: Language, mode: ExportMode) -> PreparedExport {
         let mut project = Project::new("Armário café", Currency::Brl);
         let material = Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: Uuid::new_v4(),
@@ -2085,6 +2086,7 @@ mod tests {
         };
         for i in 0..part_count {
             let board = Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: format!("Prateleira longa número {} — ação", i + 1),
@@ -2281,6 +2283,7 @@ mod tests {
     fn bilingual_pdf_preserves_individual_parts_cuts_cost_and_embedded_font() {
         let mut project = Project::new("Armário café", Currency::Brl);
         let material = Material {
+            coating: Default::default(),
             default_band: None,
             kind: Default::default(),
             id: Uuid::new_v4(),
@@ -2303,6 +2306,7 @@ mod tests {
         };
         for x in [0, 105] {
             let board = Board {
+                coated_face: Default::default(),
                 banding: Default::default(),
                 id: Uuid::new_v4(),
                 name: "Prateleira".into(),

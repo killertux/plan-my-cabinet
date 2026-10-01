@@ -121,6 +121,7 @@ pub(crate) fn board_row(
         "thickness": LengthOut::new(board.thickness, unit),
         "grain": material.map(|m| grain_name(board.effective_grain(m))),
         "banding": crate::service::banding::board_banding(project, board.id),
+        "coating": crate::service::coating::board_coating(project, board.id),
         "world_position": world,
         "cut_plan": {
             "status": status,
@@ -153,6 +154,11 @@ pub struct CreateMaterialInput {
     /// Edge band (name or id) automatic banding uses on this material.
     #[serde(default)]
     pub default_band: Option<String>,
+    /// MDF, MDP and HDF: coated on none, one or both faces. Different
+    /// coatings are different materials, cut from their own sheets.
+    /// Default: guessed from the name ("MDF Cru" is none, "1 face" one side).
+    #[serde(default)]
+    pub coating: Option<crate::service::coating::CoatingName>,
     #[serde(default)]
     pub expected_revision: Option<u64>,
     #[serde(default)]
@@ -195,6 +201,9 @@ pub struct UpdateMaterialInput {
     /// Edge band (name or id) automatic banding uses; "" for none.
     #[serde(default)]
     pub default_band: Option<String>,
+    /// MDF, MDP and HDF: coated on none, one or both faces.
+    #[serde(default)]
+    pub coating: Option<crate::service::coating::CoatingName>,
     /// What happens to boards already made of this material.
     #[serde(default)]
     pub dependants: DependantsName,
@@ -789,6 +798,7 @@ impl Workspace {
                     "kind": crate::service::banding::kind_name(m.kind),
                     "takes_banding": m.kind.accepts_banding(),
                     "default_band": m.default_band.and_then(|b| project.edge_band(b)).map(|b| b.name.clone()),
+                    "coating": m.effective_coating().map(crate::service::coating::coating_name),
                     "color": project.material_colors.get(&m.id).copied().map(color_hex),
                     "boards": project.boards.iter().filter(|b| b.material_id == m.id).count(),
                     "stock_pieces": project.stock.iter().filter(|s| s.material_id == m.id).count(),
@@ -826,6 +836,9 @@ impl Workspace {
                 let material = editor.project().material(id).expect("just created");
                 let kind = kind.unwrap_or(material.kind);
                 editor.set_material_banding(id, kind, default_band)?;
+            }
+            if let Some(coating) = input.coating {
+                editor.set_material_coating(id, coating.into())?;
             }
             Ok((
                 json!({ "material_id": id }),
@@ -925,6 +938,9 @@ impl Workspace {
             }
             if let Some((kind, band)) = banding {
                 editor.set_material_banding(id, kind, band)?;
+            }
+            if let Some(coating) = input.coating {
+                editor.set_material_coating(id, coating.into())?;
             }
             let project = editor.project();
             Ok((

@@ -95,3 +95,20 @@ Escolha **Medir** acima da vista para mostrar X × Y × Z da caixa envolvente da
 A grade da vista fica no plano XY global, em Z = 0, com origem no zero global. O espaçamento local do projeto começa em 10 mm. Use **Editar espaçamento da grade** em Configurações → Grade e unidades ou nos controles de Projeto 3D para informar um valor positivo de até 1.000.000 mm; escolha mm ou in para entradas sem sufixo, ou digite mm, cm, m, in ou ft explicitamente (inclusive frações de polegada). Valores além da precisão de 0,001 mm exigem confirmação do resultado arredondado. Cancelar, inserir um valor inválido ou apenas focar o campo não altera o projeto. A grade visível fica menos densa em vistas afastadas, mas o encaixe sempre usa o espaçamento exato salvo.
 
 Em **Mover peça**, arraste uma peça selecionada para perto de uma interseção da grade XY para visualizar a origem global X/Y encaixada; Z e rotação são preservados, inclusive sob um conjunto girado. O encaixe em face visível tem prioridade sobre o da grade. O status identifica a face-alvo ou **Grade XY**; segure Alt para ignorar ambos. A grade só atrai após o início do movimento e quando o candidato está próximo na tela, evitando saltos no início. Solte para aceitar uma única edição de pose reversível ou pressione Esc para cancelar. O encaixe não cria vínculo permanente; alterar o espaçamento não reposiciona peças existentes. O espaçamento é salvo no projeto e recuperado ao reabri-lo.
+
+## Iluminação
+
+As faces são sombreadas pela direção para onde olham, então uma peça tem a
+mesma aparência seja qual for o jeito como foi modelada. O botão de luz no
+fim da barra de ferramentas (um sol) e **Configurações → Geral → Iluminação**
+escolhem como a vista é iluminada:
+
+- **Seguir câmera** (padrão): a luz fica logo acima e ao lado do seu olho, então
+  o que você olha fica iluminado.
+- **Fixa**: a luz fica parada enquanto você gira. Ajuste a direção com os
+  controles *Ao redor* e *Altura*, ou gire até onde quer a luz e escolha
+  **Fixar a luz aqui**.
+- **Desligada**: sombreamento uniforme e suave, sem luz direcional.
+
+A escolha fica guardada neste computador, não no projeto. As imagens (PDF,
+miniaturas, imagens para agentes) usam sempre a mesma luz fixa de estúdio.

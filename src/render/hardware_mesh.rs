@@ -35,12 +35,13 @@ pub enum SolidKind {
     Hinge,
 }
 
-/// One triangle in world millimetres with a shade per vertex. `color`
-/// overrides the solid's color for fixed-color parts (glides, slide members).
+/// One triangle in world millimetres with a world unit normal per vertex.
+/// `color` overrides the solid's color for fixed-color parts (glides, slide
+/// members).
 #[derive(Clone, Copy, Debug)]
 pub struct Tri {
     pub points: [[f64; 3]; 3],
-    pub shade: [f32; 3],
+    pub normals: [[f32; 3]; 3],
     pub color: Option<[f32; 3]>,
 }
 
@@ -65,18 +66,6 @@ impl Solid {
             .flatten()
             .collect()
     }
-}
-
-/// Soft hemisphere light: brightest from above-front-right, never black.
-fn shade(normal: [f64; 3]) -> f32 {
-    const LIGHT: [f64; 3] = [0.35, -0.5, 0.8];
-    let len = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    let (ln, nn) = (len(LIGHT), len(normal));
-    if nn < 1e-12 {
-        return 0.8;
-    }
-    let d = (0..3).map(|i| LIGHT[i] * normal[i]).sum::<f64>() / (ln * nn);
-    (0.55 + 0.45 * (0.5 + 0.5 * d)) as f32
 }
 
 /// A local triangle: corners, vertex normals and an optional fixed color.
@@ -278,7 +267,10 @@ impl Builder {
             .into_iter()
             .map(|(points, normals, color)| Tri {
                 points: points.map(world),
-                shade: normals.map(|n| shade(pose.rotation.rotate(n))),
+                normals: normals.map(|n| {
+                    let n = normalize(pose.rotation.rotate(n));
+                    n.map(|c| c as f32)
+                }),
                 color,
             })
             .collect();
@@ -642,9 +634,13 @@ impl Mesh {
         for tri in &solid.tris {
             let color = tri.color.unwrap_or(face);
             for k in 0..3 {
-                let s = tri.shade[k];
-                let shaded = std::array::from_fn(|i| color[i] * s + 0.12 * (1.0 - s));
-                Self::vertex(&mut self.faces, relative(tri.points[k], target), shaded);
+                self.face_vertex(
+                    relative(tri.points[k], target),
+                    tri.normals[k],
+                    color,
+                    [0.0; 2],
+                    None,
+                );
             }
         }
         for [a, b] in &solid.edges {
@@ -786,12 +782,13 @@ mod tests {
     fn round_parts_draw_rims_not_seams() {
         let solid = foot_solid(Uuid::new_v4(), &spec(shapes().remove(0)), Pose::IDENTITY);
         assert_eq!(solid.edges.len(), 2 * SEGMENTS);
+        // The top cap faces straight up: smooth shading comes from these.
         let tops: Vec<f32> = solid
             .tris
             .iter()
             .filter(|t| t.points.iter().all(|p| (p[2] - 40.0).abs() < 1e-9))
-            .map(|t| t.shade[0])
+            .map(|t| t.normals[0][2])
             .collect();
-        assert!(tops.iter().all(|s| *s > 0.9));
+        assert!(tops.iter().all(|z| *z > 0.99));
     }
 }
