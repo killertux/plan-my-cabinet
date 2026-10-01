@@ -93,11 +93,26 @@ pub struct PilotHole {
     pub depth: Length,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MachiningOptions {
     /// Screw pilot holes the catalog does not size get this; `None` leaves
     /// them out.
     pub screw_pilot: Option<PilotHole>,
+    /// Drill hinge cups and plate screws. Off leaves hinges to the user,
+    /// without listing them as left out.
+    pub hinges: bool,
+    /// Drill drawer slide screws.
+    pub slides: bool,
+}
+
+impl Default for MachiningOptions {
+    fn default() -> Self {
+        Self {
+            screw_pilot: None,
+            hinges: true,
+            slides: true,
+        }
+    }
 }
 
 /// Drilling of every board, and what was left out.
@@ -126,7 +141,17 @@ pub fn board_machining(
             source,
         });
     };
-    for installation in &project.hinge_installations {
+    let hinges = if options.hinges {
+        project.hinge_installations.as_slice()
+    } else {
+        &[]
+    };
+    let slides = if options.slides {
+        project.slide_installations.as_slice()
+    } else {
+        &[]
+    };
+    for installation in hinges {
         let status = crate::hinge_installation::diagnose(project, installation);
         let joint = project
             .door_joints
@@ -180,7 +205,7 @@ pub fn board_machining(
             }),
         }
     }
-    for installation in &project.slide_installations {
+    for installation in slides {
         let status = crate::slide_installation::diagnose(project, installation);
         let spec = project
             .catalog

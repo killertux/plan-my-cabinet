@@ -36,6 +36,34 @@ pub struct ScrewPilotInput {
     pub depth: LengthInput,
 }
 
+/// What the file carries besides the parts. Everything is included by
+/// default; turn off what the shop should not do.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+pub struct IncludeInput {
+    #[serde(default = "yes")]
+    pub banding: bool,
+    /// Hinge cups and hinge plate screws.
+    #[serde(default = "yes")]
+    pub hinge_holes: bool,
+    /// Drawer slide screws.
+    #[serde(default = "yes")]
+    pub slide_holes: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for IncludeInput {
+    fn default() -> Self {
+        Self {
+            banding: true,
+            hinge_holes: true,
+            slide_holes: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 pub struct PartListInput {
     #[serde(default)]
@@ -44,6 +72,9 @@ pub struct PartListInput {
     /// not size. Without it those holes are left out and listed.
     #[serde(default)]
     pub screw_pilot: Option<ScrewPilotInput>,
+    /// Leave banding, hinge holes or slide holes out of the file.
+    #[serde(default)]
+    pub include: IncludeInput,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -57,9 +88,11 @@ pub struct ExportDesignInput {
     pub overwrite: bool,
     #[serde(default)]
     pub screw_pilot: Option<ScrewPilotInput>,
+    #[serde(default)]
+    pub include: IncludeInput,
 }
 
-fn options(pilot: Option<&ScrewPilotInput>) -> ServiceResult<FormatOptions> {
+fn options(pilot: Option<&ScrewPilotInput>, include: IncludeInput) -> ServiceResult<FormatOptions> {
     let screw_pilot = pilot
         .map(|p| -> ServiceResult<PilotHole> {
             Ok(PilotHole {
@@ -69,7 +102,12 @@ fn options(pilot: Option<&ScrewPilotInput>) -> ServiceResult<FormatOptions> {
         })
         .transpose()?;
     Ok(FormatOptions {
-        machining: MachiningOptions { screw_pilot },
+        banding: include.banding,
+        machining: MachiningOptions {
+            screw_pilot,
+            hinges: include.hinge_holes,
+            slides: include.slide_holes,
+        },
     })
 }
 
@@ -88,8 +126,8 @@ impl Workspace {
     pub fn get_part_list(&self, input: PartListInput) -> ServiceResult<Value> {
         let project = self.project()?;
         let unit = project.display_unit;
-        let options = options(input.screw_pilot.as_ref())?;
-        let list = crate::part_list::build(project, &options.machining)?;
+        let options = options(input.screw_pilot.as_ref(), input.include)?;
+        let list = crate::part_list::build(project, &options)?;
         let file = formats::cortecloud::file(&list);
         let parts: Vec<Value> = list
             .groups
@@ -144,7 +182,7 @@ impl Workspace {
 
     pub fn export_design(&mut self, input: ExportDesignInput) -> ServiceResult<Change<Value>> {
         let format = ExportFormat::from(input.format);
-        let options = options(input.screw_pilot.as_ref())?;
+        let options = options(input.screw_pilot.as_ref(), input.include)?;
         let path = std::path::PathBuf::from(&input.path);
         if path.as_os_str().is_empty() {
             return Err(ServiceError::invalid("give a destination path").for_field("path"));

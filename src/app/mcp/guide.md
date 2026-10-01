@@ -72,7 +72,9 @@ screw pilots when sized), plus what drilling is left out and why.
 `export_design` writes the CorteCloud file (`format: "cortecloud-json"`). It
 needs only a valid design: no sheets, cut plan or kerf, because the shop nests
 the parts. Pass `screw_pilot` (diameter and depth) to have hinge-plate and
-slide screws drilled. The user imports the file in CorteCloud with
+slide screws drilled, and `include` (`banding`, `hinge_holes`,
+`slide_holes`, all true by default) to leave any of them out, e.g. only the
+boards. The user imports the file in CorteCloud with
 *Serviço Completo › Carregar arquivo Cortecloud* and links materials and bands.
 
 ## Cut planning

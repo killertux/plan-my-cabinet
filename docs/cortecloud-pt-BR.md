@@ -7,10 +7,15 @@ lista de peças que o CorteCloud importa, para você não digitar de novo.
 ## Exportando
 
 1. Abra **Entrega** e escolha **CorteCloud** em *Formato*.
-2. Confira **O que o arquivo lista**: peças e linhas (peças iguais dividem uma
+2. Em **Incluir no arquivo**, desmarque o que a marcenaria não deve fazer:
+   **Fita de borda**, **Furos de dobradiça** ou **Furos de corrediça**. Com os
+   três desmarcados o arquivo lista só as peças. Um tipo que o projeto não tem
+   aparece desmarcado. O que você deixa de fora aqui não aparece em *Ficou de
+   fora*.
+3. Confira **O que o arquivo lista**: peças e linhas (peças iguais dividem uma
    linha com quantidade), peças com fita e metros de fita, peças furadas e
    furos, e as peças por material.
-3. Leia **Ficou de fora**. Os furos só vão para ferragens que o PDF da oficina
+4. Leia **Ficou de fora**. Os furos só vão para ferragens que o PDF da oficina
    também orientaria:
    - dobradiças ou corrediças com problemas, e portas que precisam de revisão,
      ficam de fora (**Corrigir** leva até elas);
@@ -18,7 +23,7 @@ lista de peças que o CorteCloud importa, para você não digitar de novo.
      raramente dão o pré-furo de calços e corrediças; marque **Pedir à
      marcenaria os pré-furos de parafuso** e informe diâmetro e profundidade
      para incluí-los.
-4. Toque em **Exportar para o CorteCloud…** e escolha onde salvar. Um arquivo
+5. Toque em **Exportar para o CorteCloud…** e escolha onde salvar. Um arquivo
    que já existe só é substituído depois da sua confirmação.
 
 O centro da Entrega mostra as peças exatamente como o arquivo lista. A

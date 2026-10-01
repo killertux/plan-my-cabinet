@@ -1815,3 +1815,16 @@ cortecloud-col-size = C × L × T
 cortecloud-col-material = Material
 cortecloud-col-banding = Band
 cortecloud-col-holes = Holes
+cortecloud-include = Include in the file
+cortecloud-include-banding = Edge banding
+cortecloud-include-hinges = Hinge holes
+cortecloud-include-hinges-count = { $count ->
+    [one] 1 hinge
+   *[other] { $count } hinges
+}
+cortecloud-include-slides = Drawer slide holes
+cortecloud-include-slides-count = { $count ->
+    [one] 1 drawer
+   *[other] { $count } drawers
+}
+cortecloud-include-none = none in this design

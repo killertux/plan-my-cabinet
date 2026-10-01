@@ -45,10 +45,29 @@ type PartListCache = (
     Result<PartList, PartListBlocked>,
 );
 
+/// What the file carries besides the parts: the user can leave the shop
+/// out of banding or of either kind of drilling.
+pub(crate) struct Include {
+    pub(crate) banding: bool,
+    pub(crate) hinges: bool,
+    pub(crate) slides: bool,
+}
+
+impl Default for Include {
+    fn default() -> Self {
+        Self {
+            banding: true,
+            hinges: true,
+            slides: true,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct FileExportState {
     pub(crate) format: Option<ExportFormat>,
     pub(crate) flow: Option<FileFlow>,
+    pub(crate) include: Include,
     pub(crate) pilot: PilotDraft,
     cache: Option<PartListCache>,
     pub(crate) overwrite_chrome: Option<ModalChrome>,
@@ -73,8 +92,14 @@ impl DesktopApp {
                     .then_some(PilotHole { diameter, depth })
             })
             .flatten();
+        let include = &self.file_export.include;
         FormatOptions {
-            machining: MachiningOptions { screw_pilot },
+            banding: include.banding,
+            machining: MachiningOptions {
+                screw_pilot,
+                hinges: include.hinges,
+                slides: include.slides,
+            },
         }
     }
 
@@ -88,7 +113,7 @@ impl DesktopApp {
             .as_ref()
             .is_none_or(|(k, _)| *k != key)
         {
-            let built = plan_my_cabinet::part_list::build(project, &key.2.machining);
+            let built = plan_my_cabinet::part_list::build(project, &key.2);
             self.file_export.cache = Some((key, built));
         }
         self.file_export
@@ -153,6 +178,7 @@ impl DesktopApp {
                 ui.vertical(|ui| tw::inspector_heading(ui, &text, |_| ()));
             });
         };
+        self.show_file_export_include(ui);
         heading(ui, self.localizer.text("cortecloud-summary"));
         let locale = if self.localizer.language() == Language::En {
             Locale::En
@@ -204,7 +230,15 @@ impl DesktopApp {
                 args.set("parts", list.part_count() as u64);
                 args.set("groups", list.groups.len() as u64);
                 args.set("banded", banded as u64);
-                args.set("metres", format!("{metres:.1}"));
+                let metres = format!("{metres:.1}");
+                args.set(
+                    "metres",
+                    if locale == Locale::PtBr {
+                        metres.replace('.', ",")
+                    } else {
+                        metres
+                    },
+                );
                 args.set("drilled", drilled as u64);
                 args.set("holes", holes as u64);
                 tw::card().show(ui, |ui| {
@@ -297,49 +331,55 @@ impl DesktopApp {
             }
         }
         // Screw pilots, for shops that drill them.
-        ui.add_space(6.0);
-        heading(ui, self.localizer.text("cortecloud-pilots"));
-        let pilot = &mut self.file_export.pilot;
-        handoff_ui::checkbox(
-            ui,
-            &mut pilot.enabled,
-            &self.localizer.text("cortecloud-pilots-enable"),
-        );
-        if pilot.enabled {
-            ui.horizontal(|ui| {
-                for (draft, key, id) in [
-                    (
-                        &mut pilot.diameter,
-                        "cortecloud-pilot-diameter",
-                        "pilot-diameter",
-                    ),
-                    (&mut pilot.depth, "cortecloud-pilot-depth", "pilot-depth"),
-                ] {
-                    ui.vertical(|ui| {
-                        ui.set_width(110.0);
-                        let label = self.localizer.text(key);
-                        ui.label(egui::RichText::new(&label).size(11.5).color(tw::MUTED));
-                        let error = draft
-                            .value(Unit::Mm)
-                            .map_or(true, |v| v.micrometres() <= 0)
-                            .then(|| self.localizer.text("error-non-positive-dimension"));
-                        tw::unit_field(
-                            ui,
-                            egui::Id::new(id),
-                            &label,
-                            &mut draft.text,
-                            "mm",
-                            error.as_deref(),
-                        );
-                    });
-                }
-            });
+        let project = self.editor.project();
+        let include = &self.file_export.include;
+        let drilling = (include.hinges && !project.hinge_installations.is_empty())
+            || (include.slides && !project.slide_installations.is_empty());
+        if drilling {
+            ui.add_space(6.0);
+            heading(ui, self.localizer.text("cortecloud-pilots"));
+            let pilot = &mut self.file_export.pilot;
+            handoff_ui::checkbox(
+                ui,
+                &mut pilot.enabled,
+                &self.localizer.text("cortecloud-pilots-enable"),
+            );
+            if pilot.enabled {
+                ui.horizontal(|ui| {
+                    for (draft, key, id) in [
+                        (
+                            &mut pilot.diameter,
+                            "cortecloud-pilot-diameter",
+                            "pilot-diameter",
+                        ),
+                        (&mut pilot.depth, "cortecloud-pilot-depth", "pilot-depth"),
+                    ] {
+                        ui.vertical(|ui| {
+                            ui.set_width(110.0);
+                            let label = self.localizer.text(key);
+                            ui.label(egui::RichText::new(&label).size(11.5).color(tw::MUTED));
+                            let error = draft
+                                .value(Unit::Mm)
+                                .map_or(true, |v| v.micrometres() <= 0)
+                                .then(|| self.localizer.text("error-non-positive-dimension"));
+                            tw::unit_field(
+                                ui,
+                                egui::Id::new(id),
+                                &label,
+                                &mut draft.text,
+                                "mm",
+                                error.as_deref(),
+                            );
+                        });
+                    }
+                });
+            }
+            ui.label(
+                egui::RichText::new(self.localizer.text("cortecloud-pilots-hint"))
+                    .size(11.5)
+                    .color(tw::FAINT),
+            );
         }
-        ui.label(
-            egui::RichText::new(self.localizer.text("cortecloud-pilots-hint"))
-                .size(11.5)
-                .color(tw::FAINT),
-        );
         // How to import, and the last file written.
         ui.add_space(6.0);
         heading(ui, self.localizer.text("cortecloud-import"));
@@ -386,6 +426,68 @@ impl DesktopApp {
         if let Some(route) = fix {
             self.apply_handoff_fix(route);
         }
+    }
+
+    /// Checkboxes for what the file carries besides the parts. Each says
+    /// how much of it the design has, and is off when there is none.
+    fn show_file_export_include(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            ui.vertical(|ui| {
+                tw::inspector_heading(ui, &self.localizer.text("cortecloud-include"), |_| ())
+            });
+        });
+        let project = self.editor.project();
+        let banded = plan_my_cabinet::banding::band_lengths(project)
+            .iter()
+            .any(|(_, um)| *um > 0);
+        let hinges = project.hinge_installations.len() as u64;
+        let slides = project.slide_installations.len() as u64;
+        let rows = [
+            ("cortecloud-include-banding", banded.then_some(0), 0),
+            (
+                "cortecloud-include-hinges",
+                (hinges > 0).then_some(hinges),
+                1,
+            ),
+            (
+                "cortecloud-include-slides",
+                (slides > 0).then_some(slides),
+                2,
+            ),
+        ];
+        let modal = self.modal_open();
+        for (key, present, index) in rows {
+            let name = self.localizer.text(key);
+            let label = match present {
+                Some(count) if index > 0 => {
+                    format!(
+                        "{name} · {}",
+                        self.localizer.count(&format!("{key}-count"), count)
+                    )
+                }
+                Some(_) => name,
+                None => format!(
+                    "{name} · {}",
+                    self.localizer.text("cortecloud-include-none")
+                ),
+            };
+            let include = &mut self.file_export.include;
+            let value = match index {
+                0 => &mut include.banding,
+                1 => &mut include.hinges,
+                _ => &mut include.slides,
+            };
+            ui.add_enabled_ui(present.is_some() && !modal, |ui| {
+                if present.is_some() {
+                    handoff_ui::checkbox(ui, value, &label);
+                } else {
+                    // Nothing of this kind: shown unticked, and left alone.
+                    handoff_ui::checkbox(ui, &mut false, &label);
+                }
+            });
+        }
+        ui.add_space(6.0);
     }
 
     pub(crate) fn last_file_export(&self, format: ExportFormat) -> Option<&FileExportRecord> {

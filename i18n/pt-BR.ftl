@@ -1818,3 +1818,16 @@ cortecloud-col-size = C × L × E
 cortecloud-col-material = Material
 cortecloud-col-banding = Fita
 cortecloud-col-holes = Furos
+cortecloud-include = Incluir no arquivo
+cortecloud-include-banding = Fita de borda
+cortecloud-include-hinges = Furos de dobradiça
+cortecloud-include-hinges-count = { $count ->
+    [one] 1 dobradiça
+   *[other] { $count } dobradiças
+}
+cortecloud-include-slides = Furos de corrediça
+cortecloud-include-slides-count = { $count ->
+    [one] 1 gaveta
+   *[other] { $count } gavetas
+}
+cortecloud-include-none = nenhum neste projeto

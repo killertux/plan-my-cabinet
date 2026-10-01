@@ -26,6 +26,18 @@ Exporting SHALL require a structurally valid design with boards and SHALL NOT re
 - **WHEN** hinge plates have no pilot size
 - **THEN** their holes are listed as left out, and giving a pilot size includes them
 
+### Requirement: The user SHALL choose what the CorteCloud file carries
+
+Before exporting, the user SHALL be able to leave out edge banding, hinge holes and drawer slide holes independently; with all three off the file SHALL list only the parts. Content left out by choice SHALL NOT be reported as left out, and kinds the design does not have SHALL be shown as unavailable.
+
+#### Scenario: Only the boards
+- **WHEN** the user unticks banding, hinge holes and slide holes
+- **THEN** every part has no bands and no machining, and the Left out list is empty
+
+#### Scenario: Bands without hinge holes
+- **WHEN** only hinge holes are unticked
+- **THEN** parts keep their bands and doors carry no cups
+
 ### Requirement: Part-list exports SHALL be written safely and remembered
 
 Writing SHALL be atomic and SHALL replace an existing file only after confirmation. A written file SHALL be recorded with a fingerprint of the part list, without changing the project revision or undo history, and Handoff SHALL say whether the design still matches the last file.
