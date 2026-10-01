@@ -145,6 +145,16 @@ fn a_part_list_previews_and_writes_a_cortecloud_file() {
         parts.len()
     );
 
+    let bare = ws
+        .get_part_list(input(json!({ "include": { "banding": false } })))
+        .unwrap();
+    assert!(
+        bare["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["banding"] == json!({}))
+    );
     let path = dir.join("base-cortecloud.json");
     let revision = ws.get_project().unwrap().revision;
     let written = ws

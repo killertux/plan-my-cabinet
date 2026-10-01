@@ -93,6 +93,23 @@ impl PartList {
     }
 }
 
+/// What a part list carries besides the parts themselves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PartListOptions {
+    /// Send each part's edge banding. Off lists the parts without bands.
+    pub banding: bool,
+    pub machining: MachiningOptions,
+}
+
+impl Default for PartListOptions {
+    fn default() -> Self {
+        Self {
+            banding: true,
+            machining: MachiningOptions::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PartListBlocked {
     /// The design has no boards.
@@ -101,13 +118,13 @@ pub enum PartListBlocked {
 }
 
 /// Group the project's boards into parts.
-pub fn build(project: &Project, options: &MachiningOptions) -> Result<PartList, PartListBlocked> {
+pub fn build(project: &Project, options: &PartListOptions) -> Result<PartList, PartListBlocked> {
     project.validate().map_err(PartListBlocked::InvalidDesign)?;
     if project.boards.is_empty() {
         return Err(PartListBlocked::NoBoards);
     }
     let banding = banding_rules::effective(project);
-    let (mut machining, omissions) = board_machining(project, options);
+    let (mut machining, omissions) = board_machining(project, &options.machining);
     let mut groups: Vec<PartGroup> = Vec::new();
     for board in &project.boards {
         let Some(material) = project.material(board.material_id) else {
@@ -115,6 +132,7 @@ pub fn build(project: &Project, options: &MachiningOptions) -> Result<PartList, 
         };
         let bands = banding
             .get(&board.id)
+            .filter(|_| options.banding)
             .map_or([None; 4], banding_rules::bands)
             .map(|band| {
                 band.and_then(|id| project.edge_band(id)).map(|b| BandRef {

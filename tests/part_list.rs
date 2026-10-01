@@ -6,7 +6,7 @@ use plan_my_cabinet::export::{ExportMode, ExportSettings, OutputError, Overwrite
 use plan_my_cabinet::formats::{self, ExportFormat, FormatError, FormatOptions};
 use plan_my_cabinet::i18n::Language;
 use plan_my_cabinet::machining::{MachiningOptions, OmissionReason, PilotHole};
-use plan_my_cabinet::part_list::{self, PartListBlocked};
+use plan_my_cabinet::part_list::{self, PartListBlocked, PartListOptions};
 use plan_my_cabinet::reference_fixture::{self as fixture, HINGE_IDS, LEFT_DOOR_ID, WHITE_ID};
 use plan_my_cabinet::units::{Length, Unit};
 
@@ -37,7 +37,7 @@ fn banded() -> plan_my_cabinet::domain::Project {
 #[test]
 fn hinge_cups_drill_the_doors_the_pdf_would_guide() {
     let project = fixture::project();
-    let list = part_list::build(&project, &MachiningOptions::default()).unwrap();
+    let list = part_list::build(&project, &PartListOptions::default()).unwrap();
     assert_eq!(list.part_count(), project.boards.len());
     let door = list
         .groups
@@ -83,11 +83,15 @@ fn hinge_cups_drill_the_doors_the_pdf_would_guide() {
 #[test]
 fn a_pilot_size_given_for_the_export_drills_the_plate_screws() {
     let project = fixture::project();
-    let options = MachiningOptions {
-        screw_pilot: Some(PilotHole {
-            diameter: Length::from_micrometres(2_500),
-            depth: mm(10),
-        }),
+    let options = PartListOptions {
+        machining: MachiningOptions {
+            screw_pilot: Some(PilotHole {
+                diameter: Length::from_micrometres(2_500),
+                depth: mm(10),
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
     };
     let list = part_list::build(&project, &options).unwrap();
     let drills: Vec<_> = list
@@ -115,7 +119,7 @@ fn a_pilot_size_given_for_the_export_drills_the_plate_screws() {
 #[test]
 fn identical_parts_group_and_banding_or_holes_split_them() {
     let project = banded();
-    let list = part_list::build(&project, &MachiningOptions::default()).unwrap();
+    let list = part_list::build(&project, &PartListOptions::default()).unwrap();
     let sides: Vec<_> = list
         .groups
         .iter()
@@ -128,7 +132,7 @@ fn identical_parts_group_and_banding_or_holes_split_them() {
     editor
         .rename_object(fixture::RIGHT_SIDE_ID, "Left side")
         .unwrap();
-    let list = part_list::build(editor.project(), &MachiningOptions::default()).unwrap();
+    let list = part_list::build(editor.project(), &PartListOptions::default()).unwrap();
     let side = list.groups.iter().find(|g| g.name == "Left side").unwrap();
     assert_eq!(side.quantity(), 2, "{:?}", side.banding);
     // ...until one of them is banded differently.
@@ -140,7 +144,7 @@ fn identical_parts_group_and_banding_or_holes_split_them() {
         )
         .unwrap();
     let before = list.fingerprint();
-    let list = part_list::build(editor.project(), &MachiningOptions::default()).unwrap();
+    let list = part_list::build(editor.project(), &PartListOptions::default()).unwrap();
     assert_eq!(
         list.groups.iter().filter(|g| g.name == "Left side").count(),
         2
@@ -254,4 +258,60 @@ fn writing_records_a_receipt_that_goes_stale_with_the_design() {
     assert_eq!(editor.project().file_exports, [record]);
     assert!(editor.project().file_exports[0].is_current(editor.project(), &options));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn banding_and_each_kind_of_drilling_can_be_left_out() {
+    let project = banded();
+    let all = part_list::build(&project, &PartListOptions::default()).unwrap();
+    assert!(
+        all.groups
+            .iter()
+            .any(|g| g.banding.iter().any(Option::is_some))
+    );
+    assert!(all.groups.iter().any(|g| !g.machining.is_empty()));
+
+    // Only the boards: no bands, no holes, and nothing reported as left out,
+    // because leaving them out was the user's choice.
+    let bare = PartListOptions {
+        banding: false,
+        machining: MachiningOptions {
+            hinges: false,
+            slides: false,
+            ..Default::default()
+        },
+    };
+    let list = part_list::build(&project, &bare).unwrap();
+    assert_eq!(list.part_count(), all.part_count());
+    assert!(
+        list.groups
+            .iter()
+            .all(|g| g.banding.iter().all(Option::is_none))
+    );
+    assert!(list.groups.iter().all(|g| g.machining.is_empty()));
+    assert!(list.omissions.is_empty());
+    assert_ne!(list.fingerprint(), all.fingerprint());
+    let (_, bytes) = formats::render(ExportFormat::CorteCloudJson, &project, &bare).unwrap();
+    let file: formats::cortecloud::File = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        file.parts
+            .iter()
+            .all(|p| p.machining.is_none() && p.c1.is_none())
+    );
+
+    // Bands but no hinge holes.
+    let no_hinges = PartListOptions {
+        machining: MachiningOptions {
+            hinges: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let list = part_list::build(&project, &no_hinges).unwrap();
+    assert!(list.groups.iter().all(|g| g.machining.is_empty()));
+    assert!(
+        list.groups
+            .iter()
+            .any(|g| g.banding.iter().any(Option::is_some))
+    );
 }

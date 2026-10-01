@@ -150,3 +150,34 @@ fn a_pilot_size_drills_the_screw_holes_and_clears_the_notice() {
     app.file_export.pilot.diameter.text = "0".into();
     assert!(app.file_export_options().machining.screw_pilot.is_none());
 }
+
+#[test]
+fn unticking_hinge_holes_and_banding_exports_only_the_boards() {
+    let mut app = app();
+    app.file_export.format = Some(ExportFormat::CorteCloudJson);
+    let text = render(&mut app);
+    assert!(text.contains("INCLUDE IN THE FILE"), "{text}");
+    assert!(text.contains("Hinge holes · 4 hinges"), "{text}");
+    // The reference cabinet has no drawers: that box is shown, but off.
+    assert!(
+        text.contains("Drawer slide holes · none in this design"),
+        "{text}"
+    );
+    assert!(text.contains("1 part drilled"), "{text}");
+
+    app.file_export.include.hinges = false;
+    app.file_export.include.banding = false;
+    let text = render(&mut app);
+    assert!(text.contains("0 parts drilled"), "{text}");
+    assert!(
+        !text.contains("LEFT OUT"),
+        "nothing is left out by choice: {text}"
+    );
+    assert!(!text.contains("SCREW PILOT HOLES"), "{text}");
+    let list = app.file_part_list().unwrap();
+    assert!(
+        list.groups
+            .iter()
+            .all(|g| g.banding.iter().all(Option::is_none))
+    );
+}

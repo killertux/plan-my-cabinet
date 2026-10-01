@@ -5,7 +5,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::machining::MachiningOptions;
 use crate::part_list::{PartList, PartListBlocked};
 
 pub mod cortecloud;
@@ -81,11 +80,8 @@ impl ExportFormat {
     }
 }
 
-/// Settings of a part-list export.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct FormatOptions {
-    pub machining: MachiningOptions,
-}
+/// Settings of a part-list export: what the file carries besides the parts.
+pub type FormatOptions = crate::part_list::PartListOptions;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatError {
@@ -101,8 +97,7 @@ pub fn render(
     project: &crate::domain::Project,
     options: &FormatOptions,
 ) -> Result<(PartList, Vec<u8>), FormatError> {
-    let list =
-        crate::part_list::build(project, &options.machining).map_err(FormatError::Blocked)?;
+    let list = crate::part_list::build(project, options).map_err(FormatError::Blocked)?;
     let bytes = render_part_list(format, &list)?;
     Ok((list, bytes))
 }
@@ -136,7 +131,7 @@ impl FileExportRecord {
 
     /// Whether the file still matches the design, with the same options.
     pub fn is_current(&self, project: &crate::domain::Project, options: &FormatOptions) -> bool {
-        crate::part_list::build(project, &options.machining)
+        crate::part_list::build(project, options)
             .is_ok_and(|list| list.fingerprint() == self.part_list_sha256)
     }
 }

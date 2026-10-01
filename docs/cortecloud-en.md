@@ -7,17 +7,21 @@ imports, so you don't retype it.
 ## Exporting
 
 1. Open **Handoff** and choose **CorteCloud** under *Format*.
-2. Check **What the file lists**: parts and lines (identical parts share a line
+2. Under **Include in the file**, untick what the shop should not do:
+   **Edge banding**, **Hinge holes** or **Drawer slide holes**. With all three
+   off the file lists only the boards. A kind the design doesn't have is shown
+   unticked. What you leave out here is not listed under *Left out*.
+3. Check **What the file lists**: parts and lines (identical parts share a line
    with a quantity), banded parts and metres of band, drilled parts and holes,
    and the parts per material.
-3. Read **Left out**. Drilling is sent only for hardware the workshop PDF
+4. Read **Left out**. Drilling is sent only for hardware the workshop PDF
    would also guide:
    - hinges or slides with issues, and doors that need review, are left out
      (**Fix** takes you to them);
    - screw holes with no pilot size are left out. Catalogs rarely size the
      pilots of hinge plates and slides; tick **Ask the shop to drill screw
      pilots** and give a diameter and depth to include them.
-4. Press **Export for CorteCloud…** and choose where to save. A file that
+5. Press **Export for CorteCloud…** and choose where to save. A file that
    exists is replaced only after you confirm.
 
 The centre of Handoff shows the parts exactly as the file lists them. The

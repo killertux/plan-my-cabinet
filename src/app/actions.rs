@@ -950,11 +950,8 @@ impl DesktopApp {
             }
             A::ExportFile if self.file_export.flow.is_some() => Err(Unavailable::Busy),
             A::ExportFile
-                if plan_my_cabinet::part_list::build(
-                    project,
-                    &self.file_export_options().machining,
-                )
-                .is_err() =>
+                if plan_my_cabinet::part_list::build(project, &self.file_export_options())
+                    .is_err() =>
             {
                 Err(Unavailable::ExportNotReady)
             }

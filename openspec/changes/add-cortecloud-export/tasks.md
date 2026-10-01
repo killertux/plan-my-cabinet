@@ -11,6 +11,7 @@
 
 - [x] 2.1 Handoff format cards, CorteCloud summary, Left out, pilot option, preview, export flow.
 - [x] 2.2 `SetExportFormat` and `ExportFile` actions.
+- [x] 2.4 Include in the file: banding, hinge holes and slide holes can each be left out (Handoff and MCP).
 - [x] 2.3 MCP `get_part_list` and `export_design`; agent guide.
 
 ## 3. Verification and documentation
