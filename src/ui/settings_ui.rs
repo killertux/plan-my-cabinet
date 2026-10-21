@@ -1649,6 +1649,16 @@ fn shortcuts(ui: &mut egui::Ui, language: Language, out: &mut Vec<SettingsIntent
             "Ignorar encaixes ao mover / cancelar prévia ou edição ativa",
         ),
         (
+            "X / Y / Z · ⇧".into(),
+            "Measure: lock an axis · hold Shift to keep the shown guide",
+            "Medir: travar um eixo · segure Shift para manter a guia exibida",
+        ),
+        (
+            "Alt / Esc / Delete".into(),
+            "Measure: place freely / cancel, then clear / remove the last",
+            "Medir: posicionar livre / cancelar e depois limpar / remover a última",
+        ),
+        (
             format!("{command},"),
             "Open Settings",
             "Abrir configurações",

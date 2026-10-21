@@ -6,8 +6,10 @@ use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+mod measure_tool;
 mod measure_ui;
 mod thumbnail;
+pub(crate) use measure_tool::MeasureTool;
 pub(crate) use measure_ui::measurement_readout;
 pub use plan_my_cabinet::render::camera::*;
 pub(crate) use thumbnail::saved_thumbnail;
@@ -27,6 +29,8 @@ pub struct MoveTool {
     pub drag_enabled: bool,
     /// The board edge under the pointer while the Band tool is active.
     pub band_hover: Option<(Uuid, plan_my_cabinet::domain::BoardEdge)>,
+    /// Point-to-point measurements, kept for the session while Measure is used.
+    pub(crate) measure: MeasureTool,
     resize: Option<resize::ResizeDrag>,
     resize_hover: Option<(usize, bool)>,
     grid_edit_requested: bool,
@@ -71,6 +75,7 @@ impl Default for MoveTool {
             hardware_only: false,
             drag_enabled: true,
             band_hover: None,
+            measure: MeasureTool::default(),
             resize: None,
             resize_hover: None,
             grid_edit_requested: false,
@@ -296,51 +301,7 @@ pub(crate) fn apply_control(
     }
 }
 
-/// Return the closest positive surface crossing, including exit faces when the eye is inside.
-/// Each face is tested independently so parallel rays and edge hits have stable results.
-fn board_hit(
-    ray: Ray,
-    pose: plan_my_cabinet::units::Pose,
-    dimensions: [f64; 3],
-) -> Option<(f64, usize)> {
-    let q = pose.rotation;
-    let inverse = plan_my_cabinet::units::Quaternion {
-        w: q.w,
-        x: -q.x,
-        y: -q.y,
-        z: -q.z,
-    };
-    let origin = inverse.rotate(std::array::from_fn(|i| {
-        ray.origin[i] - pose.translation_mm[i]
-    }));
-    let direction = inverse.rotate(ray.direction);
-    let mut best: Option<(f64, usize)> = None;
-    for axis in 0..3 {
-        if direction[axis].abs() <= 1e-14 {
-            continue;
-        }
-        for side in 0..2 {
-            let t =
-                ((if side == 0 { 0.0 } else { dimensions[axis] }) - origin[axis]) / direction[axis];
-            if !t.is_finite() || t <= 1e-9 {
-                continue;
-            }
-            let inside = (0..3).filter(|&i| i != axis).all(|i| {
-                let v = origin[i] + t * direction[i];
-                v >= -1e-7 && v <= dimensions[i] + 1e-7
-            });
-            let face = axis * 2 + side;
-            if inside
-                && best.is_none_or(|(old, old_face)| {
-                    t < old - 1e-9 || ((t - old).abs() <= 1e-9 && face < old_face)
-                })
-            {
-                best = Some((t, face));
-            }
-        }
-    }
-    best
-}
+use plan_my_cabinet::render::snap::board_hit;
 
 /// Near a board's outline, the broad face counts as its edge: edge faces are
 /// thin, so the Band tool accepts a click this far in from the edge.
@@ -416,49 +377,10 @@ fn pick_visible(
     rect: egui::Rect,
     selection: &Selection,
 ) -> Option<Uuid> {
-    let ray = camera.ray(pointer, rect);
-    let boards = project
-        .boards
-        .iter()
-        .filter(|board| selection.visible(project, board.id))
-        .filter_map(|board| {
-            let pose = world_pose(project, board)?;
-            let dimensions = board
-                .blank_dimensions()
-                .map(|v| v.micrometres() as f64 / 1000.0);
-            let (distance, _) = board_hit(ray, pose, dimensions)?;
-            Some((distance, board.id))
-        });
-    let hardware = project
-        .hardware
-        .iter()
-        .filter(|h| selection.visible(project, h.id))
-        .filter_map(|h| {
-            let dimensions = project.hardware_dimensions(h)?;
-            let pose = plan_my_cabinet::assembly_edit::world_pose(project, h.id).ok()?;
-            let (distance, _) = board_hit(
-                ray,
-                pose,
-                dimensions.map(|d| d.micrometres() as f64 / 1000.0),
-            )?;
-            Some((distance, h.id))
-        });
-    // Drawer slides and hinges, by the boxes they occupy.
-    let fittings = plan_my_cabinet::render::hardware_mesh::pick_boxes(project, selection, None)
-        .into_iter()
-        .filter_map(|(id, _, boxes)| {
-            boxes
-                .into_iter()
-                .filter_map(|(pose, size)| board_hit(ray, pose, size).map(|(d, _)| d))
-                .min_by(f64::total_cmp)
-                .map(|distance| (distance, id))
-        })
-        .collect::<Vec<_>>();
-    boards
-        .chain(hardware)
-        .chain(fittings)
-        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
-        .map(|(_, id)| id)
+    // Boards, dimensioned hardware, then drawer slides and hinges by the boxes they occupy.
+    let boxes = plan_my_cabinet::render::snap::scene_boxes(project, selection);
+    plan_my_cabinet::render::snap::nearest_hit(&boxes, camera.ray(pointer, rect))
+        .map(|(_, index, _)| boxes[index].id)
 }
 
 #[cfg(test)]
@@ -722,8 +644,6 @@ pub fn show(
         true,
         faces,
         None,
-        plan_my_cabinet::measurements::Scope::Body,
-        plan_my_cabinet::measurements::Frame::World,
     );
 }
 
@@ -741,8 +661,6 @@ pub fn show_move(
     material_tint: bool,
     faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
-    measurement_scope: plan_my_cabinet::measurements::Scope,
-    measurement_frame: plan_my_cabinet::measurements::Frame,
 ) -> ViewportInteraction {
     show_move_with_hardware(
         ui,
@@ -757,8 +675,6 @@ pub fn show_move(
         plan_my_cabinet::render::lighting::LightingPreference::default(),
         faces,
         poses,
-        measurement_scope,
-        measurement_frame,
         None,
         false,
     )
@@ -780,8 +696,6 @@ pub fn show_move_with_hardware(
     lighting: plan_my_cabinet::render::lighting::LightingPreference,
     faces: Option<(Uuid, BoardFace, Uuid, BoardFace)>,
     poses: Option<&HashMap<Uuid, plan_my_cabinet::units::Pose>>,
-    measurement_scope: plan_my_cabinet::measurements::Scope,
-    measurement_frame: plan_my_cabinet::measurements::Frame,
     installation_id: Option<Uuid>,
     hardware_workspace: bool,
 ) -> ViewportInteraction {
@@ -840,17 +754,7 @@ pub fn show_move_with_hardware(
         let handles = resize::handles(project, camera, rect, selection, tool);
         resize::paint(ui, tool, &handles);
     }
-    annotations::paint(
-        ui,
-        camera,
-        project,
-        selection,
-        tool,
-        rect,
-        pt,
-        measurement_scope,
-        measurement_frame,
-    );
+    annotations::paint(ui, camera, project, selection, tool, rect, pt);
     hardware_annotations::paint(
         ui,
         camera,

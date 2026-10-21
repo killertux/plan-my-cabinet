@@ -59,6 +59,7 @@ pub(super) fn interact_with_selection(
         resize::handles(project, camera, rect, selection, tool)
     };
     if modal {
+        tool.measure.clear_hover();
         action = tool.cancel();
         if tool.resize.take().is_some() {
             interaction.resize = Some(ResizeAction::Cancel);
@@ -179,8 +180,21 @@ pub(super) fn interact_with_selection(
         } else {
             tool.band_hover = None;
         }
+        if tool.mode == ToolMode::Measure {
+            super::measure_tool::interact(
+                ui,
+                &response,
+                project,
+                camera,
+                rect,
+                selection,
+                &mut tool.measure,
+            );
+        } else {
+            tool.measure.clear_hover();
+        }
         if tool.drag.is_none()
-            && tool.mode != ToolMode::Band
+            && !matches!(tool.mode, ToolMode::Band | ToolMode::Measure)
             && !resizing
             && tool.resize_hover.is_none()
             && !ui.input(|i| i.pointer.any_down())
@@ -199,7 +213,7 @@ pub(super) fn interact_with_selection(
             }
         }
         if !preview_active
-            && tool.mode != ToolMode::Band
+            && !matches!(tool.mode, ToolMode::Band | ToolMode::Measure)
             && response.clicked_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()
         {

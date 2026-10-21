@@ -5,4 +5,5 @@ pub mod mesh;
 pub mod picture;
 pub mod raster;
 pub mod sheet;
+pub mod snap;
 pub mod surface;
