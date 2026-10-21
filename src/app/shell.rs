@@ -1145,8 +1145,6 @@ impl DesktopApp {
                         .placement()
                         .and_then(PlacementDialog::highlighted),
                     motion_poses.as_ref(),
-                    self.design.measurement_scope,
-                    self.design.measurement_frame,
                     match (self.session.active, self.session.inspector) {
                         (Workspace::Hardware, Some(InspectorTarget::Installation(id))) => Some(id),
                         _ => None,

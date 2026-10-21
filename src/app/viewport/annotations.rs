@@ -1,7 +1,6 @@
 //! Screen-space drag annotations, projected through the same camera and canvas rect as picking.
 use super::*;
 use plan_my_cabinet::dimension_input::{Locale, format_length};
-use plan_my_cabinet::measurements::{Frame, Scope};
 
 fn selected_dimensions(
     camera: &Camera,
@@ -141,7 +140,6 @@ fn paint_selected_dimensions(
     );
 }
 
-#[allow(clippy::too_many_arguments)] // Camera, canvas, transient tool, and measurement choices are independent view state.
 pub(super) fn paint(
     ui: &egui::Ui,
     camera: &Camera,
@@ -150,37 +148,11 @@ pub(super) fn paint(
     tool: &MoveTool,
     rect: egui::Rect,
     pt: bool,
-    scope: Scope,
-    frame: Frame,
 ) {
-    paint_selected_dimensions(ui, camera, project, selection, rect, pt);
-    if tool.mode == ToolMode::Measure && rect.width() > 120.0 && rect.height() > 90.0 {
-        let localizer = plan_my_cabinet::i18n::Localizer::new(if pt {
-            plan_my_cabinet::i18n::Language::PtBr
-        } else {
-            plan_my_cabinet::i18n::Language::En
-        });
-        let (heading, value) =
-            super::measurement_readout(project, selection, scope, frame, &localizer);
-        let painter = ui.painter().with_clip_rect(rect);
-        let font = egui::FontId::proportional(13.0);
-        let color = egui::Color32::WHITE;
-        let max_width = (rect.width() - 32.0).max(40.0);
-        let title = painter.layout(heading, font.clone(), color, max_width);
-        let value = painter.layout(value, font, color, max_width);
-        let size = egui::vec2(
-            title.size().x.max(value.size().x) + 20.0,
-            title.size().y + value.size().y + 18.0,
-        );
-        let origin = rect.right_top() - egui::vec2(size.x + 8.0, -8.0);
-        painter.rect_filled(
-            egui::Rect::from_min_size(origin, size).intersect(rect),
-            6.0,
-            egui::Color32::from_rgba_unmultiplied(42, 37, 32, 230),
-        );
-        let second_row = 8.0 + title.size().y;
-        painter.galley(origin + egui::vec2(10.0, 6.0), title, color);
-        painter.galley(origin + egui::vec2(10.0, second_row), value, color);
+    if tool.mode == ToolMode::Measure {
+        super::measure_tool::paint(ui, camera, project, rect, &tool.measure, pt);
+    } else {
+        paint_selected_dimensions(ui, camera, project, selection, rect, pt);
     }
     if let Some(drag) = &tool.drag {
         if let Some(DragSnap::Face(snap)) = drag.snap

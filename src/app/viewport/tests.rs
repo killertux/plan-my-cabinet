@@ -463,8 +463,6 @@ fn preview_blocks_viewport_selection_and_move_but_keeps_orbit_available() {
                         true,
                         None,
                         Some(&poses),
-                        plan_my_cabinet::measurements::Scope::Body,
-                        plan_my_cabinet::measurements::Frame::World,
                     );
                 });
             },
