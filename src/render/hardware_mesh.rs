@@ -451,15 +451,23 @@ fn um3(p: [i128; 3]) -> [f64; 3] {
     p.map(|v| v as f64 / 1000.0)
 }
 
-/// The hinge's cup (in the door) and plate (on the cabinet side), from its
-/// checked references. `None` when the hinge has no references (unsupported
-/// settings or missing parts): nothing is drawn rather than a guess.
-pub fn hinge_solid(
+/// One part of a hinge, kept separate so its points can anchor to the door
+/// or the mounting board.
+struct HingePart {
+    anchor: Uuid,
+    pose: Pose,
+    size: [f64; 3],
+    tris: Vec<Tri>,
+    edges: Vec<[[f64; 3]; 2]>,
+}
+
+/// The hinge's cup and plate geometry, from its checked references.
+fn hinge_parts(
     project: &Project,
     installation: &crate::domain::HingeInstallation,
     poses: Option<&HashMap<Uuid, Pose>>,
     show_plate: bool,
-) -> Option<Solid> {
+) -> Option<(Uuid, [f32; 3], Vec<HingePart>)> {
     let status = crate::hinge_installation::diagnose(project, installation);
     let r = status.references.as_ref()?;
     let pose_of = |id: Uuid| {
@@ -478,9 +486,7 @@ pub fn hinge_solid(
     } else {
         HINGE_ISSUE
     };
-    let mut tris = Vec::new();
-    let mut edges = Vec::new();
-    let mut boxes = Vec::new();
+    let mut parts = Vec::new();
     // Cup: a short cylinder sunk into the door face, its rim just proud.
     let cup = um3(r.cup_center_um);
     let t = mm(door.thickness);
@@ -492,9 +498,7 @@ pub fn hinge_solid(
     let radius = mm(r.cup_diameter) / 2.0;
     let mut b = Builder::default();
     b.frustum([cup[0], cup[1]], [z0, z1], [radius, radius], Some(color));
-    let (t1, e1) = b.place(door_pose);
-    tris.extend(t1);
-    edges.extend(e1);
+    let (tris, edges) = b.place(door_pose);
     let corner = Pose::new(
         door_pose
             .transform_point([cup[0] - radius, cup[1] - radius, z0])
@@ -502,7 +506,13 @@ pub fn hinge_solid(
         door_pose.rotation,
     )
     .ok()?;
-    boxes.push((corner, [2.0 * radius, 2.0 * radius, z1 - z0]));
+    parts.push(HingePart {
+        anchor: installation.door_board_id,
+        pose: corner,
+        size: [2.0 * radius, 2.0 * radius, z1 - z0],
+        tris,
+        edges,
+    });
     if show_plate {
         // Plate: a small block around the two screw holes on the side.
         let [a, c] = r.plate_hole_centers_um.map(um3);
@@ -519,9 +529,7 @@ pub fn hinge_solid(
         };
         let mut b = Builder::default();
         b.rect_frustum(centre, [p0, p1], size, size, Some(color));
-        let (t2, e2) = b.place(mount_pose);
-        tris.extend(t2);
-        edges.extend(e2);
+        let (tris, edges) = b.place(mount_pose);
         let corner = Pose::new(
             mount_pose
                 .transform_point([centre[0] - size[0] / 2.0, centre[1] - size[1] / 2.0, p0])
@@ -529,27 +537,62 @@ pub fn hinge_solid(
             mount_pose.rotation,
         )
         .ok()?;
-        boxes.push((corner, [size[0], size[1], p1 - p0]));
+        parts.push(HingePart {
+            anchor: installation.mounting_board_id,
+            pose: corner,
+            size: [size[0], size[1], p1 - p0],
+            tris,
+            edges,
+        });
     }
+    Some((installation.id, color, parts))
+}
+
+/// The hinge's cup (in the door) and plate (on the cabinet side), from its
+/// checked references. `None` when the hinge has no references (unsupported
+/// settings or missing parts): nothing is drawn rather than a guess.
+pub fn hinge_solid(
+    project: &Project,
+    installation: &crate::domain::HingeInstallation,
+    poses: Option<&HashMap<Uuid, Pose>>,
+    show_plate: bool,
+) -> Option<Solid> {
+    let (id, base, parts) = hinge_parts(project, installation, poses, show_plate)?;
     Some(Solid {
-        id: installation.id,
+        id,
         kind: SolidKind::Hinge,
-        boxes,
-        tris,
-        edges,
-        base: color,
+        boxes: parts.iter().map(|p| (p.pose, p.size)).collect(),
+        tris: parts.iter().flat_map(|p| p.tris.iter().copied()).collect(),
+        edges: parts.iter().flat_map(|p| p.edges.iter().copied()).collect(),
+        base,
     })
+}
+
+/// One pickable fitting part: its envelope box, the object that anchors a
+/// point on it, and its exact triangle and outline geometry when the envelope
+/// is not the real shape. Slide members leave the geometry empty because
+/// their box is exact.
+#[derive(Clone, Debug)]
+pub struct PickPart {
+    pub id: Uuid,
+    pub kind: SolidKind,
+    pub pose: Pose,
+    pub size: [f64; 3],
+    /// The board or hardware item whose local frame moves this part.
+    pub anchor: Uuid,
+    pub tris: Vec<Tri>,
+    pub edges: Vec<[[f64; 3]; 2]>,
 }
 
 /// One pickable fitting: its id, kind and posed boxes (size in mm).
 pub type PickBoxes = (Uuid, SolidKind, Vec<(Pose, [f64; 3])>);
 
-/// Boxes to pick slides and hinges by, without building their triangles.
-pub fn pick_boxes(
+/// Pickable slide and hinge parts with their exact geometry and anchor object.
+pub fn pick_parts(
     project: &Project,
     selection: &Selection,
     poses: Option<&HashMap<Uuid, Pose>>,
-) -> Vec<PickBoxes> {
+) -> Vec<PickPart> {
     let mut out = Vec::new();
     for installation in &project.slide_installations {
         if !installation
@@ -563,11 +606,20 @@ pub fn pick_boxes(
         if let Some(members) =
             crate::slide_installation::member_boxes(project, installation, extension)
         {
-            out.push((
-                installation.id,
-                SolidKind::Slide,
-                members.into_iter().flatten().collect(),
-            ));
+            for (side, members) in members.into_iter().enumerate() {
+                let anchor = installation.drawer_sides[side];
+                for (pose, size) in members {
+                    out.push(PickPart {
+                        id: installation.id,
+                        kind: SolidKind::Slide,
+                        pose,
+                        size,
+                        anchor,
+                        tris: Vec::new(),
+                        edges: Vec::new(),
+                    });
+                }
+            }
         }
     }
     for hinge in &project.hinge_installations {
@@ -575,8 +627,37 @@ pub fn pick_boxes(
             continue;
         }
         let plate = selection.visible(project, hinge.mounting_board_id);
-        if let Some(solid) = hinge_solid(project, hinge, poses, plate) {
-            out.push((hinge.id, SolidKind::Hinge, solid.boxes));
+        if let Some((id, _, parts)) = hinge_parts(project, hinge, poses, plate) {
+            out.extend(parts.into_iter().map(|part| PickPart {
+                id,
+                kind: SolidKind::Hinge,
+                pose: part.pose,
+                size: part.size,
+                anchor: part.anchor,
+                tris: part.tris,
+                edges: part.edges,
+            }));
+        }
+    }
+    out
+}
+
+/// Boxes to pick slides and hinges by. Kept for callers that only need the
+/// envelopes; measuring uses [`pick_parts`] for the exact shapes.
+pub fn pick_boxes(
+    project: &Project,
+    selection: &Selection,
+    poses: Option<&HashMap<Uuid, Pose>>,
+) -> Vec<PickBoxes> {
+    let mut out: Vec<PickBoxes> = Vec::new();
+    for part in pick_parts(project, selection, poses) {
+        if let Some((_, _, boxes)) = out
+            .iter_mut()
+            .find(|(id, kind, _)| *id == part.id && *kind == part.kind)
+        {
+            boxes.push((part.pose, part.size));
+        } else {
+            out.push((part.id, part.kind, vec![(part.pose, part.size)]));
         }
     }
     out
@@ -790,5 +871,22 @@ mod tests {
             .map(|t| t.normals[0][2])
             .collect();
         assert!(tops.iter().all(|z| *z > 0.99));
+    }
+
+    #[test]
+    fn hinge_parts_keep_exact_geometry_and_board_anchors() {
+        let project = crate::reference_fixture::project();
+        let hinge = project.hinge_installations[0].clone();
+        let parts = pick_parts(&project, &Selection::default(), None);
+        let cup = parts
+            .iter()
+            .find(|part| part.id == hinge.id && part.kind == SolidKind::Hinge)
+            .expect("hinge cup");
+        assert!(!cup.tris.is_empty());
+        assert!(!cup.edges.is_empty());
+        assert!(cup.anchor == hinge.door_board_id || cup.anchor == hinge.mounting_board_id);
+        let boxes = pick_boxes(&project, &Selection::default(), None);
+        let (_, _, hinge_boxes) = boxes.iter().find(|(id, _, _)| *id == hinge.id).unwrap();
+        assert!(hinge_boxes.contains(&(cup.pose, cup.size)));
     }
 }

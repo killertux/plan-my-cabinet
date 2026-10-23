@@ -13,6 +13,8 @@ struct Scene {
     tool: MoveTool,
     rect: egui::Rect,
     texts: Vec<(String, egui::Pos2)>,
+    commands: Vec<egui::OutputCommand>,
+    language: Language,
 }
 
 impl Scene {
@@ -49,6 +51,8 @@ impl Scene {
             },
             rect: egui::Rect::NOTHING,
             texts: Vec::new(),
+            commands: Vec::new(),
+            language: Language::En,
         };
         scene.frame(vec![]);
         scene.frame(vec![]);
@@ -57,7 +61,7 @@ impl Scene {
 
     fn frame(&mut self, events: Vec<egui::Event>) {
         let mut selection_proposed = false;
-        let output = self.ctx.run_ui(
+        let mut output = self.ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -76,7 +80,7 @@ impl Scene {
                         &mut self.selection,
                         &mut self.tool,
                         false,
-                        Language::En,
+                        self.language,
                         false,
                         true,
                         None,
@@ -95,6 +99,7 @@ impl Scene {
                 _ => None,
             })
             .collect();
+        self.commands = std::mem::take(&mut output.platform_output.commands);
         output.drop_without_applying_deltas();
     }
 
@@ -116,13 +121,20 @@ impl Scene {
     }
 
     fn key(&mut self, key: egui::Key) {
-        self.frame(vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::NONE,
-        }]);
+        self.key_with(key, egui::Modifiers::NONE);
+    }
+
+    fn key_with(&mut self, key: egui::Key, modifiers: egui::Modifiers) {
+        self.frame(vec![
+            egui::Event::ModifiersChanged(modifiers),
+            egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            },
+        ]);
     }
 
     fn text(&self, wanted: &str) -> Option<egui::Pos2> {
@@ -171,10 +183,10 @@ fn axis_keys_toggle_and_escape_cancels_then_clears() {
     let mut scene = Scene::new();
     scene.frame(vec![egui::Event::PointerMoved(scene.rect.center())]);
     scene.key(egui::Key::Z);
-    assert_eq!(scene.tool.measure.axis_lock(), Some(2));
+    assert_eq!(scene.tool.measure.axis_lock(), Some(AxisLock::World(2)));
     assert!(scene.text("Z · locked").is_some());
     scene.key(egui::Key::X);
-    assert_eq!(scene.tool.measure.axis_lock(), Some(0));
+    assert_eq!(scene.tool.measure.axis_lock(), Some(AxisLock::World(0)));
     scene.key(egui::Key::X);
     assert_eq!(scene.tool.measure.axis_lock(), None);
 
@@ -226,4 +238,87 @@ fn lengths_use_the_display_unit_and_locale() {
     assert_eq!(length_text(600.0, Unit::Mm, Locale::En), "600 mm");
     assert_eq!(length_text(254.0, Unit::Inch, Locale::PtBr), "10 in");
     assert_eq!(length_text(12.345, Unit::Cm, Locale::En), "1.235 cm");
+}
+
+#[test]
+fn axis_key_twice_locks_the_first_points_object_axis() {
+    let mut scene = Scene::new();
+    let angle = std::f64::consts::FRAC_PI_4;
+    let rotation =
+        Quaternion::normalized((angle / 2.0).cos(), 0.0, 0.0, (angle / 2.0).sin()).unwrap();
+    scene.project.boards[0].pose = Pose::new([0.0; 3], rotation).unwrap();
+    scene.frame(vec![]);
+    let start = rotation.rotate([0.0, 50.0, 20.0]);
+    scene.click(scene.at(start) + egui::vec2(2.0, -2.0));
+    assert!(scene.tool.measure.in_progress());
+    scene.key(egui::Key::X);
+    assert_eq!(scene.tool.measure.axis_lock(), Some(AxisLock::World(0)));
+    scene.key(egui::Key::X);
+    assert_eq!(scene.tool.measure.axis_lock(), Some(AxisLock::Local(0)));
+    assert!(scene.text("X · local · locked").is_some());
+
+    let target = rotation.rotate([70.0, 50.0, 20.0]);
+    scene.frame(vec![egui::Event::PointerMoved(scene.at(target))]);
+    let hover = scene.tool.measure.hover.expect("hover");
+    assert_eq!(hover.kind, SnapKind::OnAxis);
+    assert_eq!(hover.axis, Some(0));
+    assert!(hover.local_axis);
+    assert!(
+        (hover.point[0] - target[0]).abs() < 0.5,
+        "{:?}",
+        hover.point
+    );
+    assert!(
+        (hover.point[1] - target[1]).abs() < 0.5,
+        "{:?}",
+        hover.point
+    );
+}
+
+#[test]
+fn p_locks_perpendicular_to_the_first_points_face() {
+    let mut scene = Scene::new();
+    scene.click(scene.at([50.0, 50.0, 20.0]));
+    assert_eq!(scene.tool.measure.start_face(), Some([0.0, 0.0, 1.0]));
+    scene.key(egui::Key::P);
+    assert!(scene.tool.measure.perpendicular());
+    assert!(scene.text("Perpendicular · locked").is_some());
+    let lock = scene.tool.measure.lock(&scene.project).unwrap();
+    assert_eq!(lock.direction, [0.0, 0.0, 1.0]);
+    assert!(lock.perpendicular);
+
+    scene.key(egui::Key::X);
+    assert!(!scene.tool.measure.perpendicular());
+    assert_eq!(scene.tool.measure.axis_lock(), Some(AxisLock::World(0)));
+}
+
+#[test]
+fn command_c_copies_the_displayed_distance() {
+    let mut scene = Scene::new();
+    scene.key_with(
+        egui::Key::C,
+        egui::Modifiers {
+            command: true,
+            ..Default::default()
+        },
+    );
+    assert!(scene.commands.is_empty(), "nothing to copy yet");
+
+    scene.click(scene.at([0.0, 0.0, 20.0]));
+    scene.click(scene.at([100.0, 0.0, 20.0]));
+    scene.key_with(
+        egui::Key::C,
+        egui::Modifiers {
+            command: true,
+            ..Default::default()
+        },
+    );
+    assert!(
+        scene.commands.iter().any(|command| matches!(
+            command,
+            egui::OutputCommand::CopyText(text) if text == "100 mm"
+        )),
+        "{:?}",
+        scene.commands
+    );
 }

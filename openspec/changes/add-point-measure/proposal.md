@@ -34,10 +34,31 @@ tool has to help the way SketchUp's tape measure does.
 - **Bounding dimensions** move to the inspector only, where their scope and
   frame controls already were.
 
+## Phase 3 polish
+
+The optional polish pass makes the tool precise on shaped fittings and on
+rotated work, and lets the measured value leave the viewport.
+
+- **Real fitting shapes.** Points on feet, hinges and drawer slides snap to
+  the corners and edges of the drawn part, and a face snap uses the part's
+  actual surface. A point on a fitting is anchored to the object that moves
+  it: the foot itself, the door or mounting board for a hinge, and the drawer
+  side for a slide. The point follows edits and disappears with the fitting.
+- **Object-axis lock.** X / Y / Z lock a world axis on the first press and
+  the corresponding axis of the object under the first point on the second
+  press, then release on the third. **P** locks the line perpendicular to the
+  face under the first point, so the true gap between parallel panels can be
+  measured even when they are rotated.
+- **Copy the value.** Cmd+C (Ctrl+C on Linux) copies the distance currently
+  shown, formatted with the display unit and UI language, ready to paste into
+  a dimension field or note.
+
 ## Impact
 
-- Library: `render::snap` (features, occlusion, inference); the viewport's
-  box hit test moves there and picking shares it.
-- Desktop: `viewport::measure_tool` (state, input, overlay); the canvas
-  readout card is removed; shortcut list and status hint updated.
+- Library: `render::snap` (features, occlusion, inference, shape hits,
+  locks); the viewport's box hit test moves there and picking shares it.
+  `render::hardware_mesh` exposes exact part edges and triangles with the
+  object that anchors them.
+- Desktop: `viewport::measure_tool` (state, input, overlay, clipboard); the
+  canvas readout card is removed; shortcut list and status hint updated.
 - No project data, persistence, export or MCP change.

@@ -1203,6 +1203,7 @@ impl DesktopApp {
         }
         let is_hardware =
             |app: &Self, id: Uuid| app.editor.project().hardware.iter().any(|h| h.id == id);
+        #[allow(clippy::collapsible_match)] // The fallback preview arm must not see hardware.
         match action.drag {
             Some(viewport::DragAction::Preview(id, pose)) if is_hardware(self, id) => {
                 if self.editor.preview_hardware_world(id, pose).is_ok() {
