@@ -39,6 +39,7 @@ pub(crate) mod state;
 pub(crate) mod stock_ui;
 pub(crate) mod template_setup_ui;
 pub(crate) mod toasts;
+pub(crate) mod update;
 pub(crate) mod viewport;
 pub(crate) mod welcome_host;
 pub(crate) mod widget_gallery;

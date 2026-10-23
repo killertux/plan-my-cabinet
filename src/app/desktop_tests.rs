@@ -4490,3 +4490,100 @@ fn inspector_rename_replaces_name_on_enter_and_escape_keeps_it() {
     app.editor.undo().unwrap();
     assert_eq!(app.editor.project().boards[1].name, original);
 }
+
+fn update_release() -> crate::app::update::Release {
+    crate::app::update::Release {
+        version: semver::Version::parse("0.9.0").expect("fixture version"),
+        notes_url: "https://example.test/release".into(),
+        asset: "plan-my-cabinet-0.9.0-macos-arm64.tar.gz".into(),
+        asset_url: "https://example.test/app.tar.gz".into(),
+        checksums_url: "https://example.test/SHA256SUMS".into(),
+    }
+}
+
+fn update_frame(app: &mut DesktopApp, ctx: &egui::Context, events: Vec<egui::Event>) -> String {
+    let output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1100.0, 700.0),
+            )),
+            events,
+            ..Default::default()
+        },
+        |_ui| app.show_update(ctx),
+    );
+    let text = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    output.drop_without_applying_deltas();
+    text
+}
+
+#[test]
+fn update_prompt_offers_both_versions_and_later_dismisses_this_run() {
+    let mut app = DesktopApp::default();
+    let ctx = egui::Context::default();
+    theme::install_fonts(&ctx);
+    app.update.offer_for_test(update_release());
+    update_frame(&mut app, &ctx, vec![]);
+    let text = update_frame(&mut app, &ctx, vec![]);
+    assert!(text.contains("Update available"), "{text}");
+    assert!(text.contains("0.9.0"), "{text}");
+    assert!(text.contains(env!("CARGO_PKG_VERSION")), "{text}");
+    assert!(app.update.blocks_ui());
+
+    let escape = egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let text = update_frame(&mut app, &ctx, vec![escape]);
+    assert!(app.update.available_for_test().is_none());
+    assert!(app.update.dismissed_for_test());
+    assert!(!app.update.blocks_ui(), "{text}");
+}
+
+#[test]
+fn update_failure_returns_to_the_prompt_with_the_reason() {
+    let mut app = DesktopApp::default();
+    let ctx = egui::Context::default();
+    theme::install_fonts(&ctx);
+    app.update
+        .fail_for_test(update_release(), "checksum mismatch for app.tar.gz");
+    update_frame(&mut app, &ctx, vec![]);
+    let text = update_frame(&mut app, &ctx, vec![]);
+    assert!(text.contains("Update failed"), "{text}");
+    assert!(text.contains("checksum mismatch"), "{text}");
+    assert!(text.contains("Try again"), "{text}");
+}
+
+#[test]
+fn update_progress_cancel_requests_the_worker_to_stop() {
+    let mut app = DesktopApp::default();
+    let ctx = egui::Context::default();
+    theme::install_fonts(&ctx);
+    let cancel = Arc::new(AtomicBool::new(false));
+    app.update.progress_for_test(cancel.clone());
+    update_frame(&mut app, &ctx, vec![]);
+    let text = update_frame(&mut app, &ctx, vec![]);
+    assert!(text.contains("Downloading update"), "{text}");
+    let escape = egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    update_frame(&mut app, &ctx, vec![escape]);
+    assert!(cancel.load(Ordering::Relaxed));
+    assert!(app.update.cancel_requested_for_test());
+}

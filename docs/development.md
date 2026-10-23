@@ -111,6 +111,13 @@ not bundle distribution shared libraries; use `ldd` on a target Linux host.
 Neither a successful build nor archive inspection proves clean-machine GUI
 startup; see `docs/release-checklist.md` for tested combinations and gaps.
 
+Release builds installed from one of these packages check the GitHub latest
+release at startup and offer an in-place update. The updater downloads the
+matching asset, requires `SHA256SUMS`, replaces the installed `.app` or
+executable and restarts. Debug builds, `cargo run` builds under `target/`, and
+`--mcp` or capture sessions never check. Set
+`PMCAB_DISABLE_UPDATE_CHECK=1` to disable the check for release builds.
+
 ## Optimization performance fixture (task 8.6)
 
 `tests/support/performance_fixture.rs` constructs exactly 100 numbered
