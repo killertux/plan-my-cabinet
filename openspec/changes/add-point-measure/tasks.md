@@ -20,8 +20,29 @@
 - [x] 3.2 Headless viewport tests (click flow, anchors, keys, panel placement, formatting).
 - [ ] 3.3 Manual check in both languages at narrow and wide window sizes.
 
-## 4. Later
+## 4. Phase 3 polish
 
-- [ ] 4.1 Vertices of foot and fitting meshes.
-- [ ] 4.2 Local-axis lock (press an axis key twice) and perpendicular-to-face.
-- [ ] 4.3 Copy the measured value.
+### 4.1 Real fitting shapes
+
+- [x] Expose exact fitting edges and triangles with their anchor object from `render::hardware_mesh` for feet, hinges and slides.
+- [x] Snap to real fitting corners, midpoints and edges, and hit their real surfaces for face snaps and occlusion.
+- [x] Anchor points on fittings to the moving object; follow edits and drop the measurement when the fitting is deleted.
+- [x] Unit tests with a shaped foot, a hinge part and an anchored measurement.
+
+### 4.2 Object-axis and perpendicular locks
+
+- [x] Cycle X / Y / Z from world axis to the first point's object axis to off.
+- [x] Press P to lock perpendicular to the face under the first point; clear the other lock when either is chosen.
+- [x] Name local and perpendicular locks in the readout without colouring them as world axes.
+- [x] Unit tests for rotated local axes, perpendicular projection and lock cycling.
+
+### 4.3 Copy the measured value
+
+- [x] Cmd/Ctrl+C copies the in-progress or last kept distance in the display unit and UI language.
+- [x] Keep copying side-effect free and show a short confirmation in the readout.
+- [x] Unit test the clipboard command and the formatted value.
+
+### 4.4 Presentation and verification
+
+- [x] English and Portuguese strings, shortcut hint and viewport documentation.
+- [x] `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, and the test suite pass.

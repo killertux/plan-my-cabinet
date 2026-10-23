@@ -1,6 +1,9 @@
 //! Measure-tool snapping: exact corners, edge midpoints, face centres, edges
-//! and faces of the scene's boxes, found in screen space and hidden by nearer
-//! boxes. Presentation-only; nothing here edits the project.
+//! and faces of the scene's boxes and shaped fittings, found in screen space
+//! and hidden by nearer geometry. Presentation-only; nothing here edits the
+//! project.
+use std::collections::HashSet;
+
 use eframe::egui;
 use uuid::Uuid;
 
@@ -71,6 +74,10 @@ impl SnapKind {
 pub struct Anchor {
     pub id: Uuid,
     pub local_mm: [f64; 3],
+    /// The fitting that must still exist for this point to resolve. A point
+    /// on a slide or hinge is held in its board's frame but dies with the
+    /// installation; a point on a board or hardware item has no owner.
+    pub owner: Option<Uuid>,
 }
 
 /// A measured end: attached to a board or hardware item, or fixed in the world.
@@ -81,13 +88,19 @@ pub enum MeasurePoint {
 }
 
 impl MeasurePoint {
-    /// The current world position; `None` once the anchoring object is gone.
+    /// The current world position; `None` once the anchoring object or its
+    /// fitting is gone.
     pub fn resolve(self, project: &Project) -> Option<[f64; 3]> {
         match self {
             Self::World(point) => Some(point),
-            Self::On(anchor) => object_pose(project, anchor.id)?
-                .transform_point(anchor.local_mm)
-                .ok(),
+            Self::On(anchor) => {
+                if anchor.owner.is_some_and(|id| !fitting_exists(project, id)) {
+                    return None;
+                }
+                object_pose(project, anchor.id)?
+                    .transform_point(anchor.local_mm)
+                    .ok()
+            }
         }
     }
 }
@@ -104,17 +117,38 @@ fn object_pose(project: &Project, id: Uuid) -> Option<Pose> {
         .flatten()
 }
 
+fn fitting_exists(project: &Project, id: Uuid) -> bool {
+    project.slide_installations.iter().any(|i| i.id == id)
+        || project.hinge_installations.iter().any(|i| i.id == id)
+        || project.hardware.iter().any(|h| h.id == id)
+}
+
+/// The object under the first point whose local axes a lock can follow.
+pub fn local_axis(project: &Project, point: MeasurePoint, axis: usize) -> Option<[f64; 3]> {
+    let MeasurePoint::On(anchor) = point else {
+        return None;
+    };
+    Some(object_pose(project, anchor.id)?.rotation.rotate(unit(axis)))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Snap {
     pub point: [f64; 3],
     pub kind: SnapKind,
     pub anchor: Option<Anchor>,
-    /// The world axis (0 = X, 1 = Y, 2 = Z) the point lies on from the first point.
+    /// The named axis (0 = X, 1 = Y, 2 = Z) the point lies on from the first
+    /// point, when it is locked or inferred.
     pub axis: Option<usize>,
+    /// The named axis is the anchoring object's local axis, not a world axis.
+    pub local_axis: bool,
+    /// The point was projected onto a face normal.
+    pub perpendicular: bool,
     /// Unit direction of the edge under a midpoint or on-edge snap.
     pub edge: Option<[f64; 3]>,
     /// The hovered feature a locked direction projected this point from.
     pub source: Option<[f64; 3]>,
+    /// The visible face normal under the pointer, for a perpendicular lock.
+    pub face: Option<[f64; 3]>,
 }
 
 impl Snap {
@@ -124,8 +158,11 @@ impl Snap {
             kind,
             anchor: None,
             axis: None,
+            local_axis: false,
+            perpendicular: false,
             edge: None,
             source: None,
+            face: None,
         }
     }
 
@@ -135,19 +172,42 @@ impl Snap {
     }
 }
 
-/// One pickable box: a board, a dimensioned hardware item, or a fitting part.
+/// The object a box's points are stored in.
 #[derive(Clone, Copy, Debug)]
+pub struct AnchorBase {
+    pub id: Uuid,
+    pub pose: Pose,
+    pub owner: Option<Uuid>,
+}
+
+/// One triangle of a fitting's real surface, in world space.
+#[derive(Clone, Copy, Debug)]
+pub struct ShapeTri {
+    pub points: [[f64; 3]; 3],
+    pub normal: [f64; 3],
+}
+
+/// A fitting's real edges and surface, in world space.
+#[derive(Clone, Debug, Default)]
+pub struct Shape {
+    pub edges: Vec<[[f64; 3]; 2]>,
+    pub tris: Vec<ShapeTri>,
+}
+
+/// One pickable box: a board, a dimensioned hardware item, or a fitting part.
+#[derive(Clone, Debug)]
 pub struct SceneBox {
     pub id: Uuid,
     pub pose: Pose,
     pub size: [f64; 3],
-    /// Boards and hardware own their pose; fitting parts are derived, so
-    /// points on them are kept in world coordinates.
-    pub anchored: bool,
+    /// The object whose local frame holds points on this box.
+    pub anchor: Option<AnchorBase>,
+    /// Real edges and triangles when the box is only an envelope.
+    pub shape: Option<Shape>,
 }
 
-/// Every visible box the viewport picks: boards, dimensioned hardware, and
-/// drawer slides and hinges by the boxes they occupy.
+/// Every visible box the viewport picks: boards, hardware, and the parts of
+/// drawer slides and hinges.
 pub fn scene_boxes(project: &Project, selection: &Selection) -> Vec<SceneBox> {
     let mm = |v: crate::units::Length| v.micrometres() as f64 / 1000.0;
     let boards = project
@@ -155,11 +215,17 @@ pub fn scene_boxes(project: &Project, selection: &Selection) -> Vec<SceneBox> {
         .iter()
         .filter(|board| selection.visible(project, board.id))
         .filter_map(|board| {
+            let pose = world_pose(project, board)?;
             Some(SceneBox {
                 id: board.id,
-                pose: world_pose(project, board)?,
+                pose,
                 size: board.blank_dimensions().map(mm),
-                anchored: true,
+                anchor: Some(AnchorBase {
+                    id: board.id,
+                    pose,
+                    owner: None,
+                }),
+                shape: None,
             })
         });
     let hardware = project
@@ -167,24 +233,93 @@ pub fn scene_boxes(project: &Project, selection: &Selection) -> Vec<SceneBox> {
         .iter()
         .filter(|h| selection.visible(project, h.id))
         .filter_map(|h| {
+            let pose = crate::assembly_edit::world_pose(project, h.id).ok()?;
+            let size = project.hardware_dimensions(h)?.map(mm);
+            // A catalog foot is drawn as a tapered, round or framed solid;
+            // snapping follows that shape instead of its envelope box.
+            let shape = project
+                .foot_spec(h)
+                .filter(|spec| spec.is_consistent())
+                .map(|spec| shape_of(&super::hardware_mesh::foot_solid(h.id, spec, pose)));
             Some(SceneBox {
                 id: h.id,
-                pose: crate::assembly_edit::world_pose(project, h.id).ok()?,
-                size: project.hardware_dimensions(h)?.map(mm),
-                anchored: true,
-            })
-        });
-    let fittings = super::hardware_mesh::pick_boxes(project, selection, None)
-        .into_iter()
-        .flat_map(|(id, _, boxes)| {
-            boxes.into_iter().map(move |(pose, size)| SceneBox {
-                id,
                 pose,
                 size,
-                anchored: false,
+                anchor: Some(AnchorBase {
+                    id: h.id,
+                    pose,
+                    owner: None,
+                }),
+                shape,
+            })
+        });
+    let fittings = super::hardware_mesh::pick_parts(project, selection, None)
+        .into_iter()
+        .filter_map(|part| {
+            let pose = object_pose(project, part.anchor)?;
+            Some(SceneBox {
+                id: part.id,
+                pose: part.pose,
+                size: part.size,
+                anchor: Some(AnchorBase {
+                    id: part.anchor,
+                    pose,
+                    owner: (part.anchor != part.id).then_some(part.id),
+                }),
+                shape: (!part.tris.is_empty() || !part.edges.is_empty())
+                    .then(|| shape_from(&part.tris, &part.edges)),
             })
         });
     boards.chain(hardware).chain(fittings).collect()
+}
+
+/// World-space shape of a drawn solid.
+fn shape_of(solid: &super::hardware_mesh::Solid) -> Shape {
+    shape_from(&solid.tris, &solid.edges)
+}
+
+fn shape_from(tris: &[super::hardware_mesh::Tri], edges: &[[[f64; 3]; 2]]) -> Shape {
+    let tris = tris
+        .iter()
+        .map(|tri| {
+            let mut normal = [0.0; 3];
+            for n in tri.normals {
+                for (i, value) in n.iter().enumerate() {
+                    normal[i] += f64::from(*value);
+                }
+            }
+            let normal = unit_or(normal, tri_normal(tri.points));
+            ShapeTri {
+                points: tri.points,
+                normal,
+            }
+        })
+        .collect();
+    Shape {
+        edges: edges.to_vec(),
+        tris,
+    }
+}
+
+fn unit_or(value: [f64; 3], fallback: [f64; 3]) -> [f64; 3] {
+    let length = length(value);
+    if length > 1e-12 {
+        value.map(|v| v / length)
+    } else {
+        fallback
+    }
+}
+
+fn tri_normal(points: [[f64; 3]; 3]) -> [f64; 3] {
+    let normal = [
+        (points[1][1] - points[0][1]) * (points[2][2] - points[0][2])
+            - (points[1][2] - points[0][2]) * (points[2][1] - points[0][1]),
+        (points[1][2] - points[0][2]) * (points[2][0] - points[0][0])
+            - (points[1][0] - points[0][0]) * (points[2][2] - points[0][2]),
+        (points[1][0] - points[0][0]) * (points[2][1] - points[0][1])
+            - (points[1][1] - points[0][1]) * (points[2][0] - points[0][0]),
+    ];
+    unit_or(normal, [0.0, 0.0, 1.0])
 }
 
 fn inverse(q: Quaternion) -> Quaternion {
@@ -242,15 +377,80 @@ pub fn board_hit(ray: Ray, pose: Pose, dimensions: [f64; 3]) -> Option<(f64, usi
     best
 }
 
-/// The nearest box the ray crosses: `(distance, box index, face)`. Ties go to the lower id.
-pub fn nearest_hit(boxes: &[SceneBox], ray: Ray) -> Option<(f64, usize, usize)> {
+fn face_normal(pose: Pose, face: usize) -> [f64; 3] {
+    let axis = face / 2;
+    let sign = if face.is_multiple_of(2) { -1.0 } else { 1.0 };
+    pose.rotation.rotate(unit(axis).map(|v| v * sign))
+}
+
+/// Moller-Trumbore, without back-face culling so a ray from inside still hits.
+fn ray_triangle(ray: Ray, points: [[f64; 3]; 3]) -> Option<f64> {
+    let edge1 = sub(points[1], points[0]);
+    let edge2 = sub(points[2], points[0]);
+    let h = [
+        ray.direction[1] * edge2[2] - ray.direction[2] * edge2[1],
+        ray.direction[2] * edge2[0] - ray.direction[0] * edge2[2],
+        ray.direction[0] * edge2[1] - ray.direction[1] * edge2[0],
+    ];
+    let determinant = dot(edge1, h);
+    if determinant.abs() <= 1e-12 {
+        return None;
+    }
+    let inverse = 1.0 / determinant;
+    let offset = sub(ray.origin, points[0]);
+    let u = dot(offset, h) * inverse;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = [
+        offset[1] * edge1[2] - offset[2] * edge1[1],
+        offset[2] * edge1[0] - offset[0] * edge1[2],
+        offset[0] * edge1[1] - offset[1] * edge1[0],
+    ];
+    let v = dot(ray.direction, q) * inverse;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = dot(edge2, q) * inverse;
+    (t.is_finite() && t > 1e-9).then_some(t)
+}
+
+/// A ray hit on the scene: distance, box index and the visible surface normal.
+#[derive(Clone, Copy, Debug)]
+pub struct Hit {
+    pub distance: f64,
+    pub index: usize,
+    pub normal: [f64; 3],
+}
+
+/// The nearest visible surface the ray crosses. A shaped fitting is tested
+/// against its triangles; every other box keeps the exact box hit.
+pub fn nearest_hit(boxes: &[SceneBox], ray: Ray) -> Option<Hit> {
     boxes
         .iter()
         .enumerate()
-        .filter_map(|(index, b)| board_hit(ray, b.pose, b.size).map(|(t, face)| (t, index, face)))
+        .filter_map(|(index, b)| {
+            let hit = match b.shape.as_ref().filter(|shape| !shape.tris.is_empty()) {
+                Some(shape) => shape
+                    .tris
+                    .iter()
+                    .filter_map(|tri| ray_triangle(ray, tri.points).map(|t| (t, tri.normal)))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))?,
+                None => {
+                    let (t, face) = board_hit(ray, b.pose, b.size)?;
+                    (t, face_normal(b.pose, face))
+                }
+            };
+            Some(Hit {
+                distance: hit.0,
+                index,
+                normal: hit.1,
+            })
+        })
         .min_by(|a, b| {
-            a.0.total_cmp(&b.0)
-                .then_with(|| boxes[a.1].id.cmp(&boxes[b.1].id))
+            a.distance
+                .total_cmp(&b.distance)
+                .then_with(|| boxes[a.index].id.cmp(&boxes[b.index].id))
         })
 }
 
@@ -293,7 +493,7 @@ pub fn unobstructed(boxes: &[SceneBox], camera: &Camera, point: [f64; 3]) -> boo
     let (ray, depth) = eye_ray(camera, point);
     depth > 0.0
         && nearest_hit(boxes, ray)
-            .is_none_or(|(t, _, _)| t >= depth - DEPTH_TOLERANCE_MM.max(depth * 1e-9))
+            .is_none_or(|hit| hit.distance >= depth - DEPTH_TOLERANCE_MM.max(depth * 1e-9))
 }
 
 /// Pairs of corner indices (bit 0 = +X, bit 1 = +Y, bit 2 = +Z) joined by an edge.
@@ -336,9 +536,31 @@ fn closest_on_line(start: [f64; 3], direction: [f64; 3], ray: Ray) -> Option<f64
     Some((b * dot(ray.direction, w) - c * dot(direction, w)) / denominator)
 }
 
+fn anchor_at(b: &SceneBox, point: [f64; 3]) -> Option<Anchor> {
+    b.anchor.map(|base| Anchor {
+        id: base.id,
+        local_mm: to_local(base.pose, point),
+        owner: base.owner,
+    })
+}
+
+/// Screen distance from the pointer, or `None` when the point is off canvas.
+fn screen_distance(
+    camera: &Camera,
+    rect: egui::Rect,
+    pointer: egui::Pos2,
+    point: [f64; 3],
+) -> Option<f32> {
+    camera
+        .project(point, rect)
+        .filter(|screen| rect.contains(*screen))
+        .map(|screen| screen.distance(pointer))
+}
+
 /// The best exact feature near the pointer: a corner, midpoint or face centre
 /// within [`POINT_APERTURE_PX`], else an edge within [`EDGE_APERTURE_PX`],
-/// else the face under the pointer. Hidden features are skipped.
+/// else the face under the pointer. Hidden features are skipped. A shaped
+/// fitting uses its real triangle vertices and edges instead of its envelope.
 pub fn snap_point(
     boxes: &[SceneBox],
     camera: &Camera,
@@ -346,33 +568,58 @@ pub fn snap_point(
     pointer: egui::Pos2,
 ) -> Option<Snap> {
     let ray = camera.ray(pointer, rect);
-    let screen = |point| camera.project(point, rect).filter(|s| rect.contains(*s));
     let mut points = Vec::new();
     let mut edges = Vec::new();
     for b in boxes {
-        let world = |local| b.pose.transform_point(local).ok();
-        let feature = |local, kind, edge| {
-            let point = world(local)?;
-            let distance = screen(point)?.distance(pointer);
+        let feature = |point, kind, edge| {
             Some((
-                distance,
+                screen_distance(camera, rect, pointer, point)?,
                 Snap {
-                    anchor: b.anchored.then_some(Anchor {
-                        id: b.id,
-                        local_mm: local,
-                    }),
+                    anchor: anchor_at(b, point),
                     edge,
                     ..Snap::at(point, kind)
                 },
             ))
         };
-        let edge_direction = |axis: usize| {
-            let mut local = [0.0; 3];
-            local[axis] = 1.0;
-            b.pose.rotation.rotate(local)
+        if let Some(shape) = &b.shape {
+            let mut seen = HashSet::new();
+            let mut endpoint = |points: &mut Vec<_>, point: [f64; 3]| {
+                let key = point.map(|v| (v * 1e6).round() as i64);
+                if seen.insert(key) {
+                    points.extend(feature(point, SnapKind::Endpoint, None));
+                }
+            };
+            for tri in &shape.tris {
+                for point in tri.points {
+                    endpoint(&mut points, point);
+                }
+            }
+            for [start, end] in &shape.edges {
+                endpoint(&mut points, *start);
+                endpoint(&mut points, *end);
+                let direction = unit_or(sub(*end, *start), [0.0; 3]);
+                let edge = (length(direction) > 0.5).then_some(direction);
+                let middle = std::array::from_fn(|i| (start[i] + end[i]) / 2.0);
+                points.extend(feature(middle, SnapKind::Midpoint, edge));
+                let Some(s) = closest_on_line(*start, sub(*end, *start), ray) else {
+                    continue;
+                };
+                let s = s.clamp(0.0, 1.0);
+                let point = std::array::from_fn(|i| start[i] + (end[i] - start[i]) * s);
+                if let Some(candidate) = feature(point, SnapKind::OnEdge, edge) {
+                    edges.push(candidate);
+                }
+            }
+            continue;
+        }
+        let world = |local| b.pose.transform_point(local).ok();
+        let box_feature = |local, kind, edge| {
+            let point = world(local)?;
+            feature(point, kind, edge)
         };
+        let edge_direction = |axis: usize| b.pose.rotation.rotate(unit(axis));
         for index in 0..8 {
-            points.extend(feature(
+            points.extend(box_feature(
                 local_corner(b.size, index),
                 SnapKind::Endpoint,
                 None,
@@ -382,7 +629,7 @@ pub fn snap_point(
             let (a, c) = (local_corner(b.size, from), local_corner(b.size, to));
             let axis = (from ^ to).trailing_zeros() as usize;
             let middle = std::array::from_fn(|i| (a[i] + c[i]) / 2.0);
-            points.extend(feature(
+            points.extend(box_feature(
                 middle,
                 SnapKind::Midpoint,
                 Some(edge_direction(axis)),
@@ -395,17 +642,17 @@ pub fn snap_point(
             };
             let s = s.clamp(0.0, 1.0);
             let local = std::array::from_fn(|i| a[i] + (c[i] - a[i]) * s);
-            if let Some((distance, snap)) =
-                feature(local, SnapKind::OnEdge, Some(edge_direction(axis)))
+            if let Some(candidate) =
+                box_feature(local, SnapKind::OnEdge, Some(edge_direction(axis)))
             {
-                edges.push((distance, snap));
+                edges.push(candidate);
             }
         }
         for axis in 0..3 {
             for side in [0.0, b.size[axis]] {
                 let mut local = b.size.map(|v| v / 2.0);
                 local[axis] = side;
-                points.extend(feature(local, SnapKind::FaceCenter, None));
+                points.extend(box_feature(local, SnapKind::FaceCenter, None));
             }
         }
     }
@@ -413,11 +660,12 @@ pub fn snap_point(
     points.sort_by(|a, b| (a.0 + a.1.kind.bias()).total_cmp(&(b.0 + b.1.kind.bias())));
     edges.retain(|(distance, _)| *distance <= EDGE_APERTURE_PX);
     edges.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if let Some((_, snap)) = points
+    if let Some((_, mut snap)) = points
         .into_iter()
         .chain(edges)
         .find(|(_, snap)| unobstructed(boxes, camera, snap.point))
     {
+        snap.face = nearest_hit(boxes, ray).map(|hit| hit.normal);
         return Some(snap);
     }
     face_point(boxes, ray)
@@ -425,14 +673,12 @@ pub fn snap_point(
 
 /// The surface point under the ray, attached to its box when it can be.
 fn face_point(boxes: &[SceneBox], ray: Ray) -> Option<Snap> {
-    let (t, index, _) = nearest_hit(boxes, ray)?;
-    let b = boxes[index];
-    let point = add_scaled(ray.origin, ray.direction, t);
+    let hit = nearest_hit(boxes, ray)?;
+    let b = &boxes[hit.index];
+    let point = add_scaled(ray.origin, ray.direction, hit.distance);
     Some(Snap {
-        anchor: b.anchored.then(|| Anchor {
-            id: b.id,
-            local_mm: to_local(b.pose, point),
-        }),
+        anchor: anchor_at(b, point),
+        face: Some(hit.normal),
         ..Snap::at(point, SnapKind::OnFace)
     })
 }
@@ -458,9 +704,24 @@ fn fallback(camera: &Camera, ray: Ray, from: Option<[f64; 3]>) -> Snap {
     if t.is_finite() && t > 0.0 {
         let mut point = add_scaled(ray.origin, ray.direction, t);
         point[2] = 0.0;
-        return Snap::at(point, SnapKind::Ground);
+        let mut snap = Snap::at(point, SnapKind::Ground);
+        snap.face = Some([0.0, 0.0, 1.0]);
+        return snap;
     }
     Snap::at(view_plane_point(camera, ray, camera.target), SnapKind::Free)
+}
+
+/// A lock that holds the second point to a line through the first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lock {
+    /// Unit direction of the line.
+    pub direction: [f64; 3],
+    /// The named axis, when the line is one of the object's axes.
+    pub axis: Option<usize>,
+    /// The named axis is the first point's object axis, not a world axis.
+    pub local: bool,
+    /// The line runs along a visible face normal.
+    pub perpendicular: bool,
 }
 
 /// How the pointer is constrained while placing a measurement point.
@@ -468,8 +729,8 @@ fn fallback(camera: &Camera, ray: Ray, from: Option<[f64; 3]>) -> Snap {
 pub struct Constraint {
     /// The first point, once placed.
     pub from: Option<[f64; 3]>,
-    /// A locked unit direction through `from`.
-    pub lock: Option<[f64; 3]>,
+    /// A locked direction through `from`.
+    pub lock: Option<Lock>,
     /// Alt: no snapping or inference, only the surface under the pointer.
     pub free: bool,
 }
@@ -503,21 +764,26 @@ pub fn measure_target(
     let Some(from) = constraint.from else {
         return base;
     };
-    if let Some(direction) = constraint.lock {
-        let axis = axis_of(direction);
+    if let Some(lock) = constraint.lock {
+        let direction = lock.direction;
         if !constraint.free && base.kind.is_feature() {
             // A hovered feature is projected onto the locked line, so a gap is
             // measured exactly along it without hitting a matching corner.
             let foot = add_scaled(from, direction, dot(sub(base.point, from), direction));
             return Snap {
-                axis,
+                axis: lock.axis,
+                local_axis: lock.local,
+                perpendicular: lock.perpendicular,
                 source: (length(sub(base.point, foot)) > ON_AXIS_MM).then_some(base.point),
+                face: base.face,
                 ..Snap::at(foot, base.kind)
             };
         }
         let s = closest_on_line(from, direction, ray).unwrap_or(0.0);
         return Snap {
-            axis,
+            axis: lock.axis,
+            local_axis: lock.local,
+            perpendicular: lock.perpendicular,
             ..Snap::at(add_scaled(from, direction, s), SnapKind::OnAxis)
         };
     }

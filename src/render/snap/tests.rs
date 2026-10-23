@@ -1,5 +1,9 @@
 use super::*;
+use crate::domain::{Hardware, HardwareKind};
+use crate::money::Currency;
 use crate::render::camera::Preset;
+use crate::units::Length;
+use crate::units::Quaternion;
 
 const RECT: egui::Rect = egui::Rect {
     min: egui::Pos2::ZERO,
@@ -22,11 +26,18 @@ fn front() -> Camera {
 }
 
 fn boxed(id: u128, at: [f64; 3], size: [f64; 3]) -> SceneBox {
+    let id = Uuid::from_u128(id);
+    let pose = Pose::new(at, Quaternion::IDENTITY).unwrap();
     SceneBox {
-        id: Uuid::from_u128(id),
-        pose: Pose::new(at, Quaternion::IDENTITY).unwrap(),
+        id,
+        pose,
         size,
-        anchored: true,
+        anchor: Some(AnchorBase {
+            id,
+            pose,
+            owner: None,
+        }),
+        shape: None,
     }
 }
 
@@ -51,7 +62,8 @@ fn corner_within_aperture_snaps_exactly_and_anchors_locally() {
         snap.anchor,
         Some(Anchor {
             id: Uuid::from_u128(1),
-            local_mm: [0.0, 0.0, 100.0]
+            local_mm: [0.0, 0.0, 100.0],
+            owner: None,
         })
     );
 }
@@ -183,7 +195,12 @@ fn locked_axis_projects_hovered_features_onto_its_line() {
     let from = [200.0, 0.0, 0.0];
     let locked = Constraint {
         from: Some(from),
-        lock: Some([0.0, 0.0, 1.0]),
+        lock: Some(Lock {
+            direction: [0.0, 0.0, 1.0],
+            axis: Some(2),
+            local: false,
+            perpendicular: false,
+        }),
         free: false,
     };
     let corner = [100.0, 0.0, 100.0];
@@ -219,4 +236,196 @@ fn alt_ignores_features_and_inference() {
     assert_eq!(snap.kind, SnapKind::OnFace);
     assert_eq!(snap.axis, None);
     assert_ne!(snap.point, corner);
+}
+
+/// A pyramid whose apex is well inside its 100 × 100 × 40 envelope.
+fn pyramid() -> SceneBox {
+    let base = [
+        [0.0, 0.0, 0.0],
+        [100.0, 0.0, 0.0],
+        [100.0, 100.0, 0.0],
+        [0.0, 100.0, 0.0],
+    ];
+    let apex = [50.0, 50.0, 40.0];
+    let edges = (0..4)
+        .flat_map(|i| [[base[i], base[(i + 1) % 4]], [base[i], apex]])
+        .collect();
+    let mut tris = Vec::new();
+    for i in 0..4 {
+        tris.push(ShapeTri {
+            points: [base[i], base[(i + 1) % 4], apex],
+            normal: [0.0, 0.0, 1.0],
+        });
+    }
+    for i in [0, 2] {
+        tris.push(ShapeTri {
+            points: [base[i], base[(i + 1) % 4], base[(i + 2) % 4]],
+            normal: [0.0, 0.0, -1.0],
+        });
+    }
+    let mut shaped = boxed(9, [0.0; 3], [100.0, 100.0, 40.0]);
+    shaped.shape = Some(Shape { edges, tris });
+    shaped
+}
+
+#[test]
+fn shaped_fittings_snap_to_their_real_vertices_not_the_envelope() {
+    let mut camera = front();
+    camera.target = [50.0, 50.0, 20.0];
+    let boxes = [pyramid()];
+    let apex = [50.0, 50.0, 40.0];
+    let snap = snap_point(
+        &boxes,
+        &camera,
+        RECT,
+        screen(&camera, apex) + egui::vec2(3.0, -2.0),
+    )
+    .unwrap();
+    assert_eq!((snap.kind, snap.point), (SnapKind::Endpoint, apex));
+    // The envelope corner that is not part of the drawn shape does not win.
+    assert_ne!(snap.point, [100.0, 100.0, 40.0]);
+    assert_eq!(snap.anchor.map(|a| a.local_mm), Some(apex));
+}
+
+#[test]
+fn local_axis_lock_follows_the_object_rotation() {
+    let mut camera = front();
+    camera.target = [0.0; 3];
+    let direction = [
+        45.0_f64.to_radians().cos(),
+        45.0_f64.to_radians().sin(),
+        0.0,
+    ];
+    let snap = measure_target(
+        &[],
+        &camera,
+        RECT,
+        screen(&camera, direction.map(|v| v * 60.0)),
+        Constraint {
+            from: Some([0.0; 3]),
+            lock: Some(Lock {
+                direction,
+                axis: Some(0),
+                local: true,
+                perpendicular: false,
+            }),
+            free: false,
+        },
+    );
+    assert_eq!(snap.kind, SnapKind::OnAxis);
+    assert_eq!(snap.axis, Some(0));
+    assert!(snap.local_axis);
+    assert!((snap.point[0] - direction[0] * 60.0).abs() < 0.5);
+    assert!((snap.point[1] - direction[1] * 60.0).abs() < 0.5);
+}
+
+#[test]
+fn perpendicular_lock_projects_onto_the_face_normal() {
+    let mut camera = front();
+    camera.target = [100.0, 0.0, 50.0];
+    let snap = measure_target(
+        &[],
+        &camera,
+        RECT,
+        screen(&camera, [100.0, 0.0, 80.0]),
+        Constraint {
+            from: Some([100.0, 0.0, 50.0]),
+            lock: Some(Lock {
+                direction: [0.0, 0.0, 1.0],
+                axis: None,
+                local: false,
+                perpendicular: true,
+            }),
+            free: false,
+        },
+    );
+    assert_eq!(snap.kind, SnapKind::OnAxis);
+    assert!(snap.perpendicular);
+    assert_eq!((snap.point[0], snap.point[1]), (100.0, 0.0));
+    assert!((snap.point[2] - 80.0).abs() < 0.5);
+}
+
+#[test]
+fn anchored_hardware_points_follow_their_object_and_die_with_an_owner() {
+    let id = Uuid::from_u128(42);
+    let mut project = Project::new("Anchors", Currency::Brl);
+    project.hardware.push(Hardware {
+        id,
+        name: "Foot".into(),
+        parent_id: None,
+        pose: Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+        kind: HardwareKind::Placeholder {
+            dimensions: [Length::from_micrometres(10_000); 3],
+        },
+    });
+    let point = MeasurePoint::On(Anchor {
+        id,
+        local_mm: [10.0, 0.0, 0.0],
+        owner: None,
+    });
+    assert_eq!(point.resolve(&project), Some([10.0, 0.0, 0.0]));
+    project.hardware[0].pose = Pose::new([100.0, 0.0, 0.0], Quaternion::IDENTITY).unwrap();
+    assert_eq!(point.resolve(&project), Some([110.0, 0.0, 0.0]));
+    let owned = MeasurePoint::On(Anchor {
+        id,
+        local_mm: [10.0, 0.0, 0.0],
+        owner: Some(Uuid::from_u128(43)),
+    });
+    assert_eq!(owned.resolve(&project), None);
+}
+
+#[test]
+fn a_catalog_foot_uses_its_drawn_rim_for_snapping() {
+    use crate::catalog_pack::{CatalogRegistry, snapshot_foot};
+    use crate::commands::ProjectEditor;
+
+    let registry = CatalogRegistry::bundled();
+    let pack = registry.pack("generic-feet").unwrap();
+    let family = pack
+        .feet
+        .iter()
+        .find(|f| f.id == "tapered-round-40")
+        .unwrap();
+    let variant = family
+        .variants
+        .iter()
+        .find(|v| v.code == "generic-tapered-round-40-black")
+        .unwrap();
+    let entry = snapshot_foot(pack, family, variant, "en");
+    let catalog_id = entry.id;
+    let mut editor = ProjectEditor::new(Project::new("Foot", Currency::Brl)).unwrap();
+    let foot = editor
+        .create_foot(
+            "Foot".into(),
+            catalog_id,
+            Some(entry),
+            None,
+            Pose::new([0.0; 3], Quaternion::IDENTITY).unwrap(),
+        )
+        .unwrap();
+    let project = editor.project().clone();
+    let boxes = scene_boxes(&project, &Selection::default());
+    let foot_box = boxes.iter().find(|b| b.id == foot).unwrap();
+    assert!(foot_box.shape.is_some());
+
+    // The 50 mm top disc's rim vertex at +X, not the envelope's (50, 50).
+    let mut camera = Camera {
+        target: [25.0, 25.0, 20.0],
+        distance: 400.0,
+        projection: Projection::Orthographic,
+        viewport_aspect: 800.0 / 600.0,
+        viewport_height: 600.0,
+        ..Camera::default()
+    };
+    camera.set_preset(Preset::Top);
+    let rim = [50.0, 25.0, 40.0];
+    let snap = snap_point(
+        &boxes,
+        &camera,
+        RECT,
+        screen(&camera, rim) + egui::vec2(2.0, 1.0),
+    )
+    .unwrap();
+    assert_eq!((snap.kind, snap.point), (SnapKind::Endpoint, rim));
+    assert_eq!(snap.anchor.map(|a| a.id), Some(foot));
 }

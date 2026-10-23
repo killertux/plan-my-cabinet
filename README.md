@@ -7,8 +7,9 @@ them. You also get the hinge positions and a PDF packet you can take to the
 shop.
 
 It runs fully offline. Projects are single files on your computer, and no
-account is needed. The interface is available in English and Brazilian
-Portuguese.
+account is needed. Installed release builds only contact GitHub for the
+optional startup update check described below. The interface is available in
+English and Brazilian Portuguese.
 
 ![Design workspace](docs/screenshots/design.png)
 
@@ -51,6 +52,18 @@ a package for each system, plus a `SHA256SUMS` file to check them:
 > case, right-click the app, choose **Open**, then confirm. Windows
 > SmartScreen may show "Windows protected your PC"; click **More info →
 > Run anyway**. Installing with the script above avoids the macOS warning.
+
+### Updates
+
+An installed release build checks GitHub for a newer release when it starts.
+If one is found, the app shows the current and available versions and asks
+whether to update. **Update now** downloads the package for your system,
+verifies the release's `SHA256SUMS`, installs it and restarts. **Later**
+dismisses the prompt for that run; the next startup checks again. If the
+check fails or you are offline, the app opens normally and every editing and
+export workflow stays available. Debug builds and builds run from a source
+tree never check or replace themselves. Set `PMCAB_DISABLE_UPDATE_CHECK=1` to
+turn the check off.
 
 **What you need**: a graphics card with Metal (macOS), Vulkan (Linux), or
 Direct3D 12 / Vulkan (Windows). On Linux you also need an X11 or Wayland

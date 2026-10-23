@@ -178,6 +178,7 @@ struct DesktopApp {
     settings: state::SettingsHost,
     handoff: state::HandoffState,
     file_export: file_export_ui::FileExportState,
+    update: app::update::UpdateHost,
 }
 
 impl Default for DesktopApp {
@@ -224,6 +225,7 @@ impl Default for DesktopApp {
             settings: state::SettingsHost::default(),
             handoff: state::HandoffState::default(),
             file_export: file_export_ui::FileExportState::default(),
+            update: app::update::UpdateHost::default(),
         }
     }
 }
@@ -447,6 +449,7 @@ impl DesktopApp {
             || self.cut_plan.repair.active()
             || self.hardware.door_motion.is_some()
             || self.project_files.blocking()
+            || self.update.blocks_ui()
     }
 
     /// Door motion is the only mode open: no dialog, prompt, palette or repair.
@@ -533,6 +536,7 @@ impl DesktopApp {
         } else {
             self.show_workspace(ui);
         }
+        self.show_update(ui.ctx());
     }
 
     fn handle_close_request(&mut self, ctx: &egui::Context) {
@@ -907,6 +911,7 @@ fn main() -> std::process::ExitCode {
                 let user_packs = project_ui::user_data_dir().map(|dir| dir.join("catalogs"));
                 app.hardware.catalogs =
                     plan_my_cabinet::catalog_pack::CatalogRegistry::load(user_packs.as_deref());
+                app.start_update_check(&context.egui_ctx);
             }
             Ok(Box::new(app))
         }),

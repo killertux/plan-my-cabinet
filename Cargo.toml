@@ -1,6 +1,6 @@
 [package]
 name = "plan-my-cabinet"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 
 [dependencies]
@@ -14,6 +14,7 @@ resvg = "=0.45.1"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 rmcp = { version = "3.5", features = ["transport-io"] }
 schemars = "1"
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 # Persisted poses and directed hinge axes participate in exact review checks.
 # A save/open cycle must not shift their f64 values by a parsing ULP.
@@ -23,6 +24,7 @@ time = { version = "=0.3.55", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 toml = { version = "1", default-features = false, features = ["display", "parse", "serde", "std"] }
 unic-langid = "0.9"
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]

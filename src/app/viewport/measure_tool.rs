@@ -3,7 +3,7 @@
 use super::*;
 use plan_my_cabinet::dimension_input::{Locale, format_length};
 use plan_my_cabinet::i18n::{Language, Localizer};
-use plan_my_cabinet::render::snap::{self, Constraint, MeasurePoint, Snap, SnapKind};
+use plan_my_cabinet::render::snap::{self, Constraint, Lock, MeasurePoint, Snap, SnapKind};
 use plan_my_cabinet::units::{Length, Unit};
 
 /// World axis colours, matching the scene's axis lines.
@@ -22,15 +22,38 @@ pub(crate) struct Kept {
     pub(crate) kinds: [SnapKind; 2],
 }
 
+/// X/Y/Z lock: a world axis, or the same axis of the object under the first
+/// point when the key is pressed a second time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AxisLock {
+    World(usize),
+    Local(usize),
+}
+
+impl AxisLock {
+    fn axis(self) -> usize {
+        match self {
+            Self::World(axis) | Self::Local(axis) => axis,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct MeasureTool {
     start: Option<(MeasurePoint, SnapKind)>,
+    /// The visible face normal under the first point, for a perpendicular lock.
+    start_face: Option<[f64; 3]>,
     hover: Option<Snap>,
-    /// X/Y/Z: a world axis the second point is held to, until the next click.
-    axis_lock: Option<usize>,
+    /// X/Y/Z: a world or object axis the second point is held to, until the
+    /// next click.
+    axis_lock: Option<AxisLock>,
+    /// P: hold the line normal to the first point's face.
+    perpendicular: bool,
     /// Shift: the inferred direction captured when Shift went down.
     held: Option<[f64; 3]>,
     kept: Vec<Kept>,
+    language: Language,
+    copied_at: Option<f64>,
 }
 
 impl MeasureTool {
@@ -43,13 +66,97 @@ impl MeasureTool {
         self.start.is_some()
     }
 
+    pub(crate) fn set_language(&mut self, language: Language) {
+        self.language = language;
+    }
+
     #[cfg(test)]
-    pub(crate) fn axis_lock(&self) -> Option<usize> {
+    pub(crate) fn axis_lock(&self) -> Option<AxisLock> {
         self.axis_lock
     }
 
-    fn lock(&self) -> Option<[f64; 3]> {
-        self.axis_lock.map(axis_direction).or(self.held)
+    #[cfg(test)]
+    pub(crate) fn perpendicular(&self) -> bool {
+        self.perpendicular
+    }
+
+    #[cfg(test)]
+    pub(crate) fn start_face(&self) -> Option<[f64; 3]> {
+        self.start_face
+    }
+
+    fn lock(&self, project: &Project) -> Option<Lock> {
+        if self.perpendicular {
+            return self.start_face.map(|direction| Lock {
+                direction,
+                axis: None,
+                local: false,
+                perpendicular: true,
+            });
+        }
+        if let Some(axis_lock) = self.axis_lock {
+            let axis = axis_lock.axis();
+            let local = matches!(axis_lock, AxisLock::Local(_));
+            let direction = if local {
+                self.start
+                    .and_then(|(point, _)| snap::local_axis(project, point, axis))
+            } else {
+                Some(axis_direction(axis))
+            };
+            return direction.map(|direction| Lock {
+                direction,
+                axis: Some(axis),
+                local,
+                perpendicular: false,
+            });
+        }
+        self.held.map(|direction| Lock {
+            direction,
+            axis: snap::axis_of(direction),
+            local: false,
+            perpendicular: false,
+        })
+    }
+
+    /// World axis, the first point's object axis, then off.
+    fn press_axis(&mut self, project: &Project, axis: usize) {
+        let local = self
+            .start
+            .and_then(|(point, _)| snap::local_axis(project, point, axis))
+            .is_some();
+        self.perpendicular = false;
+        self.axis_lock = match self.axis_lock {
+            Some(AxisLock::World(current)) if current == axis && local => {
+                Some(AxisLock::Local(axis))
+            }
+            Some(AxisLock::World(current)) if current == axis => None,
+            Some(AxisLock::Local(current)) if current == axis => None,
+            _ => Some(AxisLock::World(axis)),
+        };
+    }
+
+    fn displayed_distance(&self, project: &Project) -> Option<f64> {
+        if let Some((point, _)) = self.start
+            && let Some(hover) = self.hover
+            && let Some(from) = point.resolve(project)
+        {
+            return Some(distance(from, hover.point));
+        }
+        let kept = self.kept.last()?;
+        Some(distance(kept.a.resolve(project)?, kept.b.resolve(project)?))
+    }
+
+    fn copy_text(&self, project: &Project) -> Option<String> {
+        let locale = if self.language == Language::PtBr {
+            Locale::PtBr
+        } else {
+            Locale::En
+        };
+        Some(length_text(
+            self.displayed_distance(project)?,
+            project.display_unit,
+            locale,
+        ))
     }
 
     pub(super) fn clear_hover(&mut self) {
@@ -61,10 +168,11 @@ fn axis_direction(axis: usize) -> [f64; 3] {
     std::array::from_fn(|i| f64::from(u8::from(i == axis)))
 }
 
-/// Clicks place points; X/Y/Z toggle an axis lock, Shift holds the shown
-/// inference, Alt places free points, Esc cancels then clears, Delete removes
-/// the last measurement. Drags still orbit and pan, so the camera can turn
-/// between the two clicks.
+/// Clicks place points; X/Y/Z cycle a world then object axis lock, P holds the
+/// first point's face normal, Shift holds the shown inference, Alt places free
+/// points, Cmd/Ctrl+C copies the displayed distance, Esc cancels then clears,
+/// and Delete removes the last measurement. Drags still orbit and pan, so the
+/// camera can turn between the two clicks.
 pub(super) fn interact(
     ui: &egui::Ui,
     response: &egui::Response,
@@ -89,19 +197,35 @@ pub(super) fn interact(
             let plain = !(i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt);
             for (key, axis) in [(egui::Key::X, 0), (egui::Key::Y, 1), (egui::Key::Z, 2)] {
                 if plain && i.key_pressed(key) {
-                    measure.axis_lock = (measure.axis_lock != Some(axis)).then_some(axis);
+                    measure.press_axis(project, axis);
                 }
             }
             if i.key_pressed(egui::Key::Escape) {
                 if measure.start.take().is_none() {
                     measure.kept.clear();
                 }
+                measure.start_face = None;
                 measure.axis_lock = None;
+                measure.perpendicular = false;
+            }
+            if plain && i.key_pressed(egui::Key::P) && measure.start_face.is_some() {
+                measure.perpendicular = !measure.perpendicular;
+                if measure.perpendicular {
+                    measure.axis_lock = None;
+                }
             }
             if plain && (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
                 measure.kept.pop();
             }
         });
+        let copy =
+            ui.input(|i| i.key_pressed(egui::Key::C) && (i.modifiers.command || i.modifiers.ctrl));
+        if copy && let Some(text) = measure.copy_text(project) {
+            ui.ctx().copy_text(text);
+            measure.copied_at = Some(ui.input(|i| i.time));
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(1400));
+        }
         if measure.start.is_none() {
             from = None;
         }
@@ -111,6 +235,7 @@ pub(super) fn interact(
         measure.held = None;
     } else if measure.held.is_none()
         && measure.axis_lock.is_none()
+        && !measure.perpendicular
         && from.is_some()
         && let Some(hover) = measure.hover
     {
@@ -121,7 +246,7 @@ pub(super) fn interact(
     }
     let constraint = Constraint {
         from,
-        lock: from.and(measure.lock()),
+        lock: from.and(measure.lock(project)),
         free: alt,
     };
     let boxes = snap::scene_boxes(project, selection);
@@ -144,10 +269,16 @@ pub(super) fn interact(
                         kinds: [kind, target.kind],
                     });
                     measure.start = None;
+                    measure.start_face = None;
                     measure.axis_lock = None;
+                    measure.perpendicular = false;
                 }
             }
-            _ => measure.start = Some((target.measure_point(), target.kind)),
+            _ => {
+                measure.start = Some((target.measure_point(), target.kind));
+                measure.start_face = target.face;
+                measure.perpendicular = false;
+            }
         }
     }
     if response.hovered() {
@@ -192,12 +323,19 @@ fn segment_color(a: [f64; 3], b: [f64; 3]) -> egui::Color32 {
 }
 
 fn snap_label(snap: &Snap, localizer: &Localizer) -> String {
-    let kind = if snap.kind == SnapKind::OnAxis && snap.axis.is_none() {
+    let kind = if snap.perpendicular {
+        localizer.text("measure-snap-perpendicular")
+    } else if snap.kind == SnapKind::OnAxis && snap.axis.is_none() {
         localizer.text("measure-snap-parallel")
     } else {
         localizer.text(snap.kind.key())
     };
     match snap.axis {
+        Some(axis) if snap.local_axis => format!(
+            "{kind} · {} {}",
+            AXIS_NAMES[axis],
+            localizer.text("measure-local")
+        ),
         Some(axis) if snap.kind != SnapKind::OnAxis => format!("{kind} · {}", AXIS_NAMES[axis]),
         Some(axis) => format!("{kind} {}", AXIS_NAMES[axis]),
         None => kind,
@@ -387,8 +525,9 @@ pub(super) fn paint(
     let from = measure.start.and_then(|(point, _)| point.resolve(project));
     if let Some(from) = from {
         let direction = measure
-            .lock()
-            .or(measure.hover.and_then(|h| h.axis).map(axis_direction));
+            .lock(project)
+            .map(|lock| lock.direction)
+            .or_else(|| measure.hover.and_then(|h| h.axis).map(axis_direction));
         if let Some(direction) = direction {
             let color =
                 snap::axis_of(direction).map_or(crate::theme_widgets::ACCENT, |a| AXIS_COLORS[a]);
@@ -496,15 +635,31 @@ fn paint_panel(
                 .show(ui, |ui| {
                     ui.set_max_width((rect.width() - 90.0).clamp(160.0, 280.0));
                     ui.spacing_mut().item_spacing.y = 3.0;
-                    let locked = measure
-                        .axis_lock
-                        .map(|axis| (AXIS_NAMES[axis].to_owned(), AXIS_COLORS[axis]))
-                        .or(measure.held.map(|direction| {
-                            snap::axis_of(direction).map_or(
-                                (localizer.text("measure-snap-parallel"), tw::ACCENT),
-                                |axis| (AXIS_NAMES[axis].to_owned(), AXIS_COLORS[axis]),
-                            )
-                        }));
+                    let locked = if measure.perpendicular {
+                        Some((localizer.text("measure-snap-perpendicular"), tw::ACCENT))
+                    } else {
+                        measure
+                            .axis_lock
+                            .map(|lock| match lock {
+                                AxisLock::World(axis) => {
+                                    (AXIS_NAMES[axis].to_owned(), AXIS_COLORS[axis])
+                                }
+                                AxisLock::Local(axis) => (
+                                    format!(
+                                        "{} · {}",
+                                        AXIS_NAMES[axis],
+                                        localizer.text("measure-local")
+                                    ),
+                                    tw::ACCENT,
+                                ),
+                            })
+                            .or(measure.held.map(|direction| {
+                                snap::axis_of(direction).map_or(
+                                    (localizer.text("measure-snap-parallel"), tw::ACCENT),
+                                    |axis| (AXIS_NAMES[axis].to_owned(), AXIS_COLORS[axis]),
+                                )
+                            }))
+                    };
                     if let Some((name, color)) = locked {
                         ui.label(
                             tw::semibold(
@@ -563,6 +718,16 @@ fn paint_panel(
                         .size(11.0)
                         .color(tw::FAINT),
                     );
+                    if measure
+                        .copied_at
+                        .is_some_and(|at| ui.input(|i| i.time) - at < 1.4)
+                    {
+                        ui.label(
+                            egui::RichText::new(localizer.text("measure-copied"))
+                                .size(11.0)
+                                .color(tw::ACCENT),
+                        );
+                    }
                 });
         });
 }

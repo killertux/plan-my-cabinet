@@ -380,7 +380,7 @@ fn pick_visible(
     // Boards, dimensioned hardware, then drawer slides and hinges by the boxes they occupy.
     let boxes = plan_my_cabinet::render::snap::scene_boxes(project, selection);
     plan_my_cabinet::render::snap::nearest_hit(&boxes, camera.ray(pointer, rect))
-        .map(|(_, index, _)| boxes[index].id)
+        .map(|hit| boxes[hit.index].id)
 }
 
 #[cfg(test)]
@@ -701,6 +701,7 @@ pub fn show_move_with_hardware(
 ) -> ViewportInteraction {
     use plan_my_cabinet::i18n::Language;
     let pt = language == Language::PtBr;
+    tool.measure.set_language(language);
     let mut app_request = None;
     let overlay_blocked = if hardware_workspace {
         controls::hardware_overlay(
